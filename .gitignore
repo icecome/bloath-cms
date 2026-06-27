@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+cloudflare-worker/node_modules/
+web/node_modules/
+.trae/
+.history/
+
+# Build output
+dist/
+web/dist/
+.build/
+
+# Environment
+.env
+.env.local
+.env.production
+.dev.vars
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Cloudflare
+wrangler.toml

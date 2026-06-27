@@ -1,0 +1,9 @@
+{
+  "$schema": "https://workers.cloudflare.com/ns/type",
+  "name": "bloath-cms-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-15",
+  "vars": {
+    "CF_WORKER_URL": "http://localhost:8787"
+  }
+}
