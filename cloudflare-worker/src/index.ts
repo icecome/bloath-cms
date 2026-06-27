@@ -130,9 +130,13 @@ export default {
       // API 请求路由分发
       if (url.pathname === '/api/auth/login' && request.method === 'GET') {
         const state = await generateState(frontendUrl, env);
-        const clientId = env.GITHUB_CLIENT_ID || 'CLIENT_ID_NOT_SET';
+        // 调试：输出所有 env 键
+        const envKeys = Object.keys(env).sort().join('|');
+        const clientId = env.GITHUB_CLIENT_ID || 'NOT_FOUND';
+        console.log('ENV_KEYS:', envKeys);
+        console.log('CLIENT_ID:', clientId);
         const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=authorize`;
-        return addCorsHeaders(Response.json({ authUrl }), origin, env);
+        return addCorsHeaders(Response.json({ authUrl, envKeys, clientId }), origin, env);
       }
 
       if (url.pathname === '/api/auth/callback' && request.method === 'GET') {
