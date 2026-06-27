@@ -130,13 +130,9 @@ export default {
       // API 请求路由分发
       if (url.pathname === '/api/auth/login' && request.method === 'GET') {
         const state = await generateState(frontendUrl, env);
-        // 调试：输出所有 env 键
-        const envKeys = Object.keys(env).sort().join('|');
-        const clientId = env.GITHUB_CLIENT_ID || 'NOT_FOUND';
-        console.log('ENV_KEYS:', envKeys);
-        console.log('CLIENT_ID:', clientId);
+        const clientId = env.GITHUB_CLIENT_ID;
         const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=authorize`;
-        return addCorsHeaders(Response.json({ authUrl, envKeys, clientId }), origin, env);
+        return addCorsHeaders(Response.json({ authUrl }), origin, env);
       }
 
       if (url.pathname === '/api/auth/callback' && request.method === 'GET') {
@@ -155,7 +151,7 @@ export default {
 
         const storedFrontendUrl = stateData.frontendUrl || frontendUrl;
 
-        const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET || 'SECRET_NOT_SET', env.GITHUB_CLIENT_ID || 'CLIENT_ID_NOT_SET', workerUrl + '/api/auth/callback');
+        const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
         const user = await getUserInfo(accessToken);
 
         // 重定向到前端，直接传递 GitHub access_token（使用 fragment 不发送到服务器）

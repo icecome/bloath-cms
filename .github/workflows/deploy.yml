@@ -67,15 +67,3 @@ jobs:
           GITHUB_CLIENT_SECRET: ${{ secrets.BLOATH_GITHUB_CLIENT_SECRET }}
           SESSION_SECRET: ${{ secrets.BLOATH_SESSION_SECRET }}
           FRONTEND_URL: https://bloath.icecome.com
-      - name: Upload secrets to Cloudflare
-        run: |
-          cd cloudflare-worker
-          npx wrangler secret put GITHUB_CLIENT_ID
-          npx wrangler secret put GITHUB_CLIENT_SECRET
-          npx wrangler secret put SESSION_SECRET
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          GITHUB_CLIENT_ID: ${{ secrets.BLOATH_GITHUB_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.BLOATH_GITHUB_CLIENT_SECRET }}
-          SESSION_SECRET: ${{ secrets.BLOATH_SESSION_SECRET }}
