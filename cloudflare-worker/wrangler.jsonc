@@ -2,12 +2,5 @@
   "$schema": "https://workers.cloudflare.com/ns/type",
   "name": "bloath-cms-worker",
   "main": "src/index.ts",
-  "compatibility_date": "2025-06-15",
-  "assets": {
-    "directory": "public"
-  },
-  "vars": {
-    "CF_WORKER_URL": "http://localhost:8787",
-    "FRONTEND_URL": "http://localhost:3000"
-  }
+  "compatibility_date": "2025-06-15"
 }

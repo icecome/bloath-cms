@@ -38,11 +38,20 @@ jobs:
           npx tsc --noEmit
 
       - name: Build frontend
+        env:
+          VITE_API_URL: https://bloath-cms-worker.bloath-cms-worker.bloath-cms.workers.dev
         run: |
-          mkdir -p ../cloudflare-worker/public
           cd web
           npm run build
-          cp -r dist/* ../cloudflare-worker/public/
+
+      - name: Deploy frontend to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          projectName: bloath-cms
+          directory: web/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3

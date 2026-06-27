@@ -85,14 +85,20 @@ class SessionManager {
 const sessionManager = new SessionManager();
 
 // CORS 头
-function corsHeaders(origin: string, env: Env): Record<string, string> {
-  const allowedOrigins = [
-    env.FRONTEND_URL || 'http://localhost:5173',
+function corsHeaders(origin: string, _env: Env): Record<string, string> {
+  // 开发环境
+  const devOrigins = [
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:3002',
     'http://localhost:5173'
   ];
+  // 生产环境 Pages 域名（包含 .pages.dev 和自定义域名）
+  const prodOrigins = [
+    'https://bloath-cms.pages.dev'
+  ];
+
+  const allowedOrigins = [...devOrigins, ...prodOrigins];
 
   // 严格校验 Origin，不在白名单则返回 *（浏览器将拒绝带凭证的请求）
   const allowedOrigin = allowedOrigins.includes(origin) ? origin : '*';
@@ -130,9 +136,12 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin') || '*';
-    const workerUrl = env.CF_WORKER_URL || 'http://localhost:8787';
+    // 生产环境使用当前域名，本地开发使用 localhost
+    const workerUrl = url.origin.startsWith('http://localhost') 
+      ? 'http://localhost:8787' 
+      : url.origin;
     // 优先使用请求头中的前端地址，其次使用配置，最后默认
-    const frontendUrl = request.headers.get('X-Frontend-Url') || env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = request.headers.get('X-Frontend-Url') || 'http://localhost:3000';
 
     // 处理 CORS 预检请求
     if (request.method === 'OPTIONS') {
@@ -145,22 +154,8 @@ export default {
       // 清理过期 session
       sessionManager.cleanup();
 
-      // 非 API 请求：尝试从静态资源服务
+      // 非 API 请求：SPA 路由 fallback 到 index.html
       if (!url.pathname.startsWith('/api/')) {
-        // 尝试从 ASSETS 获取静态文件
-        try {
-          const assetResponse = await env.ASSETS?.fetch(request);
-          if (assetResponse && assetResponse.status === 200) {
-            return assetResponse;
-          }
-        } catch {}
-        // 静态文件不存在，返回 index.html（SPA 路由）
-        try {
-          const indexResponse = await env.ASSETS?.fetch(`${url.origin}/index.html`);
-          if (indexResponse && indexResponse.status === 200) {
-            return indexResponse;
-          }
-        } catch {}
         return addCorsHeaders(Response.json({ error: 'Not found' }, { status: 404 }), origin, env);
       }
 
