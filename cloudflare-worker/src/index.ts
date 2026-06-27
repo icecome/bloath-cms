@@ -93,9 +93,11 @@ function corsHeaders(origin: string, _env: Env): Record<string, string> {
     'http://localhost:3002',
     'http://localhost:5173'
   ];
-  // 生产环境 Pages 域名（包含 .pages.dev 和自定义域名）
+  // 生产环境 Pages 域名
   const prodOrigins = [
-    'https://bloath-cms.pages.dev'
+    'https://bloath-cms-web.pages.dev',
+    'https://bloath.icecome.com',
+    'https:/bloath-cms.pages.dev'
   ];
 
   const allowedOrigins = [...devOrigins, ...prodOrigins];

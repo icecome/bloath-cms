@@ -39,7 +39,7 @@ jobs:
 
       - name: Build frontend
         env:
-          VITE_API_URL: https://bloath-cms-worker.bloath-cms-worker.bloath-cms.workers.dev
+          VITE_API_URL: https://bloath-cms-worker.workers.dev
         run: |
           cd web
           npm run build
@@ -51,7 +51,7 @@ jobs:
         run: |
           cd cloudflare-worker
           mv wrangler.jsonc wrangler.jsonc.bak
-          npx wrangler pages deploy ../web/dist --project-name=bloath-cms
+          npx wrangler pages deploy ../web/dist --project-name=bloath-cms-web
           mv wrangler.jsonc.bak wrangler.jsonc
 
       - name: Deploy to Cloudflare Workers
