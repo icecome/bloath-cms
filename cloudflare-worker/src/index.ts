@@ -105,7 +105,26 @@ export default {
       // 清理过期 session
       sessionManager.cleanup();
 
-      // 路由分发
+      // 非 API 请求：尝试从静态资源服务
+      if (!url.pathname.startsWith('/api/')) {
+        // 尝试从 ASSETS 获取静态文件
+        try {
+          const assetResponse = await env.ASSETS?.fetch(request);
+          if (assetResponse && assetResponse.status === 200) {
+            return assetResponse;
+          }
+        } catch {}
+        // 静态文件不存在，返回 index.html（SPA 路由）
+        try {
+          const indexResponse = await env.ASSETS?.fetch(`${url.origin}/index.html`);
+          if (indexResponse && indexResponse.status === 200) {
+            return indexResponse;
+          }
+        } catch {}
+        return addCorsHeaders(Response.json({ error: 'Not found' }, { status: 404 }), origin, env);
+      }
+
+      // API 请求路由分发
       if (url.pathname === '/api/auth/login' && request.method === 'GET') {
         const state = generateState();
         // 存储 state 到内存 Map
