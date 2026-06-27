@@ -60,20 +60,6 @@ export function useAuth() {
       });
   };
 
-  const handleCallback = async (code: string, stateVal: string) => {
-    const res = await fetch(`${API_BASE}/api/auth/callback?code=${code}&state=${stateVal}`);
-    const data = await res.json();
-    if (data.success) {
-      sessionStorage.setItem('token', data.sessionKey);
-      setState({
-        user: data.user,
-        token: data.sessionKey,
-        loading: false
-      });
-    }
-    return data;
-  };
-
   const logout = () => {
     sessionStorage.removeItem('token');
     setState({ user: null, token: null, loading: false });
@@ -84,7 +70,6 @@ export function useAuth() {
     token: state.token,
     loading: state.loading,
     login,
-    handleCallback,
     logout
   };
 }

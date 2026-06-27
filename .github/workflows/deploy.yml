@@ -71,9 +71,9 @@ jobs:
       - name: Set Wrangler Secrets
         working-directory: cloudflare-worker
         run: |
-          npx wrangler secret put GITHUB_CLIENT_ID <<< "${{ secrets.BLOATH_GITHUB_CLIENT_ID }}"
-          npx wrangler secret put GITHUB_CLIENT_SECRET <<< "${{ secrets.BLOATH_GITHUB_CLIENT_SECRET }}"
-          npx wrangler secret put SESSION_SECRET <<< "${{ secrets.BLOATH_SESSION_SECRET }}"
+          echo "${{ secrets.BLOATH_GITHUB_CLIENT_ID }}" | npx wrangler secret put GITHUB_CLIENT_ID
+          echo "${{ secrets.BLOATH_GITHUB_CLIENT_SECRET }}" | npx wrangler secret put GITHUB_CLIENT_SECRET
+          echo "${{ secrets.BLOATH_SESSION_SECRET }}" | npx wrangler secret put SESSION_SECRET
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}

@@ -85,22 +85,46 @@ async function generateState(frontendUrl: string, env: Env): Promise<string> {
   return `${payload}:${sigHex}`;
 }
 
-// 验证并解析 state
-function parseState(state: string): { frontendUrl: string; valid: boolean } {
+// 验证并解析 state（带 HMAC 签名校验）
+function parseState(state: string, env: Env): { frontendUrl: string; valid: boolean } {
   const parts = state.split(':');
   if (parts.length < 3) return { frontendUrl: '', valid: false };
-  // 最后部分是签名，倒数第二部分是随机值，前面是 frontendUrl
   const randomPart = parts[parts.length - 2];
   const sigHex = parts[parts.length - 1];
   const frontendUrl = parts.slice(0, -2).join(':');
-  
-  // 简单校验：frontendUrl 必须是合法 URL
+
+  // 校验 frontendUrl 格式
+  let parsedUrl: URL;
   try {
-    new URL(frontendUrl);
-    return { frontendUrl, valid: true };
+    parsedUrl = new URL(frontendUrl);
+    // 只允许 http/https 协议
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      return { frontendUrl: '', valid: false };
+    }
   } catch {
     return { frontendUrl: '', valid: false };
   }
+
+  // 验证 HMAC 签名
+  const encoder = new TextEncoder();
+  const payload = `${frontendUrl}:${randomPart}`;
+  const keyBytes = encoder.encode(env.FRONTEND_URL || '');
+  if (!keyBytes.byteLength) return { frontendUrl: '', valid: false };
+
+  const key = crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+  const sigBytes = hexToUint8Array(sigHex);
+  return crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(payload)).then(valid => ({
+    frontendUrl,
+    valid
+  })).catch(() => ({ frontendUrl: '', valid: false }));
+}
+
+function hexToUint8Array(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes;
 }
 
 export default {
@@ -143,8 +167,8 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Missing code or state' }, { status: 400 }), origin, env);
         }
 
-        // 验证并解析 state
-        const stateData = parseState(state);
+        // 验证并解析 state（带 HMAC 签名校验）
+        const stateData = parseState(state, env);
         if (!stateData.valid) {
           return addCorsHeaders(Response.json({ error: 'Invalid state' }, { status: 400 }), origin, env);
         }

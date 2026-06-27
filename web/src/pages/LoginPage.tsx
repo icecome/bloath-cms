@@ -3,13 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 function LoginPage() {
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  const state = params.get('state');
-  const { handleCallback, login } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
 
-  // 从 fragment 中解析 sessionKey（后端改为 JSON fragment 传输）
+  // 从 fragment 中解析 token（后端直接传递 GitHub access_token）
   React.useEffect(() => {
     try {
       const hash = window.location.hash.slice(1); // 去掉 #
@@ -18,7 +15,7 @@ function LoginPage() {
         if (parsed.token) {
           sessionStorage.setItem('token', parsed.token);
           // 清理 URL，移除 fragment
-          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          window.history.replaceState(null, '', window.location.pathname);
           navigate('/', { replace: true });
           return;
         }
@@ -26,16 +23,7 @@ function LoginPage() {
     } catch (e) {
       console.error('Failed to parse login fragment:', e);
     }
-
-    // 处理 GitHub OAuth code 回调（旧路径兼容）
-    if (code && state) {
-      handleCallback(code, state).then((data) => {
-        if (!data?.success) {
-          console.error('Callback failed:', data);
-        }
-      });
-    }
-  }, [code, state, navigate, handleCallback]);
+  }, [navigate]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#FAFAFA]">
