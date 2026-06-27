@@ -3,12 +3,6 @@ import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFil
 import type { ApiResponse, ContentEntry, Repo } from '../../shared/types';
 import type { Env } from './github';
 
-// Session 管理 - 使用内存 Map + TTL 清理（兼容本地开发和生产环境）
-const SESSION_TTL = 86400; // 24 小时
-
-// 模块级存储
-const sessions = new Map<string, { token: string; createdAt: number }>();
-
 // 路径参数安全校验
 function isValidParam(value: string | null, allowSlash = false): boolean {
   if (!value) return false;
@@ -17,60 +11,14 @@ function isValidParam(value: string | null, allowSlash = false): boolean {
     : /^[a-zA-Z0-9._\-]+$/.test(value);
 }
 
-// 认证中间件
-function authenticate(request: Request, env: Env): { token: string; sessionKey: string } | Response {
-  const sessionKey = request.headers.get('Authorization')?.replace('Bearer ', '');
-  if (!sessionKey) {
+// 认证中间件 - 直接使用 GitHub access_token
+function authenticate(request: Request, _env: Env): { token: string } | Response {
+  const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+  if (!token) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return { token: sessionKey, sessionKey };
+  return { token };
 }
-
-async function getAuthenticatedRequest(
-  request: Request,
-  sessionManager: SessionManager,
-  origin: string,
-  env: Env
-): Promise<{ token: string; request: Request } | Response> {
-  const parsed = authenticate(request, env);
-  if (parsed instanceof Response) return parsed;
-
-  const session = await sessionManager.getSession(parsed.sessionKey);
-  if (!session) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  return { token: session.token, request };
-}
-
-class SessionManager {
-  async setSession(token: string, sessionKey: string): Promise<void> {
-    sessions.set(sessionKey, {
-      token,
-      createdAt: Date.now()
-    });
-  }
-
-  async getSession(sessionKey: string): Promise<{ token: string; createdAt: number } | null> {
-    return sessions.get(sessionKey) || null;
-  }
-
-  async deleteSession(sessionKey: string): Promise<void> {
-    sessions.delete(sessionKey);
-  }
-
-  // 清理过期 session（在每次请求时调用）
-  cleanup(): void {
-    const now = Date.now();
-    for (const [key, value] of sessions) {
-      if (now - value.createdAt > SESSION_TTL * 1000) {
-        sessions.delete(key);
-      }
-    }
-  }
-}
-
-const sessionManager = new SessionManager();
 
 // CORS 头
 function corsHeaders(origin: string, _env: Env): Record<string, string> {
@@ -174,9 +122,6 @@ export default {
     }
 
     try {
-      // 清理过期 session
-      sessionManager.cleanup();
-
       // 非 API 请求：重定向到前端 Pages 站点
       if (!url.pathname.startsWith('/api/')) {
         return Response.redirect(frontendUrl + url.pathname + url.search, 301);
@@ -212,13 +157,9 @@ export default {
         const accessToken = await exchangeCode(code, clientSecret, clientId, workerUrl + '/api/auth/callback');
         const user = await getUserInfo(accessToken);
 
-        // 生成 session key（加密安全随机）
-        const sessionKey = crypto.randomUUID();
-        await sessionManager.setSession(accessToken, sessionKey);
-
-        // 重定向到前端，使用 fragment 传递 sessionKey（不发送到服务器，不被日志记录）
+        // 重定向到前端，直接传递 GitHub access_token（使用 fragment 不发送到服务器）
         const redirectUrl = `${storedFrontendUrl}/login#${encodeURIComponent(JSON.stringify({
-          token: sessionKey,
+          token: accessToken,
           login: user.login,
           avatar: user.avatar_url,
           name: user.name || ''
@@ -230,7 +171,7 @@ export default {
       }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const user = await getUserInfo(authResult.token);
@@ -245,7 +186,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos' && request.method === 'GET') {
-        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const repos = await getUserRepos(authResult.token);
@@ -256,7 +197,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/files' && request.method === 'GET') {
-        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const token = authResult.token;
 
@@ -281,7 +222,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'GET') {
-        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const token = authResult.token;
 
@@ -306,7 +247,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'PUT') {
-        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const token = authResult.token;
 
@@ -334,7 +275,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'DELETE') {
-        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const token = authResult.token;
 
@@ -357,7 +298,7 @@ export default {
 
       // 获取仓库分支列表
       if (url.pathname === '/api/repos/branches' || url.pathname.startsWith('/api/repos/') && url.pathname.endsWith('/branches')) {
-        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const token = authResult.token;
 
