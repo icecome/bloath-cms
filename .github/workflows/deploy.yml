@@ -39,7 +39,7 @@ jobs:
 
       - name: Build frontend
         env:
-          VITE_API_URL: https://bloath-cms-worker.workers.dev
+          VITE_API_URL: https://bloath-cms-worker.api.icecome.com
         run: |
           cd web
           npm run build
@@ -66,3 +66,4 @@ jobs:
           GITHUB_CLIENT_ID: ${{ secrets.BLOATH_GITHUB_CLIENT_ID }}
           GITHUB_CLIENT_SECRET: ${{ secrets.BLOATH_GITHUB_CLIENT_SECRET }}
           SESSION_SECRET: ${{ secrets.BLOATH_SESSION_SECRET }}
+          FRONTEND_URL: https://bloath-cms-web.pages.dev

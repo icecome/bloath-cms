@@ -144,8 +144,8 @@ export default {
     const workerUrl = url.origin.startsWith('http://localhost') 
       ? 'http://localhost:8787' 
       : url.origin;
-    // 优先使用请求头中的前端地址，其次使用配置，最后默认
-    const frontendUrl = request.headers.get('X-Frontend-Url') || 'http://localhost:3000';
+    // 优先使用请求头中的前端地址，其次使用环境变量配置，最后默认
+    const frontendUrl = request.headers.get('X-Frontend-Url') || env.FRONTEND_URL || 'http://localhost:5173';
 
     // 处理 CORS 预检请求
     if (request.method === 'OPTIONS') {
