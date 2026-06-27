@@ -167,10 +167,8 @@ export default {
       if (url.pathname === '/api/auth/login' && request.method === 'GET') {
         const state = generateState();
         storeState(state, frontendUrl);
-        // 调试：输出所有 env 键
-        console.log('DEBUG env keys:', Object.keys(env).sort().join(', '));
-        console.log('DEBUG GITHUB_CLIENT_ID:', env.GITHUB_CLIENT_ID);
-        const clientId = env.GITHUB_CLIENT_ID || 'MISSING_CONFIG';
+        // 临时硬编码测试
+        const clientId = env.GITHUB_CLIENT_ID || 'Ov23liPro0wJaWQzG1VX';
         const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=authorize`;
         return addCorsHeaders(Response.json({ authUrl }), origin, env);
       }
