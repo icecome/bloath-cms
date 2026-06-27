@@ -166,10 +166,10 @@ export default {
       // API 请求路由分发
       if (url.pathname === '/api/auth/login' && request.method === 'GET') {
         const state = generateState();
-        // 存储 state 到内存 Map
         storeState(state, frontendUrl);
-        // redirect_uri 指向 Worker，Worker 处理完回调后重定向到前端
-        console.log('DEBUG: GITHUB_CLIENT_ID =', env.GITHUB_CLIENT_ID ? 'SET' : 'UNDEFINED');
+        // 调试：输出所有 env 键
+        console.log('DEBUG env keys:', Object.keys(env).sort().join(', '));
+        console.log('DEBUG GITHUB_CLIENT_ID:', env.GITHUB_CLIENT_ID);
         const clientId = env.GITHUB_CLIENT_ID || 'MISSING_CONFIG';
         const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=authorize`;
         return addCorsHeaders(Response.json({ authUrl }), origin, env);
