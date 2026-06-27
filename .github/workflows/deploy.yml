@@ -44,19 +44,16 @@ jobs:
           cd web
           npm run build
 
-      - name: Deploy frontend to Cloudflare Pages
-        uses: cloudflare/cloudflare-pages@v1
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          projectName: bloath-cms
-          directory: web/dist
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: Deploy frontend to Pages
+        run: |
+          cd cloudflare-worker
+          npx wrangler pages deploy ../web/dist --project-name=bloath-cms
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
           workingDirectory: cloudflare-worker
         env:
           GITHUB_CLIENT_ID: ${{ secrets.BLOATH_GITHUB_CLIENT_ID }}
