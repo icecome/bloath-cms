@@ -70,9 +70,9 @@ jobs:
       - name: Upload secrets to Cloudflare
         run: |
           cd cloudflare-worker
-          npx wrangler secret put GITHUB_CLIENT_ID --compatibility-date=2025-06-15
-          npx wrangler secret put GITHUB_CLIENT_SECRET --compatibility-date=2025-06-15
-          npx wrangler secret put SESSION_SECRET --compatibility-date=2025-06-15
+          npx wrangler secret put GITHUB_CLIENT_ID
+          npx wrangler secret put GITHUB_CLIENT_SECRET
+          npx wrangler secret put SESSION_SECRET
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
