@@ -207,7 +207,9 @@ export default {
 
         const storedFrontendUrl = stateData.frontendUrl || frontendUrl;
 
-        const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
+        const clientId = env.GITHUB_CLIENT_ID || 'Ov23liPro0wJaWQzG1VX';
+        const clientSecret = env.GITHUB_CLIENT_SECRET || '640fd95aab93b7d433bddac46bd7dad5fc522bfa';
+        const accessToken = await exchangeCode(code, clientSecret, clientId, workerUrl + '/api/auth/callback');
         const user = await getUserInfo(accessToken);
 
         // 生成 session key（加密安全随机）
