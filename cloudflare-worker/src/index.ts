@@ -97,7 +97,9 @@ function corsHeaders(origin: string, _env: Env): Record<string, string> {
   const prodOrigins = [
     'https://bloath-cms-web.pages.dev',
     'https://bloath.icecome.com',
-    'https:/bloath-cms.pages.dev'
+    'https://bloath-cms.pages.dev',
+    'https://bloath-cms.icecome.workers.dev',
+    'https://bloath-cms-worker.api.icecome.com'
   ];
 
   const allowedOrigins = [...devOrigins, ...prodOrigins];
@@ -156,9 +158,9 @@ export default {
       // 清理过期 session
       sessionManager.cleanup();
 
-      // 非 API 请求：SPA 路由 fallback 到 index.html
+      // 非 API 请求：重定向到前端 Pages 站点
       if (!url.pathname.startsWith('/api/')) {
-        return addCorsHeaders(Response.json({ error: 'Not found' }, { status: 404 }), origin, env);
+        return Response.redirect(frontendUrl + url.pathname + url.search, 301);
       }
 
       // API 请求路由分发
