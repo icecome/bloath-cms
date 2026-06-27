@@ -169,7 +169,9 @@ export default {
         // 存储 state 到内存 Map
         storeState(state, frontendUrl);
         // redirect_uri 指向 Worker，Worker 处理完回调后重定向到前端
-        const authUrl = `https://github.com/login/oauth/authorize?client_id=${env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=authorize`;
+        console.log('DEBUG: GITHUB_CLIENT_ID =', env.GITHUB_CLIENT_ID ? 'SET' : 'UNDEFINED');
+        const clientId = env.GITHUB_CLIENT_ID || 'MISSING_CONFIG';
+        const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=authorize`;
         return addCorsHeaders(Response.json({ authUrl }), origin, env);
       }
 
