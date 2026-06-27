@@ -67,3 +67,10 @@ jobs:
           GITHUB_CLIENT_SECRET: ${{ secrets.BLOATH_GITHUB_CLIENT_SECRET }}
           SESSION_SECRET: ${{ secrets.BLOATH_SESSION_SECRET }}
           FRONTEND_URL: https://bloath.icecome.com
+
+      - name: Set Wrangler Secrets
+        working-directory: cloudflare-worker
+        run: |
+          npx wrangler secret put GITHUB_CLIENT_ID <<< "${{ secrets.BLOATH_GITHUB_CLIENT_ID }}"
+          npx wrangler secret put GITHUB_CLIENT_SECRET <<< "${{ secrets.BLOATH_GITHUB_CLIENT_SECRET }}"
+          npx wrangler secret put SESSION_SECRET <<< "${{ secrets.BLOATH_SESSION_SECRET }}"
