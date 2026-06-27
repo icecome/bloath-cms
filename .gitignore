@@ -2,13 +2,19 @@
 node_modules/
 cloudflare-worker/node_modules/
 web/node_modules/
-.trae/
-.history/
+
+# Cloudflare Wrangler
+cloudflare-worker/.wrangler/
+cloudflare-worker/wrangler.toml
 
 # Build output
 dist/
 web/dist/
 .build/
+
+# Cloudflare Worker build temp
+cloudflare-worker/.wrangler/
+cloudflare-worker/tmp/
 
 # Environment
 .env
@@ -16,16 +22,22 @@ web/dist/
 .env.production
 .dev.vars
 
+# IDE
+.vscode/
+.idea/
+.trae/
+.history/
+
 # OS
 .DS_Store
 Thumbs.db
 
-# IDE
-.vscode/
-.idea/
-
 # Logs
 *.log
+localhost-*.log
 
-# Cloudflare
-wrangler.toml
+# Test coverage
+coverage/
+
+# Cache
+.cloudflared/
