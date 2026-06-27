@@ -86,7 +86,7 @@ async function generateState(frontendUrl: string, env: Env): Promise<string> {
 }
 
 // 验证并解析 state（带 HMAC 签名校验）
-function parseState(state: string, env: Env): { frontendUrl: string; valid: boolean } {
+async function parseState(state: string, env: Env): Promise<{ frontendUrl: string; valid: boolean }> {
   const parts = state.split(':');
   if (parts.length < 3) return { frontendUrl: '', valid: false };
   const randomPart = parts[parts.length - 2];
@@ -94,9 +94,8 @@ function parseState(state: string, env: Env): { frontendUrl: string; valid: bool
   const frontendUrl = parts.slice(0, -2).join(':');
 
   // 校验 frontendUrl 格式
-  let parsedUrl: URL;
   try {
-    parsedUrl = new URL(frontendUrl);
+    const parsedUrl = new URL(frontendUrl);
     // 只允许 http/https 协议
     if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
       return { frontendUrl: '', valid: false };
@@ -111,12 +110,14 @@ function parseState(state: string, env: Env): { frontendUrl: string; valid: bool
   const keyBytes = encoder.encode(env.FRONTEND_URL || '');
   if (!keyBytes.byteLength) return { frontendUrl: '', valid: false };
 
-  const key = crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
-  const sigBytes = hexToUint8Array(sigHex);
-  return crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(payload)).then(valid => ({
-    frontendUrl,
-    valid
-  })).catch(() => ({ frontendUrl: '', valid: false }));
+  try {
+    const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+    const sigBytes = hexToUint8Array(sigHex);
+    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(payload));
+    return { frontendUrl, valid };
+  } catch {
+    return { frontendUrl: '', valid: false };
+  }
 }
 
 function hexToUint8Array(hex: string): Uint8Array {
@@ -168,7 +169,7 @@ export default {
         }
 
         // 验证并解析 state（带 HMAC 签名校验）
-        const stateData = parseState(state, env);
+        const stateData = await parseState(state, env);
         if (!stateData.valid) {
           return addCorsHeaders(Response.json({ error: 'Invalid state' }, { status: 400 }), origin, env);
         }
