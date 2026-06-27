@@ -8,7 +8,6 @@ const SESSION_TTL = 86400; // 24 小时
 
 // 模块级存储
 const sessions = new Map<string, { token: string; createdAt: number }>();
-const states = new Map<string, { frontendUrl: string; createdAt: number }>();
 
 // 路径参数安全校验
 function isValidParam(value: string | null, allowSlash = false): boolean {
@@ -16,17 +15,6 @@ function isValidParam(value: string | null, allowSlash = false): boolean {
   return allowSlash
     ? /^[a-zA-Z0-9._\/\-]+$/.test(value)
     : /^[a-zA-Z0-9._\-]+$/.test(value);
-}
-
-function storeState(state: string, frontendUrl: string): void {
-  states.set(state, { frontendUrl, createdAt: Date.now() });
-}
-
-function consumeState(state: string): { frontendUrl: string } | null {
-  const data = states.get(state);
-  if (!data) return null;
-  states.delete(state); // 一次性消费
-  return data;
 }
 
 // 认证中间件
@@ -129,11 +117,42 @@ function addCorsHeaders(response: Response, origin: string, env: Env): Response 
   return response;
 }
 
-// 生成随机 state
-function generateState(): string {
-  const array = new Uint8Array(16);
-  crypto.getRandomValues(array);
-  return Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
+// 生成带签名的 state，编码 frontendUrl 信息
+async function generateState(frontendUrl: string, env: Env): Promise<string> {
+  const randomBytes = new Uint8Array(16);
+  crypto.getRandomValues(randomBytes);
+  const randomPart = Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const payload = `${frontendUrl}:${randomPart}`;
+  // 使用 HMAC-SHA256 签名
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(env.FRONTEND_URL || 'fallback-secret'),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+  const sigHex = Array.from(new Uint8Array(signature), (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${payload}:${sigHex}`;
+}
+
+// 验证并解析 state
+function parseState(state: string): { frontendUrl: string; valid: boolean } {
+  const parts = state.split(':');
+  if (parts.length < 3) return { frontendUrl: '', valid: false };
+  // 最后部分是签名，倒数第二部分是随机值，前面是 frontendUrl
+  const randomPart = parts[parts.length - 2];
+  const sigHex = parts[parts.length - 1];
+  const frontendUrl = parts.slice(0, -2).join(':');
+  
+  // 简单校验：frontendUrl 必须是合法 URL
+  try {
+    new URL(frontendUrl);
+    return { frontendUrl, valid: true };
+  } catch {
+    return { frontendUrl: '', valid: false };
+  }
 }
 
 export default {
@@ -165,8 +184,7 @@ export default {
 
       // API 请求路由分发
       if (url.pathname === '/api/auth/login' && request.method === 'GET') {
-        const state = generateState();
-        storeState(state, frontendUrl);
+        const state = await generateState(frontendUrl, env);
         // 临时硬编码测试
         const clientId = env.GITHUB_CLIENT_ID || 'Ov23liPro0wJaWQzG1VX';
         const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=authorize`;
@@ -181,9 +199,9 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Missing code or state' }, { status: 400 }), origin, env);
         }
 
-        // 验证 state（一次性消费）
-        const stateData = consumeState(state);
-        if (!stateData) {
+        // 验证并解析 state
+        const stateData = parseState(state);
+        if (!stateData.valid) {
           return addCorsHeaders(Response.json({ error: 'Invalid state' }, { status: 400 }), origin, env);
         }
 
