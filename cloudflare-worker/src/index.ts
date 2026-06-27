@@ -1,6 +1,6 @@
 // Cloudflare Worker 入口 - 路由分发和 CORS
 import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches } from './github';
-import type { ApiResponse, ContentEntry } from '../shared/types';
+import type { ApiResponse, ContentEntry, Repo } from '../../shared/types';
 import type { Env } from './github';
 
 // Session 管理 - 使用内存 Map + TTL 清理（兼容本地开发和生产环境）
@@ -9,6 +9,14 @@ const SESSION_TTL = 86400; // 24 小时
 // 模块级存储
 const sessions = new Map<string, { token: string; createdAt: number }>();
 const states = new Map<string, { frontendUrl: string; createdAt: number }>();
+
+// 路径参数安全校验
+function isValidParam(value: string | null, allowSlash = false): boolean {
+  if (!value) return false;
+  return allowSlash
+    ? /^[a-zA-Z0-9._\/\-]+$/.test(value)
+    : /^[a-zA-Z0-9._\-]+$/.test(value);
+}
 
 function storeState(state: string, frontendUrl: string): void {
   states.set(state, { frontendUrl, createdAt: Date.now() });
@@ -19,6 +27,32 @@ function consumeState(state: string): { frontendUrl: string } | null {
   if (!data) return null;
   states.delete(state); // 一次性消费
   return data;
+}
+
+// 认证中间件
+function authenticate(request: Request, env: Env): { token: string; sessionKey: string } | Response {
+  const sessionKey = request.headers.get('Authorization')?.replace('Bearer ', '');
+  if (!sessionKey) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  return { token: sessionKey, sessionKey };
+}
+
+async function getAuthenticatedRequest(
+  request: Request,
+  sessionManager: SessionManager,
+  origin: string,
+  env: Env
+): Promise<{ token: string; request: Request } | Response> {
+  const parsed = authenticate(request, env);
+  if (parsed instanceof Response) return parsed;
+
+  const session = await sessionManager.getSession(parsed.sessionKey);
+  if (!session) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  return { token: session.token, request };
 }
 
 class SessionManager {
@@ -60,15 +94,21 @@ function corsHeaders(origin: string, env: Env): Record<string, string> {
     'http://localhost:5173'
   ];
 
-  // 如果请求的 Origin 在允许列表中，返回该 Origin；否则返回 *
+  // 严格校验 Origin，不在白名单则返回 *（浏览器将拒绝带凭证的请求）
   const allowedOrigin = allowedOrigins.includes(origin) ? origin : '*';
 
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
+  const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Frontend-Url',
     'Access-Control-Max-Age': '86400'
   };
+
+  // 只有当 Origin 在白名单中时才设置具体 Origin 头
+  if (allowedOrigin !== '*') {
+    headers['Access-Control-Allow-Origin'] = allowedOrigin;
+  }
+
+  return headers;
 }
 
 // 添加 CORS 头到响应
@@ -153,8 +193,8 @@ export default {
         const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
         const user = await getUserInfo(accessToken);
 
-        // 生成 session key
-        const sessionKey = Math.random().toString(36).substring(2);
+        // 生成 session key（加密安全随机）
+        const sessionKey = crypto.randomUUID();
         await sessionManager.setSession(accessToken, sessionKey);
 
         // 重定向到前端，使用 fragment 传递 sessionKey（不发送到服务器，不被日志记录）
@@ -171,15 +211,10 @@ export default {
       }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        const sessionKey = request.headers.get('Authorization')?.replace('Bearer ', '');
-        if (!sessionKey) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const session = await sessionManager.getSession(sessionKey);
-        if (!session) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const user = await getUserInfo(session.token);
+        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+
+        const user = await getUserInfo(authResult.token);
         return addCorsHeaders(Response.json({
           success: true,
           user: {
@@ -191,15 +226,10 @@ export default {
       }
 
       if (url.pathname === '/api/repos' && request.method === 'GET') {
-        const sessionKey = request.headers.get('Authorization')?.replace('Bearer ', '');
-        if (!sessionKey) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const session = await sessionManager.getSession(sessionKey);
-        if (!session) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const repos = await getUserRepos(session.token);
+        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+
+        const repos = await getUserRepos(authResult.token);
         return addCorsHeaders(Response.json({
           success: true,
           data: repos.filter((repo) => repo.name !== '.github')
@@ -207,15 +237,9 @@ export default {
       }
 
       if (url.pathname === '/api/repos/files' && request.method === 'GET') {
-        const sessionKey = request.headers.get('Authorization')?.replace('Bearer ', '');
-        if (!sessionKey) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const session = await sessionManager.getSession(sessionKey);
-        if (!session) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const token = session.token;
+        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+        const token = authResult.token;
 
         const params = new URL(request.url).searchParams;
         const owner = params.get('owner');
@@ -223,55 +247,67 @@ export default {
         const path = params.get('path') || '';
         const branch = params.get('branch') || 'main';
 
-        if (!owner || !repo) {
-          return addCorsHeaders(Response.json({ error: 'Missing owner or repo' }, { status: 400 }), origin, env);
+        if (!isValidParam(owner) || !isValidParam(repo)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid owner or repo' }, { status: 400 }), origin, env);
+        }
+        if (path && !isValidParam(path, true)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid path' }, { status: 400 }), origin, env);
+        }
+        if (!isValidParam(branch)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
-        const files = await listDir(token, owner, repo, path, branch);
+        const files = await listDir(token, owner!, repo!, path, branch);
         return addCorsHeaders(Response.json({ success: true, data: files }), origin, env);
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'GET') {
-        const sessionKey = request.headers.get('Authorization')?.replace('Bearer ', '');
-        if (!sessionKey) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const session = await sessionManager.getSession(sessionKey);
-        if (!session) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const token = session.token;
+        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+        const token = authResult.token;
 
         const params = new URL(request.url).searchParams;
         const owner = params.get('owner');
         const repo = params.get('repo');
-        const path = params.get('path');
+        const filePath = params.get('path');
         const branch = params.get('branch') || 'main';
 
-        if (!owner || !repo || !path) {
+        if (!isValidParam(owner) || !isValidParam(repo) || !filePath) {
           return addCorsHeaders(Response.json({ error: 'Missing required params' }, { status: 400 }), origin, env);
         }
+        if (!isValidParam(filePath, true)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid path' }, { status: 400 }), origin, env);
+        }
+        if (!isValidParam(branch)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
+        }
 
-        const file = await readFile(token, owner, repo, path, branch);
+        const file = await readFile(token, owner!, repo!, filePath, branch);
         return addCorsHeaders(Response.json({ success: true, data: file }), origin, env);
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'PUT') {
-        const sessionKey = request.headers.get('Authorization')?.replace('Bearer ', '');
-        if (!sessionKey) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const session = await sessionManager.getSession(sessionKey);
-        if (!session) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const token = session.token;
+        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+        const token = authResult.token;
 
-        const data = await request.json();
-        const { owner, repo, path: filePath, content, message, sha, branch = 'main', author } = data;
+        const data = await request.json() as Record<string, any>;
+        const { owner, repo, path: filePath, content, message, sha, branch = 'main', userName } = data;
 
-        if (!owner || !repo || !filePath || !content) {
+        if (!isValidParam(owner) || !isValidParam(repo) || !filePath || !content) {
           return addCorsHeaders(Response.json({ error: 'Missing required fields' }, { status: 400 }), origin, env);
+        }
+        if (!isValidParam(filePath, true)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid path' }, { status: 400 }), origin, env);
+        }
+        if (!isValidParam(branch)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
+        }
+
+        // 构建 author 信息：用户名 + 来自 BloathCMS
+        let author: { name: string; email: string } | undefined;
+        if (userName) {
+          author = { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
         }
 
         await writeFile(token, owner, repo, filePath, content, message, sha, branch, author);
@@ -279,38 +315,32 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'DELETE') {
-        const sessionKey = request.headers.get('Authorization')?.replace('Bearer ', '');
-        if (!sessionKey) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const session = await sessionManager.getSession(sessionKey);
-        if (!session) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const token = session.token;
+        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+        const token = authResult.token;
 
-        const data = await request.json();
+        const data = await request.json() as Record<string, any>;
         const { owner, repo, path: filePath, sha, message, branch = 'main' } = data;
 
-        if (!owner || !repo || !filePath || !sha) {
+        if (!isValidParam(owner) || !isValidParam(repo) || !filePath || !sha) {
           return addCorsHeaders(Response.json({ error: 'Missing required fields' }, { status: 400 }), origin, env);
+        }
+        if (!isValidParam(filePath, true)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid path' }, { status: 400 }), origin, env);
+        }
+        if (!isValidParam(branch)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
         await deleteFile(token, owner, repo, filePath, sha, message, branch);
         return addCorsHeaders(Response.json({ success: true }), origin, env);
       }
 
-      // 获取仓库分支列表 - 支持 /api/repos/branches 和 /api/repos/:owner/:repo/branches
+      // 获取仓库分支列表
       if (url.pathname === '/api/repos/branches' || url.pathname.startsWith('/api/repos/') && url.pathname.endsWith('/branches')) {
-        const sessionKey = request.headers.get('Authorization')?.replace('Bearer ', '');
-        if (!sessionKey) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const session = await sessionManager.getSession(sessionKey);
-        if (!session) {
-          return addCorsHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }), origin, env);
-        }
-        const token = session.token;
+        const authResult = await getAuthenticatedRequest(request, sessionManager, origin, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+        const token = authResult.token;
 
         let owner = url.searchParams.get('owner');
         let repo = url.searchParams.get('repo');
@@ -322,11 +352,11 @@ export default {
           repo = repo || parts[1] || null;
         }
 
-        if (!owner || !repo) {
+        if (!isValidParam(owner) || !isValidParam(repo)) {
           return addCorsHeaders(Response.json({ error: 'Missing owner or repo' }, { status: 400 }), origin, env);
         }
 
-        const branches = await getRepoBranches(token, owner, repo);
+        const branches = await getRepoBranches(token, owner!, repo!);
         return addCorsHeaders(Response.json({ success: true, data: branches }), origin, env);
       }
 
@@ -334,8 +364,9 @@ export default {
       return addCorsHeaders(Response.json({ error: 'Not found' }, { status: 404 }), origin, env);
     } catch (error) {
       console.error('Worker error:', error);
+      // 生产环境不返回详细错误信息
       return addCorsHeaders(Response.json(
-        { success: false, error: error instanceof Error ? error.message : 'Internal server error' },
+        { success: false, error: 'Internal server error' },
         { status: 500 }
       ), origin, env);
     }

@@ -70,7 +70,7 @@ export default function EditorPage() {
   const match = useMatch('/editor/*');
   const slug = match?.params['*'] || '';
   const [searchParams] = useSearchParams();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
@@ -205,7 +205,8 @@ export default function EditorPage() {
         content: fullContent,
         message: `[skip ci] 草稿: ${targetSlug}`,
         branch,
-        sha: currentFileSha || undefined
+        sha: currentFileSha || undefined,
+        userName: user?.login
       });
 
       if (isNew) {
@@ -244,7 +245,8 @@ export default function EditorPage() {
         path: filePath,
         content: fullContent,
         message: `发布: ${targetSlug}`,
-        branch
+        branch,
+        userName: user?.login
       });
 
       // 真正删除草稿文件

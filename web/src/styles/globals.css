@@ -100,7 +100,7 @@
     @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium 
            text-white rounded-sm
            transition-colors duration-150
-           bg-[#EF4444] hover:bg-red-600;
+           bg-destructive hover:bg-destructive/90;
   }
 
   /* --- 输入框系统 --- */
@@ -118,21 +118,21 @@
   /* 表格行（极细边框 + 悬停高亮） */
   .table-row-flat {
     @apply flex items-center px-4 py-3 cursor-pointer
-           border-b border-gray-100
+           border-b border-border
            transition-colors duration-150;
   }
   .table-row-flat:hover {
-    background: #F9FAFB;
+    @apply bg-secondary;
   }
 
   /* 聚光灯效果 - 整行高亮（扁平化） */
   .spotlight-row {
     @apply flex items-center px-0 py-3 cursor-pointer
-           border-b border-gray-100
+           border-b border-border
            transition-colors duration-150;
   }
   .spotlight-row:hover {
-    background: #F9FAFB;
+    @apply bg-secondary;
   }
 
   /* --- 导航项 --- */
@@ -140,14 +140,14 @@
   .nav-item {
     @apply flex items-center gap-2 px-3 py-2 text-sm 
            transition-colors duration-150 rounded-sm;
-    color: #374151;
+    @apply text-muted-foreground;
     background: transparent;
   }
   .nav-item:hover {
-    background: #F3F4F6;
+    @apply bg-accent;
   }
   .nav-item-active {
     @apply font-medium text-foreground;
-    background: #F9FAFB;
+    @apply bg-secondary;
   }
 }

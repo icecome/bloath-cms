@@ -19,16 +19,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
 
-      - name: Install dependencies
+      - name: Install worker dependencies
         run: |
           cd cloudflare-worker
           npm ci
 
-      - name: Build frontend
+      - name: Install web dependencies
         run: |
           cd web
           npm ci
+
+      - name: Type check web
+        run: |
+          cd web
+          npx tsc --noEmit
+
+      - name: Build frontend
+        run: |
+          mkdir -p ../cloudflare-worker/public
+          cd web
           npm run build
           cp -r dist/* ../cloudflare-worker/public/
 
@@ -38,6 +50,6 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           workingDirectory: cloudflare-worker
         env:
-          GITHUB_CLIENT_ID: ${{ secrets.VITE_GITHUB_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.VITE_GITHUB_CLIENT_SECRET }}
-          SESSION_SECRET: ${{ secrets.VITE_SESSION_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.BLOATH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.BLOATH_GITHUB_CLIENT_SECRET }}
+          SESSION_SECRET: ${{ secrets.BLOATH_SESSION_SECRET }}

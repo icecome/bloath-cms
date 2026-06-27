@@ -23,6 +23,7 @@ cloudflare-worker/tmp/
 .env
 .env.local
 .env.production
+.env.development
 .dev.vars
 
 # IDE

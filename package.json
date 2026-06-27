@@ -1,0 +1,19 @@
+{
+  "name": "bloath-cms",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:web": "cd web && npm run dev",
+    "dev:worker": "cd cloudflare-worker && npm run dev",
+    "dev:all": "concurrently \"npm run dev:web\" \"npm run dev:worker\"",
+    "build:web": "cd web && npm run build",
+    "build:worker": "cd cloudflare-worker && npm run build-assets",
+    "deploy": "cd cloudflare-worker && npm run deploy",
+    "typecheck:web": "cd web && npm run typecheck",
+    "typecheck:worker": "cd cloudflare-worker && npm run typecheck",
+    "typecheck": "npm run typecheck:web && npm run typecheck:worker"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useAuth } from '../hooks/useAuth';
 
 interface RepoState {
   owner: string;
@@ -28,6 +29,7 @@ function loadSavedRepo(): RepoState | null {
 }
 
 export function RepoProvider({ children }: { children: ReactNode }) {
+  const { token } = useAuth();
   const [selectedRepo, setSelectedRepoState] = useState<RepoState | null>(loadSavedRepo);
   const [branches, setBranches] = useState<string[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
@@ -45,7 +47,7 @@ export function RepoProvider({ children }: { children: ReactNode }) {
     if (!token) return;
     setLoadingBranches(true);
     try {
-      const API_BASE = (import.meta as any).env?.VITE_API_URL || '';
+      const API_BASE = import.meta.env.VITE_API_URL || '';
       const res = await fetch(
         `${API_BASE}/api/repos/${owner}/${repo}/branches`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -63,12 +65,12 @@ export function RepoProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (selectedRepo) {
-      loadBranches(selectedRepo.owner, selectedRepo.repo, '');
-    } else {
+    if (selectedRepo && token) {
+      loadBranches(selectedRepo.owner, selectedRepo.repo, token);
+    } else if (selectedRepo) {
       setBranches([]);
     }
-  }, [selectedRepo, loadBranches]);
+  }, [selectedRepo, token, loadBranches]);
 
   return (
     <RepoContext.Provider value={{ selectedRepo, setSelectedRepo, branches, loadingBranches, loadBranches }}>

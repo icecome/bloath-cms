@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "cd ../web && npm run build && cp -r ../web/dist/* ./public/ && wrangler deploy",
-    "build-assets": "cd ../web && npm run build && cp -r ../web/dist/* ./public/"
+    "deploy": "npm run build-assets && wrangler deploy",
+    "build-assets": "cd ../web && npm run build && cp -r dist/* ./public/",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {},
   "devDependencies": {

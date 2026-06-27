@@ -17,7 +17,7 @@ export interface RepoInfo {
   branch?: string;
 }
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || '';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export async function getRepos(token: string) {
   const res = await fetch(`${API_BASE}/api/repos`, {
@@ -69,7 +69,7 @@ export async function readFile(token: string, params: RepoInfo & { path: string 
 
 export async function writeFile(
   token: string,
-  params: RepoInfo & { path: string; content: string; message?: string; branch?: string; sha?: string }
+  params: RepoInfo & { path: string; content: string; message?: string; branch?: string; sha?: string; userName?: string }
 ) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const rawMessage = params.message;
@@ -89,7 +89,7 @@ export async function writeFile(
       message,
       branch: params.branch || 'main',
       sha: params.sha,
-      author: { name: 'Bloath', email: 'cms@bloath.app' }
+      userName: params.userName
     })
   });
   const data = await res.json();

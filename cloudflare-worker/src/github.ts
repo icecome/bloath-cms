@@ -5,6 +5,8 @@ export interface Env {
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
   SESSION_SECRET: string;
+  CF_WORKER_URL: string;
+  FRONTEND_URL: string;
   ASSETS: Fetcher;
 }
 
@@ -35,12 +37,13 @@ export async function exchangeCode(code: string, clientSecret: string, clientId:
     })
   });
 
-  const data = await response.json();
+  const data = await response.json() as { message?: string };
   if (!response.ok) {
     throw new Error(data.message || 'Failed to exchange code for token');
   }
 
-  return data.access_token;
+  const tokenData = data as { access_token?: string };
+  return tokenData.access_token!;
 }
 
 // 获取用户信息
@@ -57,7 +60,7 @@ export async function getUserInfo(token: string): Promise<UserInfo> {
     throw new Error(`Failed to fetch user info: ${response.status} - ${error}`);
   }
 
-  return response.json();
+  return response.json() as Promise<UserInfo>;
 }
 
 // 获取用户邮箱
@@ -73,7 +76,7 @@ export async function getUserEmail(token: string): Promise<string | null> {
     return null;
   }
 
-  const emails = await response.json();
+  const emails = await response.json() as any[];
   const primaryEmail = emails.find((e: any) => e.primary === true);
   return primaryEmail?.email || null;
 }
@@ -91,7 +94,7 @@ export async function getUserRepos(token: string): Promise<Repo[]> {
     throw new Error('Failed to fetch repositories');
   }
 
-  return response.json();
+  return response.json() as Promise<Repo[]>;
 }
 
 // 读取文件内容
@@ -116,7 +119,7 @@ export async function readFile(
     throw new Error(`Failed to read file: ${response.statusText}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as { content: string; sha: string };
   // Cloudflare Workers don't have Buffer, use atob instead
   const binaryString = atob(data.content);
   const bytes = new Uint8Array(binaryString.length);
@@ -172,7 +175,7 @@ export async function writeFile(
   );
 
   if (!response.ok) {
-    const error = await response.json();
+    const error = await response.json() as { message?: string };
     throw new Error(error.message || 'Failed to write file');
   }
 }
@@ -206,7 +209,7 @@ export async function deleteFile(
   );
 
   if (!response.ok) {
-    const error = await response.json();
+    const error = await response.json() as { message?: string };
     throw new Error(error.message || 'Failed to delete file');
   }
 }
@@ -231,16 +234,12 @@ export async function listDir(
     }
   });
 
-  console.log('[listDir] Request URL:', apiUrl);
-
   if (!response.ok) {
     const errorBody = await response.text();
-    console.log('[listDir] Error body:', errorBody);
     throw new Error(`${response.status}: ${response.statusText} - ${errorBody}`);
   }
 
-  const data = await response.json();
-  console.log('[listDir] Response data count:', data.length, 'Items:', data.map((i: any) => i.name).join(', '));
+  const data = await response.json() as any[];
   return data.map((item: any) => ({
     name: item.name,
     path: item.path,
@@ -271,7 +270,7 @@ export async function getRepoBranches(
     return ['main'];
   }
 
-  const data = await response.json();
+  const data = await response.json() as any[];
   return data.map((branch: any) => branch.name);
 }
 

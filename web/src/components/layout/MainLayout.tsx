@@ -2,7 +2,8 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useRepo } from '../../contexts/RepoContext';
 import { getRepos } from '../../lib/api';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import type { Repo } from '../../../../shared/types';
 import {
   Home,
   FilePlus2,
@@ -22,7 +23,7 @@ export default function MainLayout() {
   const { selectedRepo, setSelectedRepo, branches, loadBranches } = useRepo();
   const location = useLocation();
   const navigate = useNavigate();
-  const [repos, setRepos] = useState<any[]>([]);
+  const [repos, setRepos] = useState<Repo[]>([]);
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
@@ -40,12 +41,12 @@ export default function MainLayout() {
     }
   }, [selectedRepo, token, loadBranches]);
 
-  const handleRepoChange = (full_name: string) => {
+  const handleRepoChange = useCallback((full_name: string) => {
     const [owner, repo] = full_name.split('/');
-    const repoInfo = repos.find((r: any) => r.full_name === full_name);
+    const repoInfo = repos.find((r) => r.full_name === full_name);
     setSelectedRepo({ owner, repo, branch: repoInfo?.default_branch || 'main' });
     setShowRepoDropdown(false);
-  };
+  }, [repos, setSelectedRepo]);
 
   const handleBranchChange = (branch: string) => {
     if (!selectedRepo) return;
