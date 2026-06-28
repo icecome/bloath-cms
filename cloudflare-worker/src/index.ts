@@ -11,38 +11,55 @@ function isValidParam(value: string | null, allowSlash = false): boolean {
     : /^[a-zA-Z0-9._\-]+$/.test(value);
 }
 
-// 认证中间件 - 直接使用 GitHub access_token
-// Session 存储: sessionToken -> { githubToken, expiresAt }
-const sessions = new Map<string, { githubToken: string; expiresAt: number }>();
-const SESSION_TTL_MS = 3600000; // 1 小时
-
-function generateSessionToken(githubToken: string, env: Env): string {
-  const randomBytes = crypto.getRandomValues(new Uint8Array(32));
-  const token = Array.from(randomBytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  sessions.set(token, { githubToken, expiresAt: Date.now() + SESSION_TTL_MS });
-  return token;
+// JWT 工具函数（使用 Web Crypto API）
+async function jwtSign(payload: Record<string, any>, secret: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const base64url = (data: string) => btoa(data).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  
+  const headerJson = JSON.stringify(header);
+  const payloadJson = JSON.stringify(payload);
+  const signingInput = `${base64url(headerJson)}.${base64url(payloadJson)}`;
+  
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(signingInput));
+  return `${signingInput}.${base64url(new TextDecoder().decode(signature))}`;
 }
 
-function validateSession(token: string): { githubToken: string } | null {
-  const entry = sessions.get(token);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    sessions.delete(token);
+function base64urlDecode(str: string): string {
+  let s = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  return decodeURIComponent(Array.from(atob(s), c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+}
+
+async function jwtVerify(token: string, secret: string): Promise<Record<string, any> | null> {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  
+  try {
+    const payload = JSON.parse(base64urlDecode(parts[1]));
+    // 检查过期时间
+    if (payload.exp && Date.now() > payload.exp) return null;
+    return payload;
+  } catch {
     return null;
   }
-  return { githubToken: entry.githubToken };
 }
 
-function authenticate(request: Request, _env: Env): { githubToken: string } | Response {
+function authenticate(request: Request, env: Env): Promise<{ githubToken: string; login: string } | Response> {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!token) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    return Promise.resolve(Response.json({ error: 'Unauthorized' }, { status: 401 }));
   }
-  const session = validateSession(token);
-  if (!session) {
-    return Response.json({ error: 'Session expired' }, { status: 401 });
-  }
-  return session;
+  
+  return jwtVerify(token, env.SESSION_SECRET).then((payload) => {
+    if (!payload) {
+      return Response.json({ error: 'Invalid or expired token' }, { status: 401 });
+    }
+    return { githubToken: payload.githubToken, login: payload.login };
+  });
 }
 
 // CORS 头
@@ -209,8 +226,12 @@ export default {
         const githubAccessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
         const user = await getUserInfo(githubAccessToken);
 
-        // 生成短效 session token（1 小时过期），不再传递 GitHub access_token
-        const sessionToken = generateSessionToken(githubAccessToken, env);
+        // 生成 JWT session token（1 小时过期），不再传递 GitHub access_token
+        const sessionToken = await jwtSign({
+          githubToken: githubAccessToken,
+          login: user.login,
+          exp: Date.now() + 3600000
+        }, env.SESSION_SECRET);
 
         // 重定向到前端，传递 session token（使用 fragment 不发送到服务器）
         const redirectUrl = `${storedFrontendUrl}/login#${encodeURIComponent(JSON.stringify({
