@@ -188,8 +188,12 @@ export default {
 
     // 处理 CORS 预检请求
     if (request.method === 'OPTIONS') {
+      const headers = corsHeaders(origin, env);
+      if (!headers) {
+        return new Response(null, { status: 403 });
+      }
       return new Response(null, {
-        headers: new Headers(corsHeaders(origin, env))
+        headers: new Headers(headers)
       });
     }
 
