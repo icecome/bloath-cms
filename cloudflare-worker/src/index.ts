@@ -73,9 +73,11 @@ async function generateState(frontendUrl: string, env: Env): Promise<string> {
   const payload = `${frontendUrl}:${randomPart}`;
   // 使用 HMAC-SHA256 签名
   const encoder = new TextEncoder();
+  const secretKey = env.FRONTEND_URL || 'fallback-secret';
+  console.log(`[STATE] generate: frontendUrl=${frontendUrl}, secretKey=${secretKey.substring(0, 8)}..., payloadPrefix=${payload.substring(0, 40)}`);
   const key = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(env.FRONTEND_URL || 'fallback-secret'),
+    encoder.encode(secretKey),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
@@ -94,8 +96,9 @@ async function parseState(state: string, env: Env): Promise<{ frontendUrl: strin
   const frontendUrl = parts.slice(0, -2).join(':');
 
   // 校验 frontendUrl 格式
+  let parsedUrl: URL;
   try {
-    const parsedUrl = new URL(frontendUrl);
+    parsedUrl = new URL(frontendUrl);
     // 只允许 http/https 协议
     if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
       return { frontendUrl: '', valid: false };
@@ -107,15 +110,22 @@ async function parseState(state: string, env: Env): Promise<{ frontendUrl: strin
   // 验证 HMAC 签名
   const encoder = new TextEncoder();
   const payload = `${frontendUrl}:${randomPart}`;
-  const keyBytes = encoder.encode(env.FRONTEND_URL || '');
-  if (!keyBytes.byteLength) return { frontendUrl: '', valid: false };
+  const secretKey = env.FRONTEND_URL || '';
+  console.log(`[STATE] parse: frontendUrl=${frontendUrl}, secretKey=${secretKey ? secretKey.substring(0, 8) + '...' : 'EMPTY'}, payloadPrefix=${payload.substring(0, 40)}, sigLen=${sigHex.length}`);
+  const keyBytes = encoder.encode(secretKey);
+  if (!keyBytes.byteLength) {
+    console.log('[STATE] parse: secretKey is empty, rejecting');
+    return { frontendUrl: '', valid: false };
+  }
 
   try {
     const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
     const sigBytes = hexToUint8Array(sigHex);
     const valid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(payload));
+    console.log(`[STATE] parse: valid=${valid}`);
     return { frontendUrl, valid };
-  } catch {
+  } catch (e) {
+    console.log(`[STATE] parse: error=${e}`);
     return { frontendUrl: '', valid: false };
   }
 }
