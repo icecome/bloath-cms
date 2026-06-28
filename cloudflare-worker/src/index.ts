@@ -192,9 +192,11 @@ export default {
       if (!headers) {
         return new Response(null, { status: 403 });
       }
-      return new Response(null, {
+      const resp = new Response(null, {
         headers: new Headers(headers)
       });
+      resp.headers.set('Cache-Control', 'no-cache');
+      return resp;
     }
 
     try {
