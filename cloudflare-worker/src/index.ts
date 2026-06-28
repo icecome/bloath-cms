@@ -41,7 +41,7 @@ function corsHeaders(origin: string, _env: Env): Record<string, string> {
   const allowedOrigins = [...devOrigins, ...prodOrigins];
 
   // 严格校验 Origin，不在白名单则返回 *（浏览器将拒绝带凭证的请求）
-  const allowedOrigin = allowedOrigins.includes(origin) ? origin : '*';
+  const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : '*';
 
   const headers: Record<string, string> = {
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -131,7 +131,7 @@ function hexToUint8Array(hex: string): Uint8Array {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    const origin = request.headers.get('Origin') || '*';
+    const origin = request.headers.get('Origin') || '';
     // 生产环境使用当前域名，本地开发使用 localhost
     const workerUrl = url.origin.startsWith('http://localhost') 
       ? 'http://localhost:8787' 
@@ -142,7 +142,7 @@ export default {
     // 处理 CORS 预检请求
     if (request.method === 'OPTIONS') {
       return new Response(null, {
-        headers: corsHeaders(origin, env)
+        headers: new Headers(corsHeaders(origin, env))
       });
     }
 
