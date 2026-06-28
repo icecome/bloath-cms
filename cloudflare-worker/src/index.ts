@@ -12,12 +12,37 @@ function isValidParam(value: string | null, allowSlash = false): boolean {
 }
 
 // 认证中间件 - 直接使用 GitHub access_token
-function authenticate(request: Request, _env: Env): { token: string } | Response {
+// Session 存储: sessionToken -> { githubToken, expiresAt }
+const sessions = new Map<string, { githubToken: string; expiresAt: number }>();
+const SESSION_TTL_MS = 3600000; // 1 小时
+
+function generateSessionToken(githubToken: string, env: Env): string {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = Array.from(randomBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  sessions.set(token, { githubToken, expiresAt: Date.now() + SESSION_TTL_MS });
+  return token;
+}
+
+function validateSession(token: string): { githubToken: string } | null {
+  const entry = sessions.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    sessions.delete(token);
+    return null;
+  }
+  return { githubToken: entry.githubToken };
+}
+
+function authenticate(request: Request, _env: Env): { githubToken: string } | Response {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!token) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return { token };
+  const session = validateSession(token);
+  if (!session) {
+    return Response.json({ error: 'Session expired' }, { status: 401 });
+  }
+  return session;
 }
 
 // CORS 头
@@ -161,7 +186,7 @@ export default {
       if (url.pathname === '/api/auth/login' && request.method === 'GET') {
         const state = await generateState(frontendUrl, env);
         const clientId = env.GITHUB_CLIENT_ID;
-        const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=authorize`;
+        const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=consent`;
         return addCorsHeaders(Response.json({ authUrl }), origin, env);
       }
 
@@ -181,12 +206,15 @@ export default {
 
         const storedFrontendUrl = stateData.frontendUrl || frontendUrl;
 
-        const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
-        const user = await getUserInfo(accessToken);
+        const githubAccessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
+        const user = await getUserInfo(githubAccessToken);
 
-        // 重定向到前端，直接传递 GitHub access_token（使用 fragment 不发送到服务器）
+        // 生成短效 session token（1 小时过期），不再传递 GitHub access_token
+        const sessionToken = generateSessionToken(githubAccessToken, env);
+
+        // 重定向到前端，传递 session token（使用 fragment 不发送到服务器）
         const redirectUrl = `${storedFrontendUrl}/login#${encodeURIComponent(JSON.stringify({
-          token: accessToken,
+          token: sessionToken,
           login: user.login,
           avatar: user.avatar_url,
           name: user.name || ''
@@ -201,7 +229,7 @@ export default {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
-        const user = await getUserInfo(authResult.token);
+        const user = await getUserInfo(authResult.githubToken);
         return addCorsHeaders(Response.json({
           success: true,
           user: {
@@ -216,7 +244,7 @@ export default {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
-        const repos = await getUserRepos(authResult.token);
+        const repos = await getUserRepos(authResult.githubToken);
         return addCorsHeaders(Response.json({
           success: true,
           data: repos.filter((repo) => repo.name !== '.github')
@@ -226,7 +254,7 @@ export default {
       if (url.pathname === '/api/repos/files' && request.method === 'GET') {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const token = authResult.token;
+        const githubToken = authResult.githubToken;
 
         const params = new URL(request.url).searchParams;
         const owner = params.get('owner');
@@ -244,14 +272,14 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
-        const files = await listDir(token, owner!, repo!, path, branch);
+        const files = await listDir(githubToken, owner!, repo!, path, branch);
         return addCorsHeaders(Response.json({ success: true, data: files }), origin, env);
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'GET') {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const token = authResult.token;
+        const githubToken = authResult.githubToken;
 
         const params = new URL(request.url).searchParams;
         const owner = params.get('owner');
@@ -269,14 +297,14 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
-        const file = await readFile(token, owner!, repo!, filePath, branch);
+        const file = await readFile(githubToken, owner!, repo!, filePath, branch);
         return addCorsHeaders(Response.json({ success: true, data: file }), origin, env);
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'PUT') {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const token = authResult.token;
+        const githubToken = authResult.githubToken;
 
         const data = await request.json() as Record<string, any>;
         const { owner, repo, path: filePath, content, message, sha, branch = 'main', userName } = data;
@@ -297,14 +325,14 @@ export default {
           author = { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
         }
 
-        await writeFile(token, owner, repo, filePath, content, message, sha, branch, author);
+        await writeFile(githubToken, owner, repo, filePath, content, message, sha, branch, author);
         return addCorsHeaders(Response.json({ success: true, data: { path: filePath } }), origin, env);
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'DELETE') {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const token = authResult.token;
+        const githubToken = authResult.githubToken;
 
         const data = await request.json() as Record<string, any>;
         const { owner, repo, path: filePath, sha, message, branch = 'main' } = data;
@@ -319,7 +347,7 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
-        await deleteFile(token, owner, repo, filePath, sha, message, branch);
+        await deleteFile(githubToken, owner, repo, filePath, sha, message, branch);
         return addCorsHeaders(Response.json({ success: true }), origin, env);
       }
 
@@ -327,7 +355,7 @@ export default {
       if (url.pathname === '/api/repos/branches' || url.pathname.startsWith('/api/repos/') && url.pathname.endsWith('/branches')) {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const token = authResult.token;
+        const githubToken = authResult.githubToken;
 
         let owner = url.searchParams.get('owner');
         let repo = url.searchParams.get('repo');
@@ -343,7 +371,7 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Missing owner or repo' }, { status: 400 }), origin, env);
         }
 
-        const branches = await getRepoBranches(token, owner!, repo!);
+        const branches = await getRepoBranches(githubToken, owner!, repo!);
         return addCorsHeaders(Response.json({ success: true, data: branches }), origin, env);
       }
 
