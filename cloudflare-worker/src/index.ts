@@ -11,55 +11,43 @@ function isValidParam(value: string | null, allowSlash = false): boolean {
     : /^[a-zA-Z0-9._\-]+$/.test(value);
 }
 
-// JWT 工具函数（使用 Web Crypto API）
-async function jwtSign(payload: Record<string, any>, secret: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const header = { alg: 'HS256', typ: 'JWT' };
-  const base64url = (data: string) => btoa(data).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  
-  const headerJson = JSON.stringify(header);
-  const payloadJson = JSON.stringify(payload);
-  const signingInput = `${base64url(headerJson)}.${base64url(payloadJson)}`;
-  
-  const key = await crypto.subtle.importKey(
-    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  );
-  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(signingInput));
-  return `${signingInput}.${base64url(new TextDecoder().decode(signature))}`;
+// 认证中间件 - 验证 session token 并返回 GitHub access_token
+function authenticate(request: Request, _env: Env): { githubToken: string } | Response {
+  const sessionToken = request.headers.get('Authorization')?.replace('Bearer ', '');
+  if (!sessionToken) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const result = validateSessionToken(sessionToken);
+  if (!result) {
+    return Response.json({ error: 'Session expired' }, { status: 401 });
+  }
+  return result;
 }
 
-function base64urlDecode(str: string): string {
-  let s = str.replace(/-/g, '+').replace(/_/g, '/');
-  while (s.length % 4) s += '=';
-  return decodeURIComponent(Array.from(atob(s), c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+// 生成短效 session token（1 小时过期）
+function generateSessionToken(githubToken: string): string {
+  const expiresAt = Date.now() + 3600000;
+  // 格式: base64(githubToken:expiresAt)
+  const raw = `${githubToken}:${expiresAt}`;
+  return btoa(raw);
 }
 
-async function jwtVerify(token: string, secret: string): Promise<Record<string, any> | null> {
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-  
+// 验证 session token
+function validateSessionToken(sessionToken: string): { githubToken: string } | null {
   try {
-    const payload = JSON.parse(base64urlDecode(parts[1]));
-    // 检查过期时间
-    if (payload.exp && Date.now() > payload.exp) return null;
-    return payload;
+    const raw = atob(sessionToken);
+    const parts = raw.split(':');
+    if (parts.length < 2) return null;
+    const expiresAt = parseInt(parts[parts.length - 1], 10);
+    if (isNaN(expiresAt) || Date.now() > expiresAt) {
+      return null;
+    }
+    // githubToken 可能包含 ':'，拼接回去
+    const githubToken = parts.slice(0, -1).join(':');
+    return { githubToken };
   } catch {
     return null;
   }
-}
-
-function authenticate(request: Request, env: Env): Promise<{ githubToken: string; login: string } | Response> {
-  const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-  if (!token) {
-    return Promise.resolve(Response.json({ error: 'Unauthorized' }, { status: 401 }));
-  }
-  
-  return jwtVerify(token, env.SESSION_SECRET).then((payload) => {
-    if (!payload) {
-      return Response.json({ error: 'Invalid or expired token' }, { status: 401 });
-    }
-    return { githubToken: payload.githubToken, login: payload.login };
-  });
 }
 
 // CORS 头
@@ -82,28 +70,28 @@ function corsHeaders(origin: string, _env: Env): Record<string, string> {
 
   const allowedOrigins = [...devOrigins, ...prodOrigins];
 
-  // 严格校验 Origin，不在白名单则拒绝
-  if (origin && allowedOrigins.includes(origin)) {
-    return {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Frontend-Url',
-      'Access-Control-Max-Age': '86400'
-    };
+  // 严格校验 Origin，不在白名单则返回 *（浏览器将拒绝带凭证的请求）
+  const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : '*';
+
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Frontend-Url',
+    'Access-Control-Max-Age': '86400'
+  };
+
+  // 只有当 Origin 在白名单中时才设置具体 Origin 头
+  if (allowedOrigin !== '*') {
+    headers['Access-Control-Allow-Origin'] = allowedOrigin;
   }
-  
-  // 无 Origin 头或不在白名单，返回 403
-  return null;
+
+  return headers;
 }
 
 // 添加 CORS 头到响应
 function addCorsHeaders(response: Response, origin: string, env: Env): Response {
-  const headers = corsHeaders(origin, env);
-  if (headers) {
-    Object.entries(headers).forEach(([key, value]) => {
-      response.headers.set(key, value);
-    });
-  }
+  Object.entries(corsHeaders(origin, env)).forEach(([key, value]) => {
+    response.headers.set(key, value);
+  });
   return response;
 }
 
@@ -188,15 +176,9 @@ export default {
 
     // 处理 CORS 预检请求
     if (request.method === 'OPTIONS') {
-      const headers = corsHeaders(origin, env);
-      if (!headers) {
-        return new Response(null, { status: 403 });
-      }
-      const resp = new Response(null, {
-        headers: new Headers(headers)
+      return new Response(null, {
+        headers: new Headers(corsHeaders(origin, env))
       });
-      resp.headers.set('Cache-Control', 'no-cache');
-      return resp;
     }
 
     try {
@@ -229,15 +211,11 @@ export default {
 
         const storedFrontendUrl = stateData.frontendUrl || frontendUrl;
 
-        const githubAccessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
-        const user = await getUserInfo(githubAccessToken);
+        const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
+        const user = await getUserInfo(accessToken);
 
-        // 生成 JWT session token（1 小时过期），不再传递 GitHub access_token
-        const sessionToken = await jwtSign({
-          githubToken: githubAccessToken,
-          login: user.login,
-          exp: Date.now() + 3600000
-        }, env.SESSION_SECRET);
+        // 生成短效 session token（1 小时过期），不再传递 GitHub access_token
+        const sessionToken = generateSessionToken(accessToken);
 
         // 重定向到前端，传递 session token（使用 fragment 不发送到服务器）
         const redirectUrl = `${storedFrontendUrl}/login#${encodeURIComponent(JSON.stringify({
@@ -253,7 +231,7 @@ export default {
       }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        const authResult = await authenticate(request, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const user = await getUserInfo(authResult.githubToken);
@@ -268,7 +246,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos' && request.method === 'GET') {
-        const authResult = await authenticate(request, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const repos = await getUserRepos(authResult.githubToken);
@@ -279,7 +257,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/files' && request.method === 'GET') {
-        const authResult = await authenticate(request, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
@@ -304,9 +282,9 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'GET') {
-        const authResult = await authenticate(request, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const githubToken = authResult.githubToken;
+        const token = authResult.token;
 
         const params = new URL(request.url).searchParams;
         const owner = params.get('owner');
@@ -329,9 +307,9 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'PUT') {
-        const authResult = await authenticate(request, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const githubToken = authResult.githubToken;
+        const token = authResult.token;
 
         const data = await request.json() as Record<string, any>;
         const { owner, repo, path: filePath, content, message, sha, branch = 'main', userName } = data;
@@ -357,9 +335,9 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'DELETE') {
-        const authResult = await authenticate(request, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const githubToken = authResult.githubToken;
+        const token = authResult.token;
 
         const data = await request.json() as Record<string, any>;
         const { owner, repo, path: filePath, sha, message, branch = 'main' } = data;
@@ -380,9 +358,9 @@ export default {
 
       // 获取仓库分支列表
       if (url.pathname === '/api/repos/branches' || url.pathname.startsWith('/api/repos/') && url.pathname.endsWith('/branches')) {
-        const authResult = await authenticate(request, env);
+        const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const githubToken = authResult.githubToken;
+        const token = authResult.token;
 
         let owner = url.searchParams.get('owner');
         let repo = url.searchParams.get('repo');
