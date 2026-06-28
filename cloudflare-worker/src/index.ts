@@ -247,7 +247,7 @@ export default {
       }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const user = await getUserInfo(authResult.githubToken);
@@ -262,7 +262,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos' && request.method === 'GET') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const repos = await getUserRepos(authResult.githubToken);
@@ -273,7 +273,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/files' && request.method === 'GET') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
@@ -298,7 +298,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'GET') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
@@ -323,7 +323,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'PUT') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
@@ -351,7 +351,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'DELETE') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
@@ -374,7 +374,7 @@ export default {
 
       // 获取仓库分支列表
       if (url.pathname === '/api/repos/branches' || url.pathname.startsWith('/api/repos/') && url.pathname.endsWith('/branches')) {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
