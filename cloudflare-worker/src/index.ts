@@ -82,28 +82,28 @@ function corsHeaders(origin: string, _env: Env): Record<string, string> {
 
   const allowedOrigins = [...devOrigins, ...prodOrigins];
 
-  // 严格校验 Origin，不在白名单则返回 *（浏览器将拒绝带凭证的请求）
-  const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : '*';
-
-  const headers: Record<string, string> = {
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Frontend-Url',
-    'Access-Control-Max-Age': '86400'
-  };
-
-  // 只有当 Origin 在白名单中时才设置具体 Origin 头
-  if (allowedOrigin !== '*') {
-    headers['Access-Control-Allow-Origin'] = allowedOrigin;
+  // 严格校验 Origin，不在白名单则拒绝
+  if (origin && allowedOrigins.includes(origin)) {
+    return {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Frontend-Url',
+      'Access-Control-Max-Age': '86400'
+    };
   }
-
-  return headers;
+  
+  // 无 Origin 头或不在白名单，返回 403
+  return null;
 }
 
 // 添加 CORS 头到响应
 function addCorsHeaders(response: Response, origin: string, env: Env): Response {
-  Object.entries(corsHeaders(origin, env)).forEach(([key, value]) => {
-    response.headers.set(key, value);
-  });
+  const headers = corsHeaders(origin, env);
+  if (headers) {
+    Object.entries(headers).forEach(([key, value]) => {
+      response.headers.set(key, value);
+    });
+  }
   return response;
 }
 
