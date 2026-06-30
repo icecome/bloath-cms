@@ -284,7 +284,7 @@ export default {
       if (url.pathname === '/api/repos/file' && request.method === 'GET') {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const token = authResult.token;
+        const githubToken = authResult.githubToken;
 
         const params = new URL(request.url).searchParams;
         const owner = params.get('owner');
@@ -309,7 +309,7 @@ export default {
       if (url.pathname === '/api/repos/file' && request.method === 'PUT') {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const token = authResult.token;
+        const githubToken = authResult.githubToken;
 
         const data = await request.json() as Record<string, any>;
         const { owner, repo, path: filePath, content, message, sha, branch = 'main', userName } = data;
@@ -337,7 +337,7 @@ export default {
       if (url.pathname === '/api/repos/file' && request.method === 'DELETE') {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const token = authResult.token;
+        const githubToken = authResult.githubToken;
 
         const data = await request.json() as Record<string, any>;
         const { owner, repo, path: filePath, sha, message, branch = 'main' } = data;
@@ -360,7 +360,7 @@ export default {
       if (url.pathname === '/api/repos/branches' || url.pathname.startsWith('/api/repos/') && url.pathname.endsWith('/branches')) {
         const authResult = authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        const token = authResult.token;
+        const githubToken = authResult.githubToken;
 
         let owner = url.searchParams.get('owner');
         let repo = url.searchParams.get('repo');
