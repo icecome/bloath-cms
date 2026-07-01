@@ -2,5 +2,8 @@
   "$schema": "https://workers.cloudflare.com/ns/type",
   "name": "bloath-cms-worker",
   "main": "src/index.ts",
-  "compatibility_date": "2025-06-15"
+  "compatibility_date": "2025-06-15",
+  "vars": {
+    "FRONTEND_URL": "https://bloath.icecome.com"
+  }
 }
