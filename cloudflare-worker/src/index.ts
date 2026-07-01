@@ -173,8 +173,10 @@ export default {
 
     // 处理 CORS 预检请求
     if (request.method === 'OPTIONS') {
+      const cors = corsHeaders(origin, env);
       return new Response(null, {
-        headers: new Headers(corsHeaders(origin, env))
+        status: 204,
+        headers: cors
       });
     }
 
