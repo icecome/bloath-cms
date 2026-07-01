@@ -60,12 +60,6 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           workingDirectory: cloudflare-worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          GITHUB_CLIENT_ID: ${{ secrets.BLOATH_GITHUB_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.BLOATH_GITHUB_CLIENT_SECRET }}
-          SESSION_SECRET: ${{ secrets.BLOATH_SESSION_SECRET }}
 
       - name: Set Wrangler Secrets
         working-directory: cloudflare-worker
@@ -73,6 +67,7 @@ jobs:
           echo "${{ secrets.BLOATH_GITHUB_CLIENT_ID }}" | npx wrangler secret put GITHUB_CLIENT_ID
           echo "${{ secrets.BLOATH_GITHUB_CLIENT_SECRET }}" | npx wrangler secret put GITHUB_CLIENT_SECRET
           echo "${{ secrets.BLOATH_SESSION_SECRET }}" | npx wrangler secret put SESSION_SECRET
+          echo "${{ secrets.BLOATH_FRONTEND_URL }}" | npx wrangler secret put FRONTEND_URL
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
