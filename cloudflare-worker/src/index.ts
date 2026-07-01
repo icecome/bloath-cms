@@ -6,9 +6,12 @@ import type { Env } from './github';
 // 路径参数安全校验
 function isValidParam(value: string | null, allowSlash = false): boolean {
   if (!value) return false;
+  // 允许 Unicode 字符（支持中文路径），但禁止危险字符
+  const dangerous = /[<>"'`;&|\\$(){}[\]!#%]/;
+  if (dangerous.test(value)) return false;
   return allowSlash
-    ? /^[a-zA-Z0-9._\/\-]+$/.test(value)
-    : /^[a-zA-Z0-9._\-]+$/.test(value);
+    ? /^[a-zA-Z0-9._\/\-\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\s]+$/.test(value)
+    : /^[a-zA-Z0-9._\-\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\s]+$/.test(value);
 }
 
 // 认证中间件 - 验证 session token 并返回 GitHub access_token
