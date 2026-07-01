@@ -105,6 +105,10 @@ export default function EditorPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; onUndo?: () => void } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // 用 ref 保存 bodyContent，避免 initializeVditor 频繁重建
+  const bodyContentRef = useRef(bodyContent);
+  bodyContentRef.current = bodyContent;
+
   // 初始化 Vditor 的函数
   const initializeVditor = useCallback((initialContent?: string) => {
     if (!editorRef.current || vditorInstanceRef.current) return;
@@ -118,7 +122,7 @@ export default function EditorPage() {
       lang: 'zh_CN',
       after: () => {
         vditorInstanceRef.current = instance;
-        const content = initialContent ?? bodyContent;
+        const content = initialContent ?? bodyContentRef.current;
         if (content) {
           instance.setValue(content);
         }
@@ -127,7 +131,7 @@ export default function EditorPage() {
         setBodyContent(val);
       }
     });
-  }, [bodyContent]);
+  }, []);
 
   // 组件卸载时清理 Vditor 实例
   useEffect(() => {
