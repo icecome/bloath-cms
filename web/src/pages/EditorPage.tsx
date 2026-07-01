@@ -106,7 +106,7 @@ export default function EditorPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // 初始化 Vditor 的函数
-  const initializeVditor = useCallback(() => {
+  const initializeVditor = useCallback((initialContent?: string) => {
     if (!editorRef.current || vditorInstanceRef.current) return;
 
     const instance = new Vditor(editorRef.current, {
@@ -118,8 +118,9 @@ export default function EditorPage() {
       lang: 'zh_CN',
       after: () => {
         vditorInstanceRef.current = instance;
-        if (bodyContent) {
-          instance.setValue(bodyContent);
+        const content = initialContent ?? bodyContent;
+        if (content) {
+          instance.setValue(content);
         }
       },
       input: (val: string) => {
@@ -156,9 +157,11 @@ export default function EditorPage() {
         setBodyContent(body);
         setCurrentFilePath(filePath);
         setCurrentFileSha(sha || '');
-        // 文章加载完成后，确保 Vditor 已初始化
+        // 文章加载完成后，确保 Vditor 已初始化并传入内容
         if (!vditorInstanceRef.current && editorRef.current) {
-          initializeVditor();
+          initializeVditor(body);
+        } else if (vditorInstanceRef.current) {
+          vditorInstanceRef.current.setValue(body);
         }
       })
       .catch((err) => {
