@@ -668,235 +668,234 @@ function MetadataPanelContent({
     <div className="p-4 space-y-4">
       <h3 className="hidden md:block text-xs font-medium text-[#1F1F1F] border-b border-[#F2F2F2] pb-2">文章配置</h3>
 
-            {/* 标题 */}
-            <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
-                <Folder className="w-3 h-3" />
-                标题
-              </label>
-              <input
-                type="text"
-                value={frontmatter.title || ''}
-                onChange={(e) => setFm('title', e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                placeholder="文章标题"
-              />
-            </div>
+      {/* 标题 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
+          <Folder className="w-3 h-3" />
+          标题
+        </label>
+        <input
+          type="text"
+          value={frontmatter.title || ''}
+          onChange={(e) => setFm('title', e.target.value)}
+          className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+          placeholder="文章标题"
+        />
+      </div>
 
-            {/* 日期 */}
-            <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
-                <Calendar className="w-3 h-3" />
-                日期
-              </label>
-              <input
-                type="datetime-local"
-                value={frontmatter.date ? (() => {
-                  try {
-                    const d = new Date(frontmatter.date);
-                    const y = d.getFullYear();
-                    const m = String(d.getMonth() + 1).padStart(2, '0');
-                    const day = String(d.getDate()).padStart(2, '0');
-                    const h = String(d.getHours()).padStart(2, '0');
-                    const mi = String(d.getMinutes()).padStart(2, '0');
-                    return `${y}-${m}-${day}T${h}:${mi}`;
-                  } catch {
-                    return '';
-                  }
-                })() : ''}
-                onChange={(e) => {
-                  setFm('date', e.target.value ? `${e.target.value}:00+08:00` : '');
-                }}
-                className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F]"
-              />
-              <button
-                type="button"
-                onClick={() => setFm('date', formatDate(new Date()))}
-                className="mt-1.5 text-xs text-[#3B82F6] hover:underline"
-              >
-                使用当前时间
-              </button>
-            </div>
+      {/* 日期 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
+          <Calendar className="w-3 h-3" />
+          日期
+        </label>
+        <input
+          type="datetime-local"
+          value={frontmatter.date ? (() => {
+            try {
+              const d = new Date(frontmatter.date);
+              const y = d.getFullYear();
+              const m = String(d.getMonth() + 1).padStart(2, '0');
+              const day = String(d.getDate()).padStart(2, '0');
+              const h = String(d.getHours()).padStart(2, '0');
+              const mi = String(d.getMinutes()).padStart(2, '0');
+              return `${y}-${m}-${day}T${h}:${mi}`;
+            } catch {
+              return '';
+            }
+          })() : ''}
+          onChange={(e) => {
+            setFm('date', e.target.value ? `${e.target.value}:00+08:00` : '');
+          }}
+          className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F]"
+        />
+        <button
+          type="button"
+          onClick={() => setFm('date', formatDate(new Date()))}
+          className="mt-1.5 text-xs text-[#3B82F6] hover:underline"
+        >
+          使用当前时间
+        </button>
+      </div>
 
-            {/* 作者 */}
-            <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
-                <User className="w-3 h-3" />
-                作者
-              </label>
-              <input
-                type="text"
-                value={frontmatter.author || ''}
-                onChange={(e) => setFm('author', e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                placeholder="作者名称"
-              />
-            </div>
+      {/* 作者 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
+          <User className="w-3 h-3" />
+          作者
+        </label>
+        <input
+          type="text"
+          value={frontmatter.author || ''}
+          onChange={(e) => setFm('author', e.target.value)}
+          className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+          placeholder="作者名称"
+        />
+      </div>
 
-            {/* 分类 */}
-            <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
-                <Folder className="w-3 h-3" />
-                分类
-              </label>
-              <ArrayFieldList
-                items={frontmatter.categories || []}
-                onRemove={(i) => removeArrayItem('categories', i)}
-              />
-              <div className="flex gap-1.5 mt-1.5">
-                <input
-                  type="text"
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  onKeyDown={(e) => handleInputKeyDown('categories', e)}
-                  className="flex-1 px-2 py-1 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                  placeholder="输入分类后回车"
-                />
-                <button onClick={() => addItem('categories')} className="px-2 py-1 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors">添加</button>
-              </div>
-            </div>
+      {/* 分类 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
+          <Folder className="w-3 h-3" />
+          分类
+        </label>
+        <ArrayFieldList
+          items={frontmatter.categories || []}
+          onRemove={(i) => removeArrayItem('categories', i)}
+        />
+        <div className="flex gap-1.5 mt-1.5">
+          <input
+            type="text"
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+            onKeyDown={(e) => handleInputKeyDown('categories', e)}
+            className="flex-1 px-2 py-1 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+            placeholder="输入分类后回车"
+          />
+          <button onClick={() => addItem('categories')} className="px-2 py-1 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors">添加</button>
+        </div>
+      </div>
 
-            {/* 标签 */}
-            <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
-                <Tag className="w-3 h-3" />
-                标签
-              </label>
-              <ArrayFieldList
-                items={frontmatter.tags || []}
-                onRemove={(i) => removeArrayItem('tags', i)}
-              />
-              <div className="flex gap-1.5 mt-1.5">
-                <input
-                  type="text"
-                  value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
-                  onKeyDown={(e) => handleInputKeyDown('tags', e)}
-                  className="flex-1 px-2 py-1 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                  placeholder="输入标签后回车"
-                />
-                <button onClick={() => addItem('tags')} className="px-2 py-1 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors">添加</button>
-              </div>
-            </div>
+      {/* 标签 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
+          <Tag className="w-3 h-3" />
+          标签
+        </label>
+        <ArrayFieldList
+          items={frontmatter.tags || []}
+          onRemove={(i) => removeArrayItem('tags', i)}
+        />
+        <div className="flex gap-1.5 mt-1.5">
+          <input
+            type="text"
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+            onKeyDown={(e) => handleInputKeyDown('tags', e)}
+            className="flex-1 px-2 py-1 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+            placeholder="输入标签后回车"
+          />
+          <button onClick={() => addItem('tags')} className="px-2 py-1 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors">添加</button>
+        </div>
+      </div>
 
-            {/* 加密开关 */}
-            <div className="flex items-center justify-between py-1">
-              <span className="flex items-center gap-1.5 text-xs text-[#1F1F1F]">
-                <Lock className="w-3 h-3 text-[#6B7280]" />
-                加密
-              </span>
-              <ToggleSwitch
-                checked={!!frontmatter.encrypt}
-                onCheckedChange={() => setFm('encrypt', !frontmatter.encrypt)}
-              />
-            </div>
+      {/* 加密开关 */}
+      <div className="flex items-center justify-between py-1">
+        <span className="flex items-center gap-1.5 text-xs text-[#1F1F1F]">
+          <Lock className="w-3 h-3 text-[#6B7280]" />
+          加密
+        </span>
+        <ToggleSwitch
+          checked={!!frontmatter.encrypt}
+          onCheckedChange={() => setFm('encrypt', !frontmatter.encrypt)}
+        />
+      </div>
 
-            {frontmatter.encrypt && (
-              <div className="space-y-2 pl-3 border-l-2 border-[#F2F2F2]">
-                <div>
-                  <label className="block text-xs text-[#6B7280] mb-1.5">密码键名</label>
-                  <input
-                    type="text"
-                    value={frontmatter.encryptPasswordKey || ''}
-                    onChange={(e) => setFm('encryptPasswordKey', e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                    placeholder="例如 private"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-[#6B7280] mb-1.5">加密标题</label>
-                  <input
-                    type="text"
-                    value={frontmatter.encryptTitle || ''}
-                    onChange={(e) => setFm('encryptTitle', e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                    placeholder="需要密码访问"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-[#6B7280] mb-1.5">加密消息</label>
-                  <textarea
-                    value={frontmatter.encryptMessage || ''}
-                    onChange={(e) => setFm('encryptMessage', e.target.value)}
-                    rows={2}
-                    className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors resize-none bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                    placeholder="请输入密码查看内容"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="border-t border-[#F2F2F2]" />
-
-            {/* 图片 */}
-            <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
-                <Image className="w-3 h-3" />
-                图片
-              </label>
-              <ArrayFieldList
-                items={frontmatter.pictures || []}
-                onRemove={(i) => removeArrayItem('pictures', i)}
-              />
-              <div className="flex gap-1.5 mt-1.5">
-                <input
-                  type="text"
-                  value={newPicture}
-                  onChange={(e) => setNewPicture(e.target.value)}
-                  onKeyDown={(e) => handleInputKeyDown('pictures', e)}
-                  className="flex-1 px-2 py-1 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                  placeholder="图片 URL"
-                />
-                <button onClick={() => addItem('pictures')} className="px-2 py-1 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors">添加</button>
-              </div>
-            </div>
-
-            {/* 视频 */}
-            <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
-                <Video className="w-3 h-3" />
-                视频
-              </label>
-              <ArrayFieldList
-                items={frontmatter.video || []}
-                onRemove={(i) => removeArrayItem('video', i)}
-              />
-              <div className="flex gap-1.5 mt-1.5">
-                <input
-                  type="text"
-                  value={newVideo}
-                  onChange={(e) => setNewVideo(e.target.value)}
-                  onKeyDown={(e) => handleInputKeyDown('video', e)}
-                  className="flex-1 px-2 py-1 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                  placeholder="视频 URL"
-                />
-                <button onClick={() => addItem('video')} className="px-2 py-1 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors">添加</button>
-              </div>
-            </div>
-
-            {/* 链接 */}
-            <div>
-              <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
-                <LinkIcon className="w-3 h-3" />
-                链接
-              </label>
-              <input
-                type="text"
-                value={frontmatter.link || ''}
-                onChange={(e) => setFm('link', e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF] mb-1.5"
-                placeholder="链接 URL"
-              />
-              <input
-                type="text"
-                value={frontmatter.link_text || ''}
-                onChange={(e) => setFm('link_text', e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                placeholder="链接文本"
-              />
-            </div>
+      {frontmatter.encrypt && (
+        <div className="space-y-2 pl-3 border-l-2 border-[#F2F2F2]">
+          <div>
+            <label className="block text-xs text-[#6B7280] mb-1.5">密码键名</label>
+            <input
+              type="text"
+              value={frontmatter.encryptPasswordKey || ''}
+              onChange={(e) => setFm('encryptPasswordKey', e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+              placeholder="例如 private"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-[#6B7280] mb-1.5">加密标题</label>
+            <input
+              type="text"
+              value={frontmatter.encryptTitle || ''}
+              onChange={(e) => setFm('encryptTitle', e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+              placeholder="需要密码访问"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-[#6B7280] mb-1.5">加密消息</label>
+            <textarea
+              value={frontmatter.encryptMessage || ''}
+              onChange={(e) => setFm('encryptMessage', e.target.value)}
+              rows={2}
+              className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors resize-none bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+              placeholder="请输入密码查看内容"
+            />
           </div>
         </div>
+      )}
+
+      <div className="border-t border-[#F2F2F2]" />
+
+      {/* 图片 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
+          <Image className="w-3 h-3" />
+          图片
+        </label>
+        <ArrayFieldList
+          items={frontmatter.pictures || []}
+          onRemove={(i) => removeArrayItem('pictures', i)}
+        />
+        <div className="flex gap-1.5 mt-1.5">
+          <input
+            type="text"
+            value={newPicture}
+            onChange={(e) => setNewPicture(e.target.value)}
+            onKeyDown={(e) => handleInputKeyDown('pictures', e)}
+            className="flex-1 px-2 py-1 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+            placeholder="图片 URL"
+          />
+          <button onClick={() => addItem('pictures')} className="px-2 py-1 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors">添加</button>
+        </div>
+      </div>
+
+      {/* 视频 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
+          <Video className="w-3 h-3" />
+          视频
+        </label>
+        <ArrayFieldList
+          items={frontmatter.video || []}
+          onRemove={(i) => removeArrayItem('video', i)}
+        />
+        <div className="flex gap-1.5 mt-1.5">
+          <input
+            type="text"
+            value={newVideo}
+            onChange={(e) => setNewVideo(e.target.value)}
+            onKeyDown={(e) => handleInputKeyDown('video', e)}
+            className="flex-1 px-2 py-1 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+            placeholder="视频 URL"
+          />
+          <button onClick={() => addItem('video')} className="px-2 py-1 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors">添加</button>
+        </div>
+      </div>
+
+      <div className="border-t border-[#F2F2F2]" />
+
+      {/* 链接 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-[#6B7280] mb-1.5">
+          <LinkIcon className="w-3 h-3" />
+          链接
+        </label>
+        <input
+          type="text"
+          value={frontmatter.link || ''}
+          onChange={(e) => setFm('link', e.target.value)}
+          className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF] mb-1.5"
+          placeholder="链接 URL"
+        />
+        <input
+          type="text"
+          value={frontmatter.link_text || ''}
+          onChange={(e) => setFm('link_text', e.target.value)}
+          className="w-full px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+          placeholder="链接文本"
+        />
       </div>
     </div>
   );
