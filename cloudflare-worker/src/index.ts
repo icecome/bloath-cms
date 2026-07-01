@@ -54,7 +54,7 @@ function validateSessionToken(sessionToken: string): { githubToken: string } | n
 }
 
 // CORS 头
-function corsHeaders(origin: string, _env: Env): Record<string, string> {
+function corsHeaders(origin: string, _env: Env): Headers {
   // 开发环境
   const devOrigins = [
     'http://localhost:3000',
@@ -72,27 +72,21 @@ function corsHeaders(origin: string, _env: Env): Record<string, string> {
   ];
 
   const allowedOrigins = [...devOrigins, ...prodOrigins];
-
-  // 严格校验 Origin，不在白名单则返回 *（浏览器将拒绝带凭证的请求）
   const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : '*';
 
-  const headers: Record<string, string> = {
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Frontend-Url',
-    'Access-Control-Max-Age': '86400'
-  };
-
-  // 只有当 Origin 在白名单中时才设置具体 Origin 头
-  if (allowedOrigin !== '*') {
-    headers['Access-Control-Allow-Origin'] = allowedOrigin;
-  }
+  const headers = new Headers();
+  headers.set('Access-Control-Allow-Origin', allowedOrigin);
+  headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Frontend-Url');
+  headers.set('Access-Control-Max-Age', '86400');
 
   return headers;
 }
 
 // 添加 CORS 头到响应
 function addCorsHeaders(response: Response, origin: string, env: Env): Response {
-  Object.entries(corsHeaders(origin, env)).forEach(([key, value]) => {
+  const cors = corsHeaders(origin, env);
+  cors.forEach((value, key) => {
     response.headers.set(key, value);
   });
   return response;
