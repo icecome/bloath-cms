@@ -5,7 +5,7 @@ import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { readFile, writeFile, moveFile } from '../lib/api';
 import Toast from '../components/ui/Toast';
-import { ArrowLeft, Save, Calendar, User, Tag, Folder, Image, Video, Lock, Link as LinkIcon, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Calendar, User, Tag, Folder, Image, Video, Lock, Link as LinkIcon, Send, Trash2, Settings2, X } from 'lucide-react';
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
 import yaml from 'js-yaml';
@@ -104,6 +104,7 @@ export default function EditorPage() {
   const [currentFileSha, setCurrentFileSha] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; onUndo?: () => void } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showMetadataPanel, setShowMetadataPanel] = useState(false);
 
   // 用 ref 保存 bodyContent，避免 initializeVditor 频繁重建
   const bodyContentRef = useRef(bodyContent);
@@ -446,19 +447,26 @@ export default function EditorPage() {
       )}
 
       {/* 顶部栏 */}
-      <header className="px-6 py-4 flex items-center justify-between flex-shrink-0 border-b border-[#F2F2F2]">
-        <div className="flex items-center gap-3">
+      <header className="px-4 md:px-6 py-3 md:py-4 flex items-center justify-between flex-shrink-0 border-b border-[#F2F2F2]">
+        <div className="flex items-center gap-2 md:gap-3">
           <button
             onClick={() => navigate('/')}
             className="text-[#6B7280] hover:text-[#1F1F1F] transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <h1 className="text-sm font-medium text-[#1F1F1F]">
+          <h1 className="text-sm font-medium text-[#1F1F1F] truncate max-w-[120px] md:max-w-none">
             {isNew ? '新建文章' : `编辑: ${frontmatter.title || slug}`}
           </h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 md:gap-2">
+          {/* 移动端元数据面板切换按钮 */}
+          <button
+            onClick={() => setShowMetadataPanel(!showMetadataPanel)}
+            className="md:hidden flex items-center gap-1.5 px-2.5 py-2 text-sm text-[#6B7280] border border-[#E8E8E8] rounded-sm hover:bg-[#F9FAFA] transition-colors"
+          >
+            <Settings2 className="w-4 h-4" />
+          </button>
           {/* 发布按钮 */}
           {!isNew && (
             <div className="relative">
@@ -576,10 +584,89 @@ export default function EditorPage() {
           <div ref={editorRef} className="h-full" />
         </div>
 
-        {/* 右侧元数据面板 */}
-        <div className="w-72 bg-white border-l border-[#F2F2F2] overflow-auto flex-shrink-0">
-          <div className="p-4 space-y-4">
-            <h3 className="text-xs font-medium text-[#1F1F1F] border-b border-[#F2F2F2] pb-2">文章配置</h3>
+        {/* 桌面端右侧元数据面板 */}
+        <div className="hidden md:block w-72 bg-white border-l border-[#F2F2F2] overflow-auto flex-shrink-0">
+          <MetadataPanelContent
+            frontmatter={frontmatter}
+            setFm={setFm}
+            removeArrayItem={removeArrayItem}
+            newCategory={newCategory}
+            setNewCategory={setNewCategory}
+            newTag={newTag}
+            setNewTag={setNewTag}
+            newPicture={newPicture}
+            setNewPicture={setNewPicture}
+            newVideo={newVideo}
+            setNewVideo={setNewVideo}
+            addItem={addItem}
+            handleInputKeyDown={handleInputKeyDown}
+          />
+        </div>
+      </div>
+
+      {/* 移动端元数据面板抽屉 */}
+      {showMetadataPanel && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 z-40 md:hidden"
+            onClick={() => setShowMetadataPanel(false)}
+          />
+          <div className="fixed top-0 right-0 bottom-0 w-[85vw] max-w-sm bg-white z-50 md:hidden overflow-auto">
+            <div className="sticky top-0 bg-white border-b border-[#F2F2F2] px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-medium text-[#1F1F1F]">文章配置</h3>
+              <button
+                onClick={() => setShowMetadataPanel(false)}
+                className="text-[#6B7280] hover:text-[#1F1F1F] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <MetadataPanelContent
+              frontmatter={frontmatter}
+              setFm={setFm}
+              removeArrayItem={removeArrayItem}
+              newCategory={newCategory}
+              setNewCategory={setNewCategory}
+              newTag={newTag}
+              setNewTag={setNewTag}
+              newPicture={newPicture}
+              setNewPicture={setNewPicture}
+              newVideo={newVideo}
+              setNewVideo={setNewVideo}
+              addItem={addItem}
+              handleInputKeyDown={handleInputKeyDown}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// 元数据面板内容组件
+function MetadataPanelContent({
+  frontmatter, setFm, removeArrayItem,
+  newCategory, setNewCategory, newTag, setNewTag,
+  newPicture, setNewPicture, newVideo, setNewVideo,
+  addItem, handleInputKeyDown
+}: {
+  frontmatter: Frontmatter;
+  setFm: (key: keyof Frontmatter, value: unknown) => void;
+  removeArrayItem: (key: 'categories' | 'tags' | 'pictures' | 'video', index: number) => void;
+  newCategory: string;
+  setNewCategory: (v: string) => void;
+  newTag: string;
+  setNewTag: (v: string) => void;
+  newPicture: string;
+  setNewPicture: (v: string) => void;
+  newVideo: string;
+  setNewVideo: (v: string) => void;
+  addItem: (key: 'categories' | 'tags' | 'pictures' | 'video') => void;
+  handleInputKeyDown: (key: 'categories' | 'tags' | 'pictures' | 'video', e: ReactKeyboardEvent) => void;
+}) {
+  return (
+    <div className="p-4 space-y-4">
+      <h3 className="hidden md:block text-xs font-medium text-[#1F1F1F] border-b border-[#F2F2F2] pb-2">文章配置</h3>
 
             {/* 标题 */}
             <div>

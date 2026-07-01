@@ -35,7 +35,9 @@ export default function SettingsPage() {
           <div className="space-y-px">
             {config.paths.map((path) => (
               <div key={path} className="flex items-center justify-between h-9 px-2 rounded-sm hover:bg-[#F9FAFA] transition-colors border-b border-[#F2F2F2] last:border-b-0 group">
-                <code className="text-xs text-[#1F1F1F] font-mono">{path}/*.md</code>
+                <code className="text-xs text-[#1F1F1F] font-mono">
+                  {path.endsWith('/*.md') ? path : `${path.replace(/\/$/, '')}/*.md`}
+                </code>
                 {config.paths.length > 1 && (
                   <button
                     onClick={() => handleRemovePath(path)}
