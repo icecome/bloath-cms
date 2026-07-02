@@ -3,7 +3,6 @@
   "name": "bloath-cms-worker",
   "main": "src/index.ts",
   "compatibility_date": "2025-06-15",
-  "workers_dev": true,
   "routes": [
     {
       "pattern": "bloath-cms-worker.api.icecome.com/*",
