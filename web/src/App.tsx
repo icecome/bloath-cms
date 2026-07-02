@@ -18,8 +18,6 @@ const EditorPage = lazy(() => import('./pages/EditorPage'));
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
 
-  console.log('[ProtectedRoute] loading:', loading, 'user:', user);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -29,11 +27,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) {
-    console.log('[ProtectedRoute] no user, navigating to /login');
     return <Navigate to="/login" replace />;
   }
 
-  console.log('[ProtectedRoute] user exists, rendering children');
   return <>{children}</>;
 }
 
