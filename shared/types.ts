@@ -48,6 +48,7 @@ export interface Repo {
   name: string;
   full_name: string;
   owner: string;
+  repo: string;
   private: boolean;
   html_url: string;
   default_branch: string;

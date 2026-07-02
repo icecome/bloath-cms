@@ -1,3 +1,5 @@
+import type { Repo } from '../../../../shared/types';
+
 export interface ContentItem {
   name: string;
   path: string;
@@ -35,7 +37,7 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
     throw new Error('网络连接失败');
   }
 
-  let data: any;
+  let data: { success: boolean; data?: T; error?: string };
   try {
     data = await res.json();
   } catch {
@@ -43,16 +45,32 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   if (!data.success) throw new Error(data.error || '请求失败');
+  if (data.data === undefined) throw new Error('响应数据为空');
   return data.data;
 }
 
-export async function getRepos(token: string) {
-  return apiFetch(`${API_BASE}/api/repos`, {
+interface FileReadResult {
+  content: string;
+  sha: string;
+}
+
+interface WriteResult {
+  path: string;
+}
+
+interface TreeItem {
+  name: string;
+  path: string;
+  type: string;
+}
+
+export async function getRepos(token: string): Promise<Repo[]> {
+  return apiFetch<Repo[]>(`${API_BASE}/api/repos`, {
     headers: { Authorization: `Bearer ${token}` }
   });
 }
 
-export async function getFiles(token: string, params: RepoInfo & { path?: string }) {
+export async function getFiles(token: string, params: RepoInfo & { path?: string }): Promise<ContentItem[]> {
   const searchParams = new URLSearchParams({
     owner: params.owner,
     repo: params.repo,
@@ -60,12 +78,12 @@ export async function getFiles(token: string, params: RepoInfo & { path?: string
     branch: params.branch || 'main'
   });
 
-  return apiFetch(`${API_BASE}/api/repos/files?${searchParams}`, {
+  return apiFetch<ContentItem[]>(`${API_BASE}/api/repos/files?${searchParams}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
 }
 
-export async function readFile(token: string, params: RepoInfo & { path: string }) {
+export async function readFile(token: string, params: RepoInfo & { path: string }): Promise<FileReadResult> {
   const searchParams = new URLSearchParams({
     owner: params.owner,
     repo: params.repo,
@@ -77,7 +95,7 @@ export async function readFile(token: string, params: RepoInfo & { path: string 
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    return apiFetch(`${API_BASE}/api/repos/file?${searchParams}`, {
+    return apiFetch<FileReadResult>(`${API_BASE}/api/repos/file?${searchParams}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal
     });
@@ -89,12 +107,12 @@ export async function readFile(token: string, params: RepoInfo & { path: string 
 export async function writeFile(
   token: string,
   params: RepoInfo & { path: string; content: string; message?: string; branch?: string; sha?: string; userName?: string }
-) {
+): Promise<WriteResult> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const rawMessage = params.message;
   const isSkipCi = rawMessage && rawMessage.trimStart().startsWith('[skip ci]');
   const message = isSkipCi ? rawMessage : `${rawMessage || timestamp} (${timestamp})`;
-  return apiFetch(`${API_BASE}/api/repos/file`, {
+  return apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -116,8 +134,8 @@ export async function writeFile(
 export async function deleteFile(
   token: string,
   params: RepoInfo & { path: string; sha: string; message?: string }
-) {
-  return apiFetch(`${API_BASE}/api/repos/file`, {
+): Promise<void> {
+  return apiFetch<void>(`${API_BASE}/api/repos/file`, {
     method: 'DELETE',
     headers: {
       'Content-Type': 'application/json',
@@ -180,9 +198,9 @@ export async function getBranches(
   token: string,
   owner: string,
   repo: string
-) {
+): Promise<string[]> {
   const searchParams = new URLSearchParams({ owner, repo });
-  return apiFetch(`${API_BASE}/api/repos/branches?${searchParams}`, {
+  return apiFetch<string[]>(`${API_BASE}/api/repos/branches?${searchParams}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
 }
@@ -190,14 +208,14 @@ export async function getBranches(
 /**
  * 使用 GitHub Trees API 一次性获取整个目录树（替代递归扫描）
  */
-export async function getTree(token: string, params: RepoInfo) {
+export async function getTree(token: string, params: RepoInfo): Promise<TreeItem[]> {
   const searchParams = new URLSearchParams({
     owner: params.owner,
     repo: params.repo,
     branch: params.branch || 'main'
   });
 
-  return apiFetch(`${API_BASE}/api/repos/tree?${searchParams}`, {
+  return apiFetch<TreeItem[]>(`${API_BASE}/api/repos/tree?${searchParams}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
 }
