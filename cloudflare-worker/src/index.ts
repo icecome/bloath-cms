@@ -194,7 +194,12 @@ export default {
 
     // 处理 CORS 预检请求
     if (request.method === 'OPTIONS') {
+      console.log('[cors] OPTIONS request, origin:', origin);
       const cors = corsHeaders(origin, env);
+      console.log('[cors] corsHeaders result:', cors ? 'found' : 'null');
+      if (!cors) {
+        return new Response(null, { status: 403 });
+      }
       return new Response(null, {
         status: 204,
         headers: cors
