@@ -1,4 +1,4 @@
-import type { Repo } from '../../../../shared/types';
+import type { Repo } from '../../../shared/types';
 
 export interface ContentItem {
   name: string;
@@ -61,7 +61,9 @@ interface WriteResult {
 interface TreeItem {
   name: string;
   path: string;
-  type: string;
+  sha: string;
+  type: 'blob' | 'tree';
+  size?: number;
 }
 
 export async function getRepos(token: string): Promise<Repo[]> {

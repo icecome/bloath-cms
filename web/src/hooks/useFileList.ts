@@ -30,7 +30,7 @@ export async function scanMdFiles(
   // 过滤出 basePath 下的 .md 文件
   const normalizedBase = basePath.replace(/^\/+|\/+$/g, '');
   return allFiles
-    .filter((item: FileItem) => {
+    .filter((item) => {
       // 只保留 .md 文件
       if (!item.name.endsWith('.md')) return false;
       // 如果指定了 basePath，只保留该路径下的文件
@@ -39,11 +39,11 @@ export async function scanMdFiles(
       }
       return true;
     })
-    .map((item: FileItem) => ({
+    .map((item) => ({
       name: item.name,
       path: item.path,
       sha: item.sha,
-      type: item.type,
+      type: (item.type === 'blob' ? 'file' : 'dir') as 'file' | 'dir',
       size: item.size
     }));
 }
