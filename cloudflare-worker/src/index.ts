@@ -46,7 +46,7 @@ async function deriveAesKey(secret: string): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(secret), 'PBKDF2', false, ['deriveBits']);
   const derivedKey = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: encoder.encode('bloath-salt'), iterations: 1000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: encoder.encode('bloath-salt'), iterations: 100000, hash: 'SHA-256' },
     keyMaterial,
     256
   );
@@ -58,27 +58,35 @@ async function generateSessionToken(githubToken: string, env: Env): Promise<stri
   const expiresAt = Date.now() + 3600000;
   const payload = JSON.stringify({ t: githubToken, e: expiresAt });
   
-  const key = await deriveAesKey(env.SESSION_SECRET);
-  const encoder = new TextEncoder();
-  
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    encoder.encode(payload)
-  );
-  
-  // 格式: iv(12字节).encrypted_data (base64url)
-  const ivB64 = btoa(String.fromCharCode(...iv)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const encB64 = btoa(String.fromCharCode(...new Uint8Array(encrypted))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  return `${ivB64}.${encB64}`;
+  try {
+    const key = await deriveAesKey(env.SESSION_SECRET);
+    const encoder = new TextEncoder();
+    
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      encoder.encode(payload)
+    );
+    
+    // 格式: iv(12字节).encrypted_data (base64url)
+    const ivB64 = btoa(String.fromCharCode(...iv)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const encB64 = btoa(String.fromCharCode(...new Uint8Array(encrypted))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `${ivB64}.${encB64}`;
+  } catch (e) {
+    console.error('generateSessionToken failed:', e);
+    throw e;
+  }
 }
 
 // 验证 session token - AES-GCM 解密
 async function validateSessionToken(sessionToken: string, env: Env): Promise<{ githubToken: string } | null> {
   try {
     const parts = sessionToken.split('.');
-    if (parts.length !== 2) return null;
+    if (parts.length !== 2) {
+      console.error('validateSessionToken: invalid format, parts.length =', parts.length);
+      return null;
+    }
     
     const [ivB64, encB64] = parts;
     // 还原 base64 padding
@@ -97,10 +105,14 @@ async function validateSessionToken(sessionToken: string, env: Env): Promise<{ g
     );
     
     const payload = JSON.parse(new TextDecoder().decode(decrypted));
-    if (Date.now() > payload.e) return null;
+    if (Date.now() > payload.e) {
+      console.error('validateSessionToken: token expired');
+      return null;
+    }
     
     return { githubToken: payload.t };
-  } catch {
+  } catch (e) {
+    console.error('validateSessionToken failed:', e);
     return null;
   }
 }
