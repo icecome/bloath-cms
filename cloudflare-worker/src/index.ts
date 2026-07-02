@@ -434,9 +434,10 @@ export default {
       return addCorsHeaders(Response.json({ error: 'Not found' }, { status: 404 }), origin, env);
     } catch (error) {
       console.error('Worker error:', error);
-      // 生产环境不返回详细错误信息
+      // 临时调试
+      const msg = error instanceof Error ? error.message : String(error);
       return addCorsHeaders(Response.json(
-        { success: false, error: 'Internal server error' },
+        { success: false, error: msg },
         { status: 500 }
       ), origin, env);
     }
