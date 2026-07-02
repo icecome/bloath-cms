@@ -1,10 +1,8 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 function LoginPage() {
   const { login } = useAuth();
-  const navigate = useNavigate();
 
   // 从 fragment 中解析 token（后端直接传递 GitHub access_token）
   React.useEffect(() => {
@@ -16,14 +14,15 @@ function LoginPage() {
           sessionStorage.setItem('token', parsed.token);
           // 清理 URL，移除 fragment
           window.history.replaceState(null, '', window.location.pathname);
-          navigate('/', { replace: true });
+          // 刷新页面让 useAuth 重新读取 token
+          window.location.reload();
           return;
         }
       }
     } catch (e) {
       console.error('Failed to parse login fragment:', e);
     }
-  }, [navigate]);
+  }, []);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#FAFAFA]">
