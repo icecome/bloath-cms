@@ -2,11 +2,5 @@
   "$schema": "https://workers.cloudflare.com/ns/type",
   "name": "bloath-cms-worker",
   "main": "src/index.ts",
-  "compatibility_date": "2025-06-15",
-  "routes": [
-    {
-      "pattern": "bloath-cms-worker.api.icecome.com/*",
-      "zone_name": "icecome.com"
-    }
-  ]
+  "compatibility_date": "2025-06-15"
 }
