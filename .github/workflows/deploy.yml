@@ -52,11 +52,11 @@ jobs:
           npx wrangler pages deploy web/dist --project-name=bloath-cms-web
 
       - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          workingDirectory: cloudflare-worker
+          api-token: ${{ secrets.CF_API_TOKEN }}
+          account-id: ${{ secrets.CF_ACCOUNT_ID }}
+          working-directory: cloudflare-worker
 
       - name: Set Wrangler Secrets
         working-directory: cloudflare-worker
