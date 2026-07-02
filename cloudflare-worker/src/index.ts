@@ -30,14 +30,20 @@ const MAX_CONTENT_SIZE = 10 * 1024 * 1024;
 
 // 认证中间件 - 验证 session token 并返回 GitHub access_token
 async function authenticate(request: Request, env: Env): Promise<{ githubToken: string } | Response> {
-  const sessionToken = request.headers.get('Authorization')?.replace('Bearer ', '');
+  const authHeader = request.headers.get('Authorization');
+  console.log('[auth] authenticate: authHeader exists:', !!authHeader);
+  const sessionToken = authHeader?.replace('Bearer ', '');
   if (!sessionToken) {
+    console.log('[auth] authenticate: no session token');
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  console.log('[auth] authenticate: validating token, length:', sessionToken.length);
   const result = await validateSessionToken(sessionToken, env);
   if (!result) {
+    console.log('[auth] authenticate: token validation failed');
     return Response.json({ error: 'Session expired' }, { status: 401 });
   }
+  console.log('[auth] authenticate: token valid');
   return result;
 }
 
@@ -259,6 +265,7 @@ export default {
 
       // API 请求路由分发
       if (url.pathname === '/api/auth/login' && request.method === 'GET') {
+        console.log('[auth] login request, frontendUrl:', frontendUrl);
         const state = await generateState(frontendUrl, env);
         const clientId = env.GITHUB_CLIENT_ID;
         const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=consent`;
@@ -266,26 +273,32 @@ export default {
       }
 
       if (url.pathname === '/api/auth/callback' && request.method === 'GET') {
+        console.log('[auth] callback request');
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
 
         if (!code || !state) {
+          console.log('[auth] callback: missing code or state');
           return addCorsHeaders(Response.json({ error: 'Missing code or state' }, { status: 400 }), origin, env);
         }
 
         // 验证并解析 state（带 HMAC 签名校验）
         const stateData = await parseState(state, env);
         if (!stateData.valid) {
+          console.log('[auth] callback: invalid state');
           return addCorsHeaders(Response.json({ error: 'Invalid state' }, { status: 400 }), origin, env);
         }
 
         const storedFrontendUrl = stateData.frontendUrl || frontendUrl;
+        console.log('[auth] callback: exchanging code for token');
 
         const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
         const user = await getUserInfo(accessToken);
+        console.log('[auth] callback: got user', user.login);
 
         // 生成短效 session token（1 小时过期），不再传递 GitHub access_token
         const sessionToken = await generateSessionToken(accessToken, env);
+        console.log('[auth] callback: session token generated, length:', sessionToken.length);
 
         // 重定向到前端，传递 session token（使用 fragment 不发送到服务器）
         const redirectUrl = `${storedFrontendUrl}/login#${encodeURIComponent(JSON.stringify({
@@ -294,6 +307,7 @@ export default {
           avatar: user.avatar_url,
           name: user.name || ''
         }))}`;
+        console.log('[auth] callback: redirecting to', storedFrontendUrl);
         return addCorsHeaders(new Response(null, {
           status: 302,
           headers: { 'Location': redirectUrl }
@@ -301,8 +315,13 @@ export default {
       }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
+        console.log('[auth] /api/me request, auth header:', request.headers.get('Authorization')?.substring(0, 20) + '...');
         const authResult = await authenticate(request, env);
-        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+        if (authResult instanceof Response) {
+          console.log('[auth] /api/me: authenticate failed');
+          return addCorsHeaders(authResult, origin, env);
+        }
+        console.log('[auth] /api/me: auth success');
 
         const user = await getUserInfo(authResult.githubToken);
         return addCorsHeaders(Response.json({
