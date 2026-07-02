@@ -29,96 +29,40 @@ function safeJsonParse(text: string): Record<string, unknown> {
 const MAX_CONTENT_SIZE = 10 * 1024 * 1024;
 
 // 认证中间件 - 验证 session token 并返回 GitHub access_token
-async function authenticate(request: Request, env: Env): Promise<{ githubToken: string } | Response> {
-  const authHeader = request.headers.get('Authorization');
-  console.log('[auth] authenticate: authHeader exists:', !!authHeader);
-  const sessionToken = authHeader?.replace('Bearer ', '');
+function authenticate(request: Request, _env: Env): { githubToken: string } | Response {
+  const sessionToken = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!sessionToken) {
-    console.log('[auth] authenticate: no session token');
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  console.log('[auth] authenticate: validating token, length:', sessionToken.length);
-  const result = await validateSessionToken(sessionToken, env);
+  const result = validateSessionToken(sessionToken);
   if (!result) {
-    console.log('[auth] authenticate: token validation failed');
     return Response.json({ error: 'Session expired' }, { status: 401 });
   }
-  console.log('[auth] authenticate: token valid');
   return result;
 }
 
-// 从 SESSION_SECRET 派生 AES 密钥（固定 256 位）
-async function deriveAesKey(secret: string): Promise<CryptoKey> {
-  const encoder = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(secret), 'PBKDF2', false, ['deriveBits']);
-  const derivedKey = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: encoder.encode('bloath-salt'), iterations: 100000, hash: 'SHA-256' },
-    keyMaterial,
-    256
-  );
-  return await crypto.subtle.importKey('raw', derivedKey, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
-}
-
-// 生成短效 session token（1 小时过期）- AES-GCM 加密
-async function generateSessionToken(githubToken: string, env: Env): Promise<string> {
+// 生成短效 session token（1 小时过期）
+function generateSessionToken(githubToken: string): string {
   const expiresAt = Date.now() + 3600000;
-  const payload = JSON.stringify({ t: githubToken, e: expiresAt });
-  
-  try {
-    const key = await deriveAesKey(env.SESSION_SECRET);
-    const encoder = new TextEncoder();
-    
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encrypted = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      encoder.encode(payload)
-    );
-    
-    // 格式: iv(12字节).encrypted_data (base64url)
-    const ivB64 = btoa(String.fromCharCode(...iv)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    const encB64 = btoa(String.fromCharCode(...new Uint8Array(encrypted))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    return `${ivB64}.${encB64}`;
-  } catch (e) {
-    console.error('generateSessionToken failed:', e);
-    throw e;
-  }
+  // 格式: base64(githubToken:expiresAt)
+  const raw = `${githubToken}:${expiresAt}`;
+  return btoa(raw);
 }
 
-// 验证 session token - AES-GCM 解密
-async function validateSessionToken(sessionToken: string, env: Env): Promise<{ githubToken: string } | null> {
+// 验证 session token
+function validateSessionToken(sessionToken: string): { githubToken: string } | null {
   try {
-    const parts = sessionToken.split('.');
-    if (parts.length !== 2) {
-      console.error('validateSessionToken: invalid format, parts.length =', parts.length);
+    const raw = atob(sessionToken);
+    const parts = raw.split(':');
+    if (parts.length < 2) return null;
+    const expiresAt = parseInt(parts[parts.length - 1], 10);
+    if (isNaN(expiresAt) || Date.now() > expiresAt) {
       return null;
     }
-    
-    const [ivB64, encB64] = parts;
-    // 还原 base64 padding
-    const ivStr = ivB64.replace(/-/g, '+').replace(/_/g, '/') + '=='.slice((ivB64.length % 4) % 4);
-    const encStr = encB64.replace(/-/g, '+').replace(/_/g, '/') + '=='.slice((encB64.length % 4) % 4);
-    
-    const iv = new Uint8Array(atob(ivStr).split('').map(c => c.charCodeAt(0)));
-    const encrypted = new Uint8Array(atob(encStr).split('').map(c => c.charCodeAt(0)));
-    
-    const key = await deriveAesKey(env.SESSION_SECRET);
-    
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      encrypted
-    );
-    
-    const payload = JSON.parse(new TextDecoder().decode(decrypted));
-    if (Date.now() > payload.e) {
-      console.error('validateSessionToken: token expired');
-      return null;
-    }
-    
-    return { githubToken: payload.t };
-  } catch (e) {
-    console.error('validateSessionToken failed:', e);
+    // githubToken 可能包含 ':'，拼接回去
+    const githubToken = parts.slice(0, -1).join(':');
+    return { githubToken };
+  } catch {
     return null;
   }
 }
@@ -265,7 +209,6 @@ export default {
 
       // API 请求路由分发
       if (url.pathname === '/api/auth/login' && request.method === 'GET') {
-        console.log('[auth] login request, frontendUrl:', frontendUrl);
         const state = await generateState(frontendUrl, env);
         const clientId = env.GITHUB_CLIENT_ID;
         const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=consent`;
@@ -273,32 +216,26 @@ export default {
       }
 
       if (url.pathname === '/api/auth/callback' && request.method === 'GET') {
-        console.log('[auth] callback request');
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
 
         if (!code || !state) {
-          console.log('[auth] callback: missing code or state');
           return addCorsHeaders(Response.json({ error: 'Missing code or state' }, { status: 400 }), origin, env);
         }
 
         // 验证并解析 state（带 HMAC 签名校验）
         const stateData = await parseState(state, env);
         if (!stateData.valid) {
-          console.log('[auth] callback: invalid state');
           return addCorsHeaders(Response.json({ error: 'Invalid state' }, { status: 400 }), origin, env);
         }
 
         const storedFrontendUrl = stateData.frontendUrl || frontendUrl;
-        console.log('[auth] callback: exchanging code for token');
 
         const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
         const user = await getUserInfo(accessToken);
-        console.log('[auth] callback: got user', user.login);
 
         // 生成短效 session token（1 小时过期），不再传递 GitHub access_token
-        const sessionToken = await generateSessionToken(accessToken, env);
-        console.log('[auth] callback: session token generated, length:', sessionToken.length);
+        const sessionToken = generateSessionToken(accessToken);
 
         // 重定向到前端，传递 session token（使用 fragment 不发送到服务器）
         const redirectUrl = `${storedFrontendUrl}/login#${encodeURIComponent(JSON.stringify({
@@ -307,7 +244,6 @@ export default {
           avatar: user.avatar_url,
           name: user.name || ''
         }))}`;
-        console.log('[auth] callback: redirecting to', storedFrontendUrl);
         return addCorsHeaders(new Response(null, {
           status: 302,
           headers: { 'Location': redirectUrl }
@@ -315,13 +251,8 @@ export default {
       }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        console.log('[auth] /api/me request, auth header:', request.headers.get('Authorization')?.substring(0, 20) + '...');
-        const authResult = await authenticate(request, env);
-        if (authResult instanceof Response) {
-          console.log('[auth] /api/me: authenticate failed');
-          return addCorsHeaders(authResult, origin, env);
-        }
-        console.log('[auth] /api/me: auth success');
+        const authResult = authenticate(request, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const user = await getUserInfo(authResult.githubToken);
         return addCorsHeaders(Response.json({
