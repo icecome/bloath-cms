@@ -41,19 +41,25 @@ async function authenticate(request: Request, env: Env): Promise<{ githubToken: 
   return result;
 }
 
+// 从 SESSION_SECRET 派生 AES 密钥（固定 256 位）
+async function deriveAesKey(secret: string): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(secret), 'PBKDF2', false, ['deriveBits']);
+  const derivedKey = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: encoder.encode('bloath-salt'), iterations: 1000, hash: 'SHA-256' },
+    keyMaterial,
+    256
+  );
+  return await crypto.subtle.importKey('raw', derivedKey, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
 // 生成短效 session token（1 小时过期）- AES-GCM 加密
 async function generateSessionToken(githubToken: string, env: Env): Promise<string> {
   const expiresAt = Date.now() + 3600000;
   const payload = JSON.stringify({ t: githubToken, e: expiresAt });
   
+  const key = await deriveAesKey(env.SESSION_SECRET);
   const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(env.SESSION_SECRET),
-    { name: 'AES-GCM' },
-    false,
-    ['encrypt']
-  );
   
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encrypted = await crypto.subtle.encrypt(
@@ -82,14 +88,7 @@ async function validateSessionToken(sessionToken: string, env: Env): Promise<{ g
     const iv = new Uint8Array(atob(ivStr).split('').map(c => c.charCodeAt(0)));
     const encrypted = new Uint8Array(atob(encStr).split('').map(c => c.charCodeAt(0)));
     
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(env.SESSION_SECRET),
-      { name: 'AES-GCM' },
-      false,
-      ['decrypt']
-    );
+    const key = await deriveAesKey(env.SESSION_SECRET);
     
     const decrypted = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv },
@@ -468,10 +467,9 @@ export default {
       return addCorsHeaders(Response.json({ error: 'Not found' }, { status: 404 }), origin, env);
     } catch (error) {
       console.error('Worker error:', error);
-      // 临时调试：返回详细错误信息
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      // 生产环境不返回详细错误信息
       return addCorsHeaders(Response.json(
-        { success: false, error: errorMessage, stack: error instanceof Error ? error.stack : undefined },
+        { success: false, error: 'Internal server error' },
         { status: 500 }
       ), origin, env);
     }
