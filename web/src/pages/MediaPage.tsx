@@ -12,10 +12,8 @@ export default function MediaPage() {
       <div className="px-8">
         <div className="border border-[#E8E8E8] rounded-sm p-12 text-center">
           <ImageIcon className="w-10 h-10 text-[#9CA3AF] mx-auto mb-3" />
-          <p className="text-xs text-[#9CA3AF] mb-3">拖拽图片到此处上传，或点击选择文件</p>
-          <button className="px-3 py-1.5 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors">
-            选择文件
-          </button>
+          <p className="text-sm text-[#6B7280] mb-1">功能待完善</p>
+          <p className="text-xs text-[#9CA3AF]">图片上传与管理功能将在后续版本中添加</p>
         </div>
       </div>
     </div>

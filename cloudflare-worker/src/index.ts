@@ -1,12 +1,11 @@
 // Cloudflare Worker 入口 - 路由分发和 CORS
-import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches } from './github';
+import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches, getTree } from './github';
 import type { ApiResponse, ContentEntry, Repo } from '../../shared/types';
 import type { Env } from './github';
 
 // 路径参数安全校验
-function isValidParam(value: string | null, allowSlash = false): boolean {
+function isSafePathParam(value: string | null, allowSlash = false): boolean {
   if (!value) return false;
-  // 允许 Unicode 字符（支持中文路径），但禁止危险字符
   const dangerous = /[<>"'`;&|\\$(){}[\]!#%]/;
   if (dangerous.test(value)) return false;
   return allowSlash
@@ -14,47 +13,101 @@ function isValidParam(value: string | null, allowSlash = false): boolean {
     : /^[a-zA-Z0-9._\-\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\s]+$/.test(value);
 }
 
+// 安全的 JSON 解析，防止原型污染
+function safeJsonParse(text: string): Record<string, unknown> {
+  const obj = JSON.parse(text) as Record<string, unknown>;
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+    throw new Error('Invalid JSON payload');
+  }
+  delete (obj as any).__proto__;
+  delete (obj as any).constructor;
+  delete (obj as any).prototype;
+  return obj;
+}
+
+// 内容大小限制 (10MB)
+const MAX_CONTENT_SIZE = 10 * 1024 * 1024;
+
 // 认证中间件 - 验证 session token 并返回 GitHub access_token
-function authenticate(request: Request, _env: Env): { githubToken: string } | Response {
+async function authenticate(request: Request, env: Env): Promise<{ githubToken: string } | Response> {
   const sessionToken = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!sessionToken) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const result = validateSessionToken(sessionToken);
+  const result = await validateSessionToken(sessionToken, env);
   if (!result) {
     return Response.json({ error: 'Session expired' }, { status: 401 });
   }
   return result;
 }
 
-// 生成短效 session token（1 小时过期）
-function generateSessionToken(githubToken: string): string {
+// 生成短效 session token（1 小时过期）- AES-GCM 加密
+async function generateSessionToken(githubToken: string, env: Env): Promise<string> {
   const expiresAt = Date.now() + 3600000;
-  // 格式: base64(githubToken:expiresAt)
-  const raw = `${githubToken}:${expiresAt}`;
-  return btoa(raw);
+  const payload = JSON.stringify({ t: githubToken, e: expiresAt });
+  
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(env.SESSION_SECRET),
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+  
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    encoder.encode(payload)
+  );
+  
+  // 格式: iv(12字节).encrypted_data (base64url)
+  const ivB64 = btoa(String.fromCharCode(...iv)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const encB64 = btoa(String.fromCharCode(...new Uint8Array(encrypted))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${ivB64}.${encB64}`;
 }
 
-// 验证 session token
-function validateSessionToken(sessionToken: string): { githubToken: string } | null {
+// 验证 session token - AES-GCM 解密
+async function validateSessionToken(sessionToken: string, env: Env): Promise<{ githubToken: string } | null> {
   try {
-    const raw = atob(sessionToken);
-    const parts = raw.split(':');
-    if (parts.length < 2) return null;
-    const expiresAt = parseInt(parts[parts.length - 1], 10);
-    if (isNaN(expiresAt) || Date.now() > expiresAt) {
-      return null;
-    }
-    // githubToken 可能包含 ':'，拼接回去
-    const githubToken = parts.slice(0, -1).join(':');
-    return { githubToken };
+    const parts = sessionToken.split('.');
+    if (parts.length !== 2) return null;
+    
+    const [ivB64, encB64] = parts;
+    // 还原 base64 padding
+    const ivStr = ivB64.replace(/-/g, '+').replace(/_/g, '/') + '=='.slice((ivB64.length % 4) % 4);
+    const encStr = encB64.replace(/-/g, '+').replace(/_/g, '/') + '=='.slice((encB64.length % 4) % 4);
+    
+    const iv = new Uint8Array(atob(ivStr).split('').map(c => c.charCodeAt(0)));
+    const encrypted = new Uint8Array(atob(encStr).split('').map(c => c.charCodeAt(0)));
+    
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(env.SESSION_SECRET),
+      { name: 'AES-GCM' },
+      false,
+      ['decrypt']
+    );
+    
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      encrypted
+    );
+    
+    const payload = JSON.parse(new TextDecoder().decode(decrypted));
+    if (Date.now() > payload.e) return null;
+    
+    return { githubToken: payload.t };
   } catch {
     return null;
   }
 }
 
 // CORS 头
-function corsHeaders(origin: string, _env: Env): Headers {
+function corsHeaders(origin: string, _env: Env): Headers | null {
   // 开发环境
   const devOrigins = [
     'http://localhost:3000',
@@ -72,7 +125,9 @@ function corsHeaders(origin: string, _env: Env): Headers {
   ];
 
   const allowedOrigins = [...devOrigins, ...prodOrigins];
-  const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : '*';
+  const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : null;
+
+  if (!allowedOrigin) return null;
 
   const headers = new Headers();
   headers.set('Access-Control-Allow-Origin', allowedOrigin);
@@ -86,9 +141,13 @@ function corsHeaders(origin: string, _env: Env): Headers {
 // 添加 CORS 头到响应
 function addCorsHeaders(response: Response, origin: string, env: Env): Response {
   const cors = corsHeaders(origin, env);
+  if (!cors) return response;
   cors.forEach((value, key) => {
     response.headers.set(key, value);
   });
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   return response;
 }
 
@@ -100,7 +159,8 @@ async function generateState(frontendUrl: string, env: Env): Promise<string> {
   const payload = `${frontendUrl}:${randomPart}`;
   // 使用 HMAC-SHA256 签名，密钥使用 SESSION_SECRET
   const encoder = new TextEncoder();
-  const secretKey = env.SESSION_SECRET || 'fallback-session-secret';
+  const secretKey = env.SESSION_SECRET;
+  if (!secretKey) throw new Error('SESSION_SECRET not configured');
   const key = await crypto.subtle.importKey(
     'raw',
     encoder.encode(secretKey),
@@ -136,11 +196,11 @@ async function parseState(state: string, env: Env): Promise<{ frontendUrl: strin
   // 验证 HMAC 签名，密钥使用 SESSION_SECRET
   const encoder = new TextEncoder();
   const payload = `${frontendUrl}:${randomPart}`;
-  const secretKey = env.SESSION_SECRET || '';
-  const keyBytes = encoder.encode(secretKey);
-  if (!keyBytes.byteLength) {
+  const secretKey = env.SESSION_SECRET;
+  if (!secretKey) {
     return { frontendUrl: '', valid: false };
   }
+  const keyBytes = encoder.encode(secretKey);
 
   try {
     const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
@@ -214,7 +274,7 @@ export default {
         const user = await getUserInfo(accessToken);
 
         // 生成短效 session token（1 小时过期），不再传递 GitHub access_token
-        const sessionToken = generateSessionToken(accessToken);
+        const sessionToken = await generateSessionToken(accessToken, env);
 
         // 重定向到前端，传递 session token（使用 fragment 不发送到服务器）
         const redirectUrl = `${storedFrontendUrl}/login#${encodeURIComponent(JSON.stringify({
@@ -230,7 +290,7 @@ export default {
       }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const user = await getUserInfo(authResult.githubToken);
@@ -245,7 +305,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos' && request.method === 'GET') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const repos = await getUserRepos(authResult.githubToken);
@@ -256,7 +316,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/files' && request.method === 'GET') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
@@ -266,13 +326,13 @@ export default {
         const path = params.get('path') || '';
         const branch = params.get('branch') || 'main';
 
-        if (!isValidParam(owner) || !isValidParam(repo)) {
+        if (!isSafePathParam(owner) || !isSafePathParam(repo)) {
           return addCorsHeaders(Response.json({ error: 'Invalid owner or repo' }, { status: 400 }), origin, env);
         }
-        if (path && !isValidParam(path, true)) {
+        if (path && !isSafePathParam(path, true)) {
           return addCorsHeaders(Response.json({ error: 'Invalid path' }, { status: 400 }), origin, env);
         }
-        if (!isValidParam(branch)) {
+        if (!isSafePathParam(branch)) {
           return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
@@ -281,7 +341,7 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'GET') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
@@ -291,13 +351,13 @@ export default {
         const filePath = params.get('path');
         const branch = params.get('branch') || 'main';
 
-        if (!isValidParam(owner) || !isValidParam(repo) || !filePath) {
+        if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath) {
           return addCorsHeaders(Response.json({ error: 'Missing required params' }, { status: 400 }), origin, env);
         }
-        if (!isValidParam(filePath, true)) {
+        if (!isSafePathParam(filePath, true)) {
           return addCorsHeaders(Response.json({ error: 'Invalid path' }, { status: 400 }), origin, env);
         }
-        if (!isValidParam(branch)) {
+        if (!isSafePathParam(branch)) {
           return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
@@ -306,20 +366,23 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'PUT') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
-        const data = await request.json() as Record<string, any>;
+        const data = safeJsonParse(await request.text()) as Record<string, any>;
         const { owner, repo, path: filePath, content, message, sha, branch = 'main', userName } = data;
 
-        if (!isValidParam(owner) || !isValidParam(repo) || !filePath || !content) {
+        if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath || !content) {
           return addCorsHeaders(Response.json({ error: 'Missing required fields' }, { status: 400 }), origin, env);
         }
-        if (!isValidParam(filePath, true)) {
+        if (typeof content === 'string' && content.length > MAX_CONTENT_SIZE) {
+          return addCorsHeaders(Response.json({ error: 'File too large (max 10MB)' }, { status: 400 }), origin, env);
+        }
+        if (!isSafePathParam(filePath, true)) {
           return addCorsHeaders(Response.json({ error: 'Invalid path' }, { status: 400 }), origin, env);
         }
-        if (!isValidParam(branch)) {
+        if (!isSafePathParam(branch)) {
           return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
@@ -334,20 +397,20 @@ export default {
       }
 
       if (url.pathname === '/api/repos/file' && request.method === 'DELETE') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
-        const data = await request.json() as Record<string, any>;
+        const data = safeJsonParse(await request.text()) as Record<string, any>;
         const { owner, repo, path: filePath, sha, message, branch = 'main' } = data;
 
-        if (!isValidParam(owner) || !isValidParam(repo) || !filePath || !sha) {
+        if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath || !sha) {
           return addCorsHeaders(Response.json({ error: 'Missing required fields' }, { status: 400 }), origin, env);
         }
-        if (!isValidParam(filePath, true)) {
+        if (!isSafePathParam(filePath, true)) {
           return addCorsHeaders(Response.json({ error: 'Invalid path' }, { status: 400 }), origin, env);
         }
-        if (!isValidParam(branch)) {
+        if (!isSafePathParam(branch)) {
           return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
@@ -356,8 +419,8 @@ export default {
       }
 
       // 获取仓库分支列表
-      if (url.pathname === '/api/repos/branches' || url.pathname.startsWith('/api/repos/') && url.pathname.endsWith('/branches')) {
-        const authResult = authenticate(request, env);
+      if (url.pathname.startsWith('/api/repos/') && url.pathname.endsWith('/branches')) {
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
         const githubToken = authResult.githubToken;
 
@@ -371,12 +434,34 @@ export default {
           repo = repo || parts[1] || null;
         }
 
-        if (!isValidParam(owner) || !isValidParam(repo)) {
+        if (!isSafePathParam(owner) || !isSafePathParam(repo)) {
           return addCorsHeaders(Response.json({ error: 'Missing owner or repo' }, { status: 400 }), origin, env);
         }
 
         const branches = await getRepoBranches(githubToken, owner!, repo!);
         return addCorsHeaders(Response.json({ success: true, data: branches }), origin, env);
+      }
+
+      // 获取仓库目录树（替代递归扫描）
+      if (url.pathname === '/api/repos/tree' && request.method === 'GET') {
+        const authResult = await authenticate(request, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+        const githubToken = authResult.githubToken;
+
+        const params = new URL(request.url).searchParams;
+        const owner = params.get('owner');
+        const repo = params.get('repo');
+        const branch = params.get('branch') || 'main';
+
+        if (!isSafePathParam(owner) || !isSafePathParam(repo)) {
+          return addCorsHeaders(Response.json({ error: 'Missing owner or repo' }, { status: 400 }), origin, env);
+        }
+        if (!isSafePathParam(branch)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
+        }
+
+        const tree = await getTree(githubToken, owner!, repo!, branch);
+        return addCorsHeaders(Response.json({ success: true, data: tree }), origin, env);
       }
 
       // 404

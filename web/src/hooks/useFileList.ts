@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getFiles } from '../lib/api';
+import { getTree } from '../lib/api';
 
 export interface FileItem {
   name: string;
@@ -9,42 +9,46 @@ export interface FileItem {
   size?: number;
 }
 
-const MAX_DEPTH = 10;
-
-export async function scanMdFiles(
-  token: string,
-  repo: { owner: string; repo: string; branch: string },
-  dirPath: string,
-  depth: number = 0
-): Promise<FileItem[]> {
-  if (depth >= MAX_DEPTH) return [];
-
-  const items = await getFiles(token, { ...repo, path: dirPath });
-  const files: FileItem[] = [];
-  const dirs: string[] = [];
-
-  for (const item of items) {
-    if (item.type === 'file' && item.name.endsWith('.md')) {
-      files.push(item);
-    } else if (item.type === 'dir') {
-      dirs.push(item.path);
-    }
-  }
-
-  // 并行扫描子目录
-  if (dirs.length > 0 && depth < MAX_DEPTH) {
-    const subResults = await Promise.all(
-      dirs.map(dir => scanMdFiles(token, repo, dir, depth + 1))
-    );
-    for (const subFiles of subResults) {
-      files.push(...subFiles);
-    }
-  }
-
-  return files;
+export interface RepoInfo {
+  owner: string;
+  repo: string;
+  branch: string;
 }
 
-export function useFileList(basePath: string, selectedRepo: any, token: string | null) {
+/**
+ * 使用 GitHub Trees API 一次性获取目录树，替代递归扫描
+ * 将 N 个递归请求减少为 1 个请求
+ */
+export async function scanMdFiles(
+  token: string,
+  repo: RepoInfo,
+  basePath: string
+): Promise<FileItem[]> {
+  // 使用 Trees API 一次性获取所有文件
+  const allFiles = await getTree(token, repo);
+
+  // 过滤出 basePath 下的 .md 文件
+  const normalizedBase = basePath.replace(/^\/+|\/+$/g, '');
+  return allFiles
+    .filter((item: FileItem) => {
+      // 只保留 .md 文件
+      if (!item.name.endsWith('.md')) return false;
+      // 如果指定了 basePath，只保留该路径下的文件
+      if (normalizedBase) {
+        return item.path.startsWith(normalizedBase + '/') || item.path === normalizedBase;
+      }
+      return true;
+    })
+    .map((item: FileItem) => ({
+      name: item.name,
+      path: item.path,
+      sha: item.sha,
+      type: item.type,
+      size: item.size
+    }));
+}
+
+export function useFileList(basePath: string, selectedRepo: RepoInfo | null, token: string | null) {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
 

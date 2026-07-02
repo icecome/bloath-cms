@@ -8,17 +8,6 @@ export interface Env {
   FRONTEND_URL: string;
 }
 
-// OAuth 授权 URL
-export function getAuthUrl(state: string, clientId: string, workerUrl: string): string {
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: `${new URL(workerUrl).origin}/api/auth/callback`,
-    scope: 'repo user:email',
-    state
-  });
-  return `https://github.com/login/oauth/authorize?${params.toString()}`;
-}
-
 // 交换 code 获取 access_token
 export async function exchangeCode(code: string, clientSecret: string, clientId: string, redirectUri: string): Promise<string> {
   const response = await fetch('https://github.com/login/oauth/access_token', {
@@ -270,6 +259,41 @@ export async function getRepoBranches(
 
   const data = await response.json() as any[];
   return data.map((branch: any) => branch.name);
+}
+
+// 使用 GitHub Trees API 一次性获取整个目录树（替代递归扫描）
+export async function getTree(
+  token: string,
+  owner: string,
+  repo: string,
+  branch: string = 'main'
+): Promise<FileInfo[]> {
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'User-Agent': 'Bloath-CMS'
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`${response.status}: ${response.statusText} - ${errorBody}`);
+  }
+
+  const data = await response.json() as { tree: any[] };
+  // 只返回文件，过滤掉目录和子模块
+  return data.tree
+    .filter((item: any) => item.type === 'blob')
+    .map((item: any) => ({
+      name: item.path.split('/').pop() || item.path,
+      path: item.path,
+      sha: item.sha,
+      type: 'file' as const,
+      size: item.size
+    }));
 }
 
 // 获取用户信息
