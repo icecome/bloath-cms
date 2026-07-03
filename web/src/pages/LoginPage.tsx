@@ -6,22 +6,23 @@ function LoginPage() {
 
   // 从 fragment 中解析 token（后端直接传递 GitHub access_token）
   React.useEffect(() => {
-    console.log('[LoginPage] effect triggered, hash:', window.location.hash.substring(0, 50));
+    console.log('[LoginPage] effect triggered, full URL:', window.location.href);
+    console.log('[LoginPage] hash:', JSON.stringify(window.location.hash));
     try {
       const hash = window.location.hash.slice(1); // 去掉 #
-      console.log('[LoginPage] hash slice:', hash.substring(0, 50));
+      console.log('[LoginPage] hash slice length:', hash.length);
       if (hash) {
         const parsed = JSON.parse(decodeURIComponent(hash));
-        console.log('[LoginPage] parsed:', parsed);
+        console.log('[LoginPage] parsed keys:', Object.keys(parsed));
         if (parsed.token) {
           console.log('[LoginPage] saving token to sessionStorage');
           sessionStorage.setItem('token', parsed.token);
-          // 清理 URL，移除 fragment
           window.history.replaceState(null, '', window.location.pathname);
           console.log('[LoginPage] token saved, reloading page');
-          // 刷新页面让 useAuth 重新读取 token
           window.location.reload();
           return;
+        } else {
+          console.log('[LoginPage] no token in parsed data');
         }
       }
     } catch (e) {
