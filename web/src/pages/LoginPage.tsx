@@ -1,29 +1,29 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 function LoginPage() {
   const { login } = useAuth();
+  const navigate = useNavigate();
 
-  // 从 fragment 中解析 token（后端直接传递 GitHub access_token）
+  // 从 query 参数解析 token 或已有 token 自动跳转
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     
     if (token) {
-      console.log('[LoginPage] found token in query params, saving to sessionStorage');
       sessionStorage.setItem('token', token);
-      console.log('[LoginPage] verified token in sessionStorage:', sessionStorage.getItem('token') ? 'saved' : 'failed');
-      // 清理 URL，移除 query 参数
       window.history.replaceState(null, '', window.location.pathname);
-      console.log('[LoginPage] token saved, reloading page');
       window.location.reload();
       return;
     }
     
-    // 检查 sessionStorage 中是否已有 token
+    // 如果 sessionStorage 中已有 token 且 URL 没有 query 参数，直接跳转主页
     const storedToken = sessionStorage.getItem('token');
-    console.log('[LoginPage] no query param token, sessionStorage token:', storedToken ? 'exists' : 'null');
-  }, []);
+    if (storedToken && !params.toString()) {
+      navigate('/', { replace: true });
+    }
+  }, [navigate]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#FAFAFA]">
