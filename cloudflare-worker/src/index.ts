@@ -242,17 +242,26 @@ export default {
         // 生成短效 session token（1 小时过期），不再传递 GitHub access_token
         const sessionToken = generateSessionToken(accessToken);
 
-        // 重定向到前端，传递 session token（使用 fragment 不发送到服务器）
-        const redirectUrl = `${storedFrontendUrl}/login#${encodeURIComponent(JSON.stringify({
-          token: sessionToken,
-          login: user.login,
-          avatar: user.avatar_url,
-          name: user.name || ''
-        }))}`;
+        // 重定向到前端，通过 query 参数传递 session token（非 fragment）
+        const redirectUrl = `${storedFrontendUrl}/login?token=${encodeURIComponent(sessionToken)}&login=${encodeURIComponent(user.login || '')}&avatar=${encodeURIComponent(user.avatar_url || '')}&name=${encodeURIComponent(user.name || '')}`;
         return addCorsHeaders(new Response(null, {
           status: 302,
           headers: { 'Location': redirectUrl }
         }), origin, env);
+      }
+
+      // 前端 GitHub 回调回来后，调用此端点完成登录
+      if (url.pathname === '/api/auth/complete' && request.method === 'POST') {
+        try {
+          const body = await request.json() as { accessToken: string };
+          if (!body.accessToken) {
+            return addCorsHeaders(Response.json({ error: 'Missing access token' }, { status: 400 }), origin, env);
+          }
+          const sessionToken = generateSessionToken(body.accessToken);
+          return addCorsHeaders(Response.json({ success: true, sessionToken }), origin, env);
+        } catch {
+          return addCorsHeaders(Response.json({ error: 'Invalid request body' }, { status: 400 }), origin, env);
+        }
       }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {

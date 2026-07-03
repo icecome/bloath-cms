@@ -8,25 +8,19 @@ function LoginPage() {
   React.useEffect(() => {
     console.log('[LoginPage] effect triggered, full URL:', window.location.href);
     console.log('[LoginPage] hash:', JSON.stringify(window.location.hash));
-    try {
-      const hash = window.location.hash.slice(1); // 去掉 #
-      console.log('[LoginPage] hash slice length:', hash.length);
-      if (hash) {
-        const parsed = JSON.parse(decodeURIComponent(hash));
-        console.log('[LoginPage] parsed keys:', Object.keys(parsed));
-        if (parsed.token) {
-          console.log('[LoginPage] saving token to sessionStorage');
-          sessionStorage.setItem('token', parsed.token);
-          window.history.replaceState(null, '', window.location.pathname);
-          console.log('[LoginPage] token saved, reloading page');
-          window.location.reload();
-          return;
-        } else {
-          console.log('[LoginPage] no token in parsed data');
-        }
-      }
-    } catch (e) {
-      console.error('Failed to parse login fragment:', e);
+    console.log('[LoginPage] search:', JSON.stringify(window.location.search));
+    
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    
+    if (token) {
+      console.log('[LoginPage] found token in query params, saving to sessionStorage');
+      sessionStorage.setItem('token', token);
+      // 清理 URL，移除 query 参数
+      window.history.replaceState(null, '', window.location.pathname);
+      console.log('[LoginPage] token saved, reloading page');
+      window.location.reload();
+      return;
     }
   }, []);
 
