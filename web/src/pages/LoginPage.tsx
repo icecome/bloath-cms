@@ -6,22 +6,23 @@ function LoginPage() {
 
   // 从 fragment 中解析 token（后端直接传递 GitHub access_token）
   React.useEffect(() => {
-    console.log('[LoginPage] effect triggered, full URL:', window.location.href);
-    console.log('[LoginPage] hash:', JSON.stringify(window.location.hash));
-    console.log('[LoginPage] search:', JSON.stringify(window.location.search));
-    
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     
     if (token) {
       console.log('[LoginPage] found token in query params, saving to sessionStorage');
       sessionStorage.setItem('token', token);
+      console.log('[LoginPage] verified token in sessionStorage:', sessionStorage.getItem('token') ? 'saved' : 'failed');
       // 清理 URL，移除 query 参数
       window.history.replaceState(null, '', window.location.pathname);
       console.log('[LoginPage] token saved, reloading page');
       window.location.reload();
       return;
     }
+    
+    // 检查 sessionStorage 中是否已有 token
+    const storedToken = sessionStorage.getItem('token');
+    console.log('[LoginPage] no query param token, sessionStorage token:', storedToken ? 'exists' : 'null');
   }, []);
 
   return (
