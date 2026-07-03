@@ -235,6 +235,11 @@ function hexToUint8Array(hex: string): Uint8Array {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // 调试：验证环境变量是否正确注入
+    console.log('[env] GITHUB_CLIENT_ID:', env.GITHUB_CLIENT_ID ? 'exists' : 'missing');
+    console.log('[env] SESSION_SECRET:', env.SESSION_SECRET ? 'exists' : 'missing');
+    console.log('[env] FRONTEND_URL:', env.FRONTEND_URL || 'missing');
+
     const url = new URL(request.url);
     const origin = request.headers.get('Origin') || '';
     // 生产环境使用当前域名，本地开发使用 localhost
