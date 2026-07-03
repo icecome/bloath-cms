@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { getBranches } from '../lib/api';
 
 interface RepoState {
   owner: string;
@@ -47,15 +48,8 @@ export function RepoProvider({ children }: { children: ReactNode }) {
     if (!token) return;
     setLoadingBranches(true);
     try {
-      const API_BASE = import.meta.env.VITE_API_URL || '';
-      const res = await fetch(
-        `${API_BASE}/api/repos/${owner}/${repo}/branches`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = await res.json();
-      if (data.success) {
-        setBranches(data.data || []);
-      }
+      const branches = await getBranches(token, owner, repo);
+      setBranches(branches);
     } catch (err) {
       console.error('加载分支失败:', err);
       setBranches(['main']);

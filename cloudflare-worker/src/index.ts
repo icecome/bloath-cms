@@ -29,42 +29,94 @@ function safeJsonParse(text: string): Record<string, unknown> {
 const MAX_CONTENT_SIZE = 10 * 1024 * 1024;
 
 // 认证中间件 - 验证 session token 并返回 GitHub access_token
-function authenticate(request: Request, _env: Env): { githubToken: string } | Response {
+async function authenticate(request: Request, env: Env): Promise<{ githubToken: string } | Response> {
   const sessionToken = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!sessionToken) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const result = validateSessionToken(sessionToken);
+  const result = await validateSessionToken(sessionToken, env);
   if (!result) {
     return Response.json({ error: 'Session expired' }, { status: 401 });
   }
   return result;
 }
 
-// 生成短效 session token（1 小时过期）
-function generateSessionToken(githubToken: string): string {
+// AES-GCM 加密生成 session token
+async function generateSessionToken(githubToken: string, env: Env): Promise<string | Response> {
   const expiresAt = Date.now() + 3600000;
-  // 格式: base64(githubToken:expiresAt)
-  const raw = `${githubToken}:${expiresAt}`;
-  return btoa(raw);
+  const payload = JSON.stringify({ githubToken, expiresAt });
+
+  const secretKey = env.SESSION_SECRET;
+  if (!secretKey) {
+    return Response.json({ error: 'SESSION_SECRET not configured' }, { status: 500 });
+  }
+
+  const encoder = new TextEncoder();
+  // 使用 SHA-256 哈希将任意长度密钥转换为 256 位
+  const keyBytes = await crypto.subtle.digest('SHA-256', encoder.encode(secretKey));
+  const key = await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
+
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    encoder.encode(payload)
+  );
+
+  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(encrypted), iv.length);
+
+  return btoa(String.fromCharCode(...combined));
 }
 
-// 验证 session token
-function validateSessionToken(sessionToken: string): { githubToken: string } | null {
-  try {
-    const raw = atob(sessionToken);
-    const parts = raw.split(':');
-    if (parts.length < 2) return null;
-    const expiresAt = parseInt(parts[parts.length - 1], 10);
-    if (isNaN(expiresAt) || Date.now() > expiresAt) {
+// AES-GCM 解密验证 session token
+function validateSessionToken(sessionToken: string, env: Env): Promise<{ githubToken: string } | null> {
+  return (async () => {
+    try {
+      const secretKey = env.SESSION_SECRET;
+      if (!secretKey) return null;
+
+      const combined = Uint8Array.from(atob(sessionToken), c => c.charCodeAt(0));
+      if (combined.length < 12) return null;
+
+      const iv = combined.slice(0, 12);
+      const ciphertext = combined.slice(12);
+
+      const encoder = new TextEncoder();
+      // 使用 SHA-256 哈希将任意长度密钥转换为 256 位
+      const keyBytes = await crypto.subtle.digest('SHA-256', encoder.encode(secretKey));
+      const key = await crypto.subtle.importKey(
+        'raw',
+        keyBytes,
+        { name: 'AES-GCM' },
+        false,
+        ['decrypt']
+      );
+
+      const decrypted = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        ciphertext
+      );
+
+      const payload = JSON.parse(new TextDecoder().decode(decrypted));
+      if (!payload.githubToken || !payload.expiresAt) return null;
+      if (Date.now() > payload.expiresAt) return null;
+
+      return { githubToken: payload.githubToken };
+    } catch {
       return null;
     }
-    // githubToken 可能包含 ':'，拼接回去
-    const githubToken = parts.slice(0, -1).join(':');
-    return { githubToken };
-  } catch {
-    return null;
-  }
+  })();
 }
 
 // CORS 头
@@ -239,10 +291,14 @@ export default {
         const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
         const user = await getUserInfo(accessToken);
 
-        // 生成短效 session token（1 小时过期），不再传递 GitHub access_token
-        const sessionToken = generateSessionToken(accessToken);
+        // AES-GCM 加密生成 session token
+        const sessionTokenResult = await generateSessionToken(accessToken, env);
+        if (sessionTokenResult instanceof Response) {
+          return addCorsHeaders(sessionTokenResult, origin, env);
+        }
+        const sessionToken = sessionTokenResult;
 
-        // 重定向到前端，通过 query 参数传递 session token（非 fragment）
+        // 重定向到前端，通过 query 参数传递 session token 和用户信息
         const redirectUrl = `${storedFrontendUrl}/login?token=${encodeURIComponent(sessionToken)}&login=${encodeURIComponent(user.login || '')}&avatar=${encodeURIComponent(user.avatar_url || '')}&name=${encodeURIComponent(user.name || '')}`;
         return addCorsHeaders(new Response(null, {
           status: 302,
@@ -257,15 +313,18 @@ export default {
           if (!body.accessToken) {
             return addCorsHeaders(Response.json({ error: 'Missing access token' }, { status: 400 }), origin, env);
           }
-          const sessionToken = generateSessionToken(body.accessToken);
-          return addCorsHeaders(Response.json({ success: true, sessionToken }), origin, env);
+          const sessionTokenResult = await generateSessionToken(body.accessToken, env);
+          if (sessionTokenResult instanceof Response) {
+            return addCorsHeaders(sessionTokenResult, origin, env);
+          }
+          return addCorsHeaders(Response.json({ success: true, sessionToken: sessionTokenResult }), origin, env);
         } catch {
           return addCorsHeaders(Response.json({ error: 'Invalid request body' }, { status: 400 }), origin, env);
         }
       }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        const authResult = authenticate(request, env);
+        const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const user = await getUserInfo(authResult.githubToken);
