@@ -341,7 +341,7 @@ export default function DraftsPage() {
 
       {/* 搜索栏 + 操作工具栏 */}
       {selectedRepo && (
-        <div className="px-8 py-4 border-b border-[#F2F2F2]">
+        <div className="px-4 md:px-8 py-4 border-b border-[#F2F2F2]">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
             <input
@@ -469,7 +469,7 @@ export default function DraftsPage() {
       )}
 
       {/* 文件列表 */}
-      <div className="px-8">
+      <div className="px-4 md:px-8">
         {!selectedRepo ? (
           <EmptyState
             icon={<FileText className="w-12 h-12" />}
@@ -479,8 +479,8 @@ export default function DraftsPage() {
           <LoadingState />
         ) : filteredFiles.length > 0 ? (
           <div>
-            {/* 表头 */}
-            <div className="flex items-center py-3 px-4 text-sm font-medium text-[#6B7280] bg-[#F5F6F7] border-b border-[#E8E8E8]">
+            {/* 桌面端表头 */}
+            <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-[#6B7280] bg-[#F5F6F7] border-b border-[#E8E8E8]">
               <div className="w-8 flex items-center justify-center">
                 <input
                   type="checkbox"
@@ -494,11 +494,11 @@ export default function DraftsPage() {
               <div className="w-[20%] text-right">操作</div>
             </div>
 
-            {/* 列表行 */}
+            {/* 列表 */}
             {paginatedFiles.map((file) => (
               <div
                 key={file.path}
-                className={`flex items-center px-4 py-3.5 cursor-pointer border-b border-[#F2F2F2] transition-colors hover:bg-[#F9FAFA] ${
+                className={`flex items-center px-4 py-3.5 border-b border-[#F2F2F2] transition-colors hover:bg-[#F9FAFA] ${
                   selectedFiles.has(file.path) ? 'bg-[#F9FAFA]' : ''
                 }`}
                 onClick={(e) => {
@@ -507,8 +507,8 @@ export default function DraftsPage() {
                   handleEdit(file);
                 }}
               >
-                {/* 多选框 */}
-                <div className="w-8 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                {/* 桌面端：表格行 */}
+                <div className="hidden md:flex items-center w-8 justify-center" onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
                     checked={selectedFiles.has(file.path)}
@@ -516,22 +516,16 @@ export default function DraftsPage() {
                     className="w-4 h-4 rounded-sm border-[#E8E8E8] bg-white text-[#3B82F6] focus:ring-[#3B82F6]"
                   />
                 </div>
-
-                {/* 文件名 */}
-                <div className="w-[40%] flex items-center gap-2.5 px-3">
+                <div className="hidden md:flex items-center w-[40%] gap-2.5 px-3">
                   <FileText className="w-4 h-4 text-[#6B7280] flex-shrink-0" />
                   <span className="text-sm text-[#1F1F1F] truncate">
                     {file.name.replace('.md', '')}
                   </span>
                 </div>
-
-                {/* 路径 */}
-                <div className="w-[40%] px-3">
+                <div className="hidden md:block w-[40%] px-3">
                   <span className="text-sm text-[#6B7280] truncate block">{file.path}</span>
                 </div>
-
-                {/* 操作 */}
-                <div className="w-[20%] text-right px-3 flex items-center justify-end gap-2">
+                <div className="hidden md:flex w-[20%] items-center justify-end gap-2 px-3">
                   <button
                     onClick={() => handleEdit(file)}
                     className="text-sm text-[#3B82F6] hover:underline cursor-pointer"
@@ -540,11 +534,46 @@ export default function DraftsPage() {
                   </button>
                   <button
                     onClick={() => handleSingleDelete(file)}
-                    className="text-sm text-[#6B7280] hover:text-[#EF4444] transition-colors"
+                    className="text-[#6B7280] hover:text-[#EF4444] transition-colors"
                     title="移至回收站"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
+                </div>
+
+                {/* 移动端：卡片布局 */}
+                <div className="flex md:hidden flex-1 min-w-0 items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles.has(file.path)}
+                    onChange={() => handleSelectFile(file.path)}
+                    className="w-4 h-4 rounded-sm border-[#E8E8E8] bg-white text-[#3B82F6] focus:ring-[#3B82F6] flex-shrink-0"
+                  />
+                  <FileText className="w-4 h-4 text-[#6B7280] flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[#1F1F1F] truncate">
+                      {file.name.replace('.md', '')}
+                    </div>
+                    <div className="text-xs text-[#9CA3AF] truncate mt-0.5">
+                      {file.path}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => handleEdit(file)}
+                      className="p-1.5 text-[#3B82F6] hover:bg-[#EFF6FF] rounded transition-colors"
+                      title="编辑"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleSingleDelete(file)}
+                      className="p-1.5 text-[#6B7280] hover:text-[#EF4444] hover:bg-[#FEF2F2] rounded transition-colors"
+                      title="移至回收站"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

@@ -7,7 +7,7 @@ import { readFile, writeFile, moveFile } from '../lib/api';
 import Toast from '../components/ui/Toast';
 import VditorEditor from '../components/editor/VditorEditor';
 import FrontmatterPanel from '../components/editor/FrontmatterPanel';
-import { ArrowLeft, Save, Send, Trash2, Settings2, X } from 'lucide-react';
+import { ArrowLeft, Save, Send, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import Vditor from 'vditor';
 import yaml from 'js-yaml';
 
@@ -90,6 +90,7 @@ export default function EditorPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; onUndo?: () => void } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMetadataPanel, setShowMetadataPanel] = useState(false);
+  const [showToolbar, setShowToolbar] = useState(true);
 
   // 加载已有文章
   useEffect(() => {
@@ -387,10 +388,10 @@ export default function EditorPage() {
               <button
                 onClick={() => setShowPublishDropdown(!showPublishDropdown)}
                 disabled={saving}
-                className="flex items-center gap-1.5 px-3.5 py-2 text-sm bg-green-500 text-white rounded-sm hover:bg-green-600 disabled:opacity-50 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-green-500 text-white rounded-sm hover:bg-green-600 disabled:opacity-50 transition-colors"
               >
                 <Send className="w-4 h-4" />
-                发布
+                <span className="hidden md:inline">发布</span>
               </button>
               {showPublishDropdown && (
                 <div className="absolute right-0 top-full mt-1 bg-white border border-border z-50 min-w-[250px] p-2 shadow-sm" role="menu">
@@ -439,17 +440,17 @@ export default function EditorPage() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-sm bg-foreground text-background rounded-sm hover:bg-foreground/90 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-foreground text-background rounded-sm hover:bg-foreground/90 disabled:opacity-50 transition-colors"
           >
             <Save className="w-4 h-4" />
-            {saving ? '保存中...' : '保存'}
+            <span className="hidden md:inline">{saving ? '保存中...' : '保存'}</span>
           </button>
           {!isNew && (
             <>
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={saving}
-                className="flex items-center gap-1.5 px-3.5 py-2 text-sm text-muted-foreground hover:text-destructive border border-border hover:border-destructive rounded-sm transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm text-muted-foreground hover:text-destructive border border-border hover:border-destructive rounded-sm transition-colors disabled:opacity-50"
                 title="移至回收站"
                 aria-label="移至回收站"
               >
@@ -485,12 +486,25 @@ export default function EditorPage() {
 
       <div ref={wrapperRef} className="flex-1 flex overflow-hidden">
         {/* 编辑器区域 */}
-        <div className="flex-1 overflow-hidden">
-          <VditorEditor
-            initialContent={bodyContent}
-            onInput={setBodyContent}
-            onReady={handleVditorReady}
-          />
+        <div className={`flex-1 flex flex-col overflow-hidden ${!showToolbar ? 'toolbar-hidden' : ''}`}>
+          {/* 工具栏折叠按钮 */}
+          <div className="flex items-center justify-end px-2 py-1 border-b border-[#F2F2F2] bg-[#FAFAFA]">
+            <button
+              onClick={() => setShowToolbar(!showToolbar)}
+              className="flex items-center gap-1 text-xs text-[#6B7280] hover:text-[#1F1F1F] transition-colors"
+              title={showToolbar ? '折叠工具栏' : '展开工具栏'}
+            >
+              {showToolbar ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              <span className="hidden md:inline">{showToolbar ? '折叠' : '展开'}</span>
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <VditorEditor
+              initialContent={bodyContent}
+              onInput={setBodyContent}
+              onReady={handleVditorReady}
+            />
+          </div>
         </div>
 
         {/* 桌面端右侧元数据面板 */}

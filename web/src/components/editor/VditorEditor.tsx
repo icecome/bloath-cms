@@ -25,6 +25,12 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
         cache: { enable: false },
         toolbarConfig: { pin: true },
         lang: 'zh_CN',
+        toolbar: [
+          'emoji', 'headings', 'bold', 'italic', 'strike', '|',
+          'line', 'quote', 'list', 'ordered-list', 'check', 'outdent', 'indent', '|',
+          'link', 'upload', 'code', 'inline-code', '|',
+          'table', 'export', 'fullscreen', 'edit-mode', 'preview', 'record', 'help'
+        ],
         after: () => {
           const content = contentRef.current;
           if (content) {
