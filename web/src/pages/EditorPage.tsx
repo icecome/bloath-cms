@@ -148,7 +148,6 @@ export default function EditorPage() {
   const handleSave = async () => {
     if (!token) return;
 
-    const title = frontmatter.title || '未命名';
     // 如果 URL 为空，自动生成默认值
     const effectiveFm = { ...frontmatter };
     if (isNew && !effectiveFm.url) {
