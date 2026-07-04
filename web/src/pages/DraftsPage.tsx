@@ -21,7 +21,7 @@ import {
 const PAGE_SIZE = 20;
 
 export default function DraftsPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
@@ -130,7 +130,8 @@ export default function DraftsPage() {
           toPath: newPath,
           sha: file.sha,
           branch: selectedRepo.branch,
-          message: `发布 ${file.name}`
+          message: `发布 ${file.name}`,
+          userName: user?.login
         });
       }
       setToast({ message: `成功发布 ${filesToMove.length} 篇草稿`, type: 'success' });
@@ -160,7 +161,8 @@ export default function DraftsPage() {
           toPath: newPath,
           sha: file.sha,
           branch: selectedRepo.branch,
-          message: `移动 ${file.name}`
+          message: `移动 ${file.name}`,
+          userName: user?.login
         });
       }
       setToast({ message: `成功移动 ${filesToMove.length} 篇草稿`, type: 'success' });
@@ -194,7 +196,8 @@ export default function DraftsPage() {
           toPath: trashPaths[i],
           sha: file.sha,
           branch: selectedRepo.branch,
-          message: `[skip ci] 移至回收站: ${file.name}`
+          message: `[skip ci] 移至回收站: ${file.name}`,
+          userName: user?.login
         });
       }
 
@@ -231,7 +234,8 @@ export default function DraftsPage() {
         toPath: trashFile,
         sha: file.sha,
         branch: selectedRepo.branch,
-        message: `[skip ci] 移至回收站: ${file.name}`
+        message: `[skip ci] 移至回收站: ${file.name}`,
+        userName: user?.login
       });
 
       // 记录撤销信息
@@ -255,7 +259,8 @@ export default function DraftsPage() {
               fromPath: trashFile,
               toPath: originalPath,
               branch: selectedRepo.branch,
-              message: `恢复 ${restoredFile.name}`
+              message: `恢复 ${restoredFile.name}`,
+              userName: user?.login
             });
             setFiles(prev => [...prev, restoredFile]);
             setToast({ message: '已恢复', type: 'success' });
@@ -294,7 +299,8 @@ export default function DraftsPage() {
         path: newPath,
         content: fileContent,
         branch: selectedRepo.branch,
-        message: `[skip ci] 重命名: ${oldName} -> ${newName}`
+        message: `[skip ci] 重命名: ${oldName} -> ${newName}`,
+        userName: user?.login
       });
 
       // 删除旧文件
@@ -303,7 +309,8 @@ export default function DraftsPage() {
         repo: selectedRepo.repo,
         path: renameFile.path,
         sha,
-        message: '[skip ci]'
+        message: '[skip ci]',
+        userName: user?.login
       });
 
       setToast({ message: `重命名成功`, type: 'success' });

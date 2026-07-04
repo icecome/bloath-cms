@@ -436,7 +436,7 @@ export default {
         const githubToken = authResult.githubToken;
 
         const data = safeJsonParse(await request.text()) as Record<string, any>;
-        const { owner, repo, path: filePath, sha, message, branch = 'main' } = data;
+        const { owner, repo, path: filePath, sha, message, branch = 'main', userName } = data;
 
         if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath || !sha) {
           return addCorsHeaders(Response.json({ error: 'Missing required fields' }, { status: 400 }), origin, env);
@@ -448,7 +448,13 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
-        await deleteFile(githubToken, owner, repo, filePath, sha, message, branch);
+        // 构建 author 信息
+        let author: { name: string; email: string } | undefined;
+        if (userName) {
+          author = { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
+        }
+
+        await deleteFile(githubToken, owner, repo, filePath, sha, message, branch, author);
         return addCorsHeaders(Response.json({ success: true }), origin, env);
       }
 

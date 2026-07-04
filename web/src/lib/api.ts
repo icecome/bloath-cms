@@ -24,6 +24,20 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_TIMEOUT_MS = 10000;
 
 /**
+ * 生成本地时间戳，格式 YYYYMMDDTHHmmss（依赖浏览器本地时区）
+ */
+export function formatTimestamp(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const h = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  const s = String(now.getSeconds()).padStart(2, '0');
+  return `${y}${m}${d}T${h}${min}${s}`;
+}
+
+/**
  * 统一 API 请求封装，自动处理错误响应
  */
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
@@ -110,10 +124,6 @@ export async function writeFile(
   token: string,
   params: RepoInfo & { path: string; content: string; message?: string; branch?: string; sha?: string; userName?: string }
 ): Promise<WriteResult> {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const rawMessage = params.message;
-  const isSkipCi = rawMessage && rawMessage.trimStart().startsWith('[skip ci]');
-  const message = isSkipCi ? rawMessage : `${rawMessage || timestamp} (${timestamp})`;
   return apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
     method: 'PUT',
     headers: {
@@ -125,7 +135,7 @@ export async function writeFile(
       repo: params.repo,
       path: params.path,
       content: params.content,
-      message,
+      message: params.message || formatTimestamp(),
       branch: params.branch || 'main',
       sha: params.sha,
       userName: params.userName
@@ -135,7 +145,7 @@ export async function writeFile(
 
 export async function deleteFile(
   token: string,
-  params: RepoInfo & { path: string; sha: string; message?: string }
+  params: RepoInfo & { path: string; sha: string; message?: string; userName?: string }
 ): Promise<void> {
   return apiFetch<void>(`${API_BASE}/api/repos/file`, {
     method: 'DELETE',
@@ -148,7 +158,8 @@ export async function deleteFile(
       repo: params.repo,
       path: params.path,
       sha: params.sha,
-      message: params.message || '[skip ci]'
+      message: params.message || '[skip ci]',
+      userName: params.userName
     })
   });
 }
@@ -160,7 +171,7 @@ export async function deleteFile(
  */
 export async function moveFile(
   token: string,
-  params: RepoInfo & { fromPath: string; toPath: string; sha?: string; message?: string }
+  params: RepoInfo & { fromPath: string; toPath: string; sha?: string; message?: string; userName?: string }
 ) {
   // 1. 读取源文件
   const { content: fileContent, sha: currentSha } = await readFile(token, {
@@ -170,14 +181,18 @@ export async function moveFile(
     branch: params.branch
   });
 
+  // 统一消息：写入和删除使用相同的提交信息
+  const resolvedMessage = params.message || `Move: ${params.fromPath} -> ${params.toPath}`;
+
   // 2. 写入目标路径
   await writeFile(token, {
     owner: params.owner,
     repo: params.repo,
     path: params.toPath,
     content: fileContent,
-    message: params.message || `Move: ${params.fromPath} -> ${params.toPath}`,
-    branch: params.branch
+    message: resolvedMessage,
+    branch: params.branch,
+    userName: params.userName
   });
 
   // 3. 删除源文件（如果失败，文件会同时存在于两个路径）
@@ -187,7 +202,8 @@ export async function moveFile(
       repo: params.repo,
       path: params.fromPath,
       sha: params.sha || currentSha,
-      message: params.message
+      message: resolvedMessage,
+      userName: params.userName
     });
   } catch (err) {
     console.warn(`移动文件后删除源文件失败: ${params.fromPath}`, err);

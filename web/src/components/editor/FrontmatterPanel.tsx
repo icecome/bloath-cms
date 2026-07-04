@@ -1,7 +1,8 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Calendar, User, Tag, Folder, Image, Video, Lock, Link as LinkIcon } from 'lucide-react';
+import { Calendar, User, Tag, Folder, Image, Video, Lock, Link as LinkIcon, FileText } from 'lucide-react';
 
 interface Frontmatter {
+  url?: string;
   title?: string;
   date?: string;
   author?: string;
@@ -50,6 +51,21 @@ export default function FrontmatterPanel({
 }: FrontmatterPanelProps) {
   return (
     <div className="p-4 space-y-4">
+      {/* URL / 文件名 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
+          <FileText className="w-3 h-3" />
+          URL
+        </label>
+        <input
+          type="text"
+          value={frontmatter.url || ''}
+          onChange={(e) => setFm('url', e.target.value)}
+          className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-white text-foreground placeholder:text-muted-foreground"
+          placeholder="留空则自动生成：日期-标题"
+        />
+      </div>
+
       {/* 标题 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">

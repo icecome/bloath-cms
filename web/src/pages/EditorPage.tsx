@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, useMatch } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
-import { readFile, writeFile, moveFile } from '../lib/api';
+import { readFile, writeFile, moveFile, formatTimestamp } from '../lib/api';
 import Toast from '../components/ui/Toast';
 import VditorEditor from '../components/editor/VditorEditor';
 import FrontmatterPanel from '../components/editor/FrontmatterPanel';
@@ -12,6 +12,7 @@ import Vditor from 'vditor';
 import yaml from 'js-yaml';
 
 interface Frontmatter {
+  url?: string;
   title?: string;
   date?: string;
   author?: string;
@@ -49,6 +50,8 @@ function parseFrontmatter(raw: string): { fm: Frontmatter; body: string } {
 function generateFrontmatter(fm: Frontmatter): string {
   const cleanFm: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fm)) {
+    // url 仅用于控制文件名，不写入 frontmatter
+    if (key === 'url') continue;
     if (value !== undefined && value !== '' && value !== null) {
       cleanFm[key] = value;
     }
@@ -132,11 +135,27 @@ export default function EditorPage() {
     setFrontmatter((prev) => ({ ...prev, [key]: value }));
   };
 
+  // 生成默认 URL：日期-标题（精确到日）
+  const getDefaultSlug = (): string => {
+    const title = frontmatter.title || '未命名';
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}${m}${d}-${title.replace(/\s+/g, '-')}`;
+  };
+
   const handleSave = async () => {
     if (!token) return;
 
     const title = frontmatter.title || '未命名';
-    const targetSlug = isNew ? title.replace(/\s+/g, '-') : slug;
+    // 如果 URL 为空，自动生成默认值
+    const effectiveFm = { ...frontmatter };
+    if (isNew && !effectiveFm.url) {
+      effectiveFm.url = getDefaultSlug();
+      setFm('url', effectiveFm.url);
+    }
+    const targetSlug = isNew ? effectiveFm.url : slug;
     const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
     const targetPath = isNew
       ? `${config.draftPath || '.draft'}/${targetSlug}.md`
@@ -144,14 +163,15 @@ export default function EditorPage() {
 
     setSaving(true);
     try {
-      const fullContent = `${generateFrontmatter(frontmatter)}\n\n${editorContent}`;
+      const fullContent = `${generateFrontmatter(effectiveFm)}\n\n${editorContent}`;
+      const timestamp = formatTimestamp();
 
       await writeFile(token, {
         owner,
         repo,
         path: targetPath,
         content: fullContent,
-        message: `[skip ci] 草稿: ${targetSlug}`,
+        message: `[skip ci] ${targetSlug}.md-${timestamp}`,
         branch,
         sha: currentFileSha || undefined,
         userName: user?.login
@@ -173,7 +193,13 @@ export default function EditorPage() {
   const handlePublish = async () => {
     if (!token || !selectedRepo) return;
 
-    const targetSlug = slug.replace('.md', '');
+    // 如果 URL 为空：新建文章自动生成默认值，已有文章 fallback 到路由 slug
+    const effectiveFm = { ...frontmatter };
+    if (!effectiveFm.url) {
+      effectiveFm.url = isNew ? getDefaultSlug() : slug;
+      setFm('url', effectiveFm.url);
+    }
+    const targetSlug = effectiveFm.url.replace('.md', '');
     const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
 
     if (!publishTarget) {
@@ -184,14 +210,15 @@ export default function EditorPage() {
     setSaving(true);
     try {
       const filePath = `${publishTarget}/${targetSlug}.md`;
-      const fullContent = `${generateFrontmatter(frontmatter)}\n\n${editorContent}`;
+      const fullContent = `${generateFrontmatter(effectiveFm)}\n\n${editorContent}`;
+      const timestamp = formatTimestamp();
 
       await writeFile(token, {
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         path: filePath,
         content: fullContent,
-        message: `发布: ${targetSlug}`,
+        message: `${targetSlug}.md-${timestamp}`,
         branch,
         userName: user?.login
       });
@@ -205,7 +232,8 @@ export default function EditorPage() {
           toPath: `${trashPath}/${targetSlug}.md`,
           sha: currentFileSha,
           branch,
-          message: `[skip ci] 移至回收站: ${targetSlug}`
+          message: `[skip ci] 移至回收站: ${targetSlug}`,
+          userName: user?.login
         });
       } else {
         await writeFile(token, {
@@ -213,7 +241,8 @@ export default function EditorPage() {
           repo: selectedRepo.repo,
           path: draftPath,
           content: '',
-          message: `删除草稿: ${targetSlug}`
+          message: `[skip ci] 删除草稿: ${targetSlug}`,
+          userName: user?.login
         });
       }
 
@@ -230,7 +259,13 @@ export default function EditorPage() {
   const handleDeleteArticle = async () => {
     if (!token || !selectedRepo || !currentFilePath) return;
 
-    const targetSlug = slug.replace('.md', '');
+    // 删除操作针对已有文章，URL 为空时 fallback 到路由 slug
+    const effectiveFm = { ...frontmatter };
+    if (!effectiveFm.url) {
+      effectiveFm.url = slug;
+      setFm('url', effectiveFm.url);
+    }
+    const targetSlug = effectiveFm.url.replace('.md', '');
     const trashFile = `${trashPath}/${targetSlug}.md`;
 
     setSaving(true);
@@ -242,7 +277,8 @@ export default function EditorPage() {
         toPath: trashFile,
         sha: currentFileSha,
         branch,
-        message: `[skip ci] 移至回收站: ${targetSlug}`
+        message: `[skip ci] 移至回收站: ${targetSlug}`,
+        userName: user?.login
       });
 
       setToast({ message: '已移至回收站', type: 'success' });
@@ -459,7 +495,7 @@ export default function EditorPage() {
               {showDeleteConfirm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
                   <div className="bg-white rounded-md shadow-sm p-4 w-full max-w-sm mx-4">
-                    <p className="text-sm text-foreground mb-4">确定要将 "{frontmatter.title || slug}" 移至回收站吗？</p>
+                    <p className="text-sm text-foreground mb-4">确定要将 "{frontmatter.title || frontmatter.url || slug}" 移至回收站吗？</p>
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => setShowDeleteConfirm(false)}

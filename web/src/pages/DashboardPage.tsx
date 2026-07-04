@@ -15,7 +15,7 @@ import { FileText, Search, Trash2, Pencil } from 'lucide-react';
 const PAGE_SIZE = 20;
 
 export default function DashboardPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
@@ -96,7 +96,8 @@ export default function DashboardPage() {
         toPath: trashPath,
         sha: file.sha,
         branch: selectedRepo.branch,
-        message: `[skip ci] 移至回收站: ${file.name}`
+        message: `[skip ci] 移至回收站: ${file.name}`,
+        userName: user?.login
       });
 
       // 记录撤销信息
@@ -119,7 +120,8 @@ export default function DashboardPage() {
               fromPath: trashPath,
               toPath: lastDeletedRef.current!.originalPath,
               branch: selectedRepo.branch,
-              message: `恢复 ${file.name}`
+              message: `恢复 ${file.name}`,
+              userName: user?.login
             });
             setFiles(prev => [...prev, lastDeletedRef.current!.file]);
             setToast({ message: '已恢复', type: 'success' });

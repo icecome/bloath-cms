@@ -175,12 +175,17 @@ export async function deleteFile(
   path: string,
   sha: string,
   message: string,
-  branch: string = 'main'
+  branch: string = 'main',
+  author?: { name: string; email: string }
 ): Promise<void> {
-  const payload = {
+  const payload: any = {
     message,
     sha
   };
+
+  if (author) {
+    payload.author = author;
+  }
 
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,

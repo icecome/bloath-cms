@@ -14,7 +14,7 @@ import { FileText, Search, Trash2, RotateCcw, X } from 'lucide-react';
 const PAGE_SIZE = 20;
 
 export default function TrashPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const trashPath = config.trashPath || '.trash';
@@ -103,7 +103,8 @@ export default function TrashPage() {
         toPath: newPath,
         sha: file.sha,
         branch: selectedRepo.branch,
-        message: `恢复 ${file.name}`
+        message: `恢复 ${file.name}`,
+        userName: user?.login
       });
       setToast({ message: `已将 ${file.name} 移动到 ${targetDir}`, type: 'success' });
       const updatedFiles = await scanMdFiles(token, selectedRepo, trashPath).catch(() => [] as FileItem[]);
@@ -124,7 +125,8 @@ export default function TrashPage() {
         repo: selectedRepo.repo,
         path: file.path,
         sha: file.sha,
-        message: '[skip ci]'
+        message: '[skip ci]',
+        userName: user?.login
       });
       setToast({ message: `已永久删除 ${file.name}`, type: 'success' });
       const updatedFiles = await scanMdFiles(token, selectedRepo, trashPath).catch(() => [] as FileItem[]);
@@ -150,7 +152,8 @@ export default function TrashPage() {
           toPath: newPath,
           sha: file.sha,
           branch: selectedRepo.branch,
-          message: `恢复 ${file.name}`
+          message: `恢复 ${file.name}`,
+          userName: user?.login
         });
       }
       setToast({ message: `已恢复 ${filesToRestore.length} 个文件`, type: 'success' });
@@ -177,7 +180,8 @@ export default function TrashPage() {
           repo: selectedRepo.repo,
           path: file.path,
           sha: file.sha,
-          message: '[skip ci]'
+          message: '[skip ci]',
+          userName: user?.login
         });
       }
       setToast({ message: `已永久删除 ${filesToDelete.length} 个文件`, type: 'success' });
