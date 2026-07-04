@@ -74,7 +74,8 @@ export default function DashboardPage() {
         break;
       }
     }
-    const slug = relative.replace('.md', '');
+    // 清理 slug，防止路径穿越
+    const slug = relative.replace('.md', '').replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_');
     navigate(`/editor/${slug}?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}&basePath=${encodeURIComponent(foundBasePath)}`);
   };
 
@@ -111,10 +112,7 @@ export default function DashboardPage() {
         type: 'success',
         onUndo: async () => {
           try {
-            // 重新从 sessionStorage 获取最新 token
-            const freshToken = sessionStorage.getItem('token');
-            if (!freshToken || !selectedRepo) return;
-            await moveFile(freshToken, {
+            await moveFile(token, {
               owner: selectedRepo.owner,
               repo: selectedRepo.repo,
               fromPath: trashPath,

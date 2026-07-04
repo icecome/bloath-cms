@@ -1,0 +1,178 @@
+{
+  "communities": {
+    "0": [
+      "github",
+      "github_env",
+      "github_fileinfo",
+      "github_getrepobranches",
+      "github_gettree",
+      "github_getuserinfo",
+      "github_getuserrepos",
+      "github_listdir",
+      "github_readfile",
+      "github_repo",
+      "github_userinfo"
+    ],
+    "1": [
+      "github_writefile",
+      "index",
+      "index_authenticate",
+      "index_generatesessiontoken",
+      "index_generatestate",
+      "index_hextouint8array",
+      "index_issafepathparam",
+      "index_parsestate",
+      "index_validatesessiontoken"
+    ],
+    "2": [
+      "github_deletefile",
+      "github_exchangecode",
+      "github_getuseremail",
+      "index_addcorsheaders",
+      "index_corsheaders",
+      "index_fetch",
+      "index_safejsonparse"
+    ]
+  },
+  "cohesion": {
+    "0": 0.18181818181818182,
+    "1": 0.2777777777777778,
+    "2": 0.3333333333333333
+  },
+  "gods": [
+    {
+      "id": "index_fetch",
+      "label": "fetch()",
+      "degree": 19
+    },
+    {
+      "id": "github_exchangecode",
+      "label": "exchangeCode()",
+      "degree": 3
+    },
+    {
+      "id": "github_getuserinfo",
+      "label": "getUserInfo()",
+      "degree": 3
+    },
+    {
+      "id": "github_getuserrepos",
+      "label": "getUserRepos()",
+      "degree": 3
+    },
+    {
+      "id": "github_readfile",
+      "label": "readFile()",
+      "degree": 3
+    },
+    {
+      "id": "github_writefile",
+      "label": "writeFile()",
+      "degree": 3
+    },
+    {
+      "id": "github_deletefile",
+      "label": "deleteFile()",
+      "degree": 3
+    },
+    {
+      "id": "github_listdir",
+      "label": "listDir()",
+      "degree": 3
+    },
+    {
+      "id": "github_getrepobranches",
+      "label": "getRepoBranches()",
+      "degree": 3
+    },
+    {
+      "id": "github_gettree",
+      "label": "getTree()",
+      "degree": 3
+    }
+  ],
+  "surprises": [
+    {
+      "source": "getUserInfo()",
+      "target": "fetch()",
+      "source_files": [
+        "github.ts",
+        "index.ts"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "getUserEmail()",
+      "target": "fetch()",
+      "source_files": [
+        "github.ts",
+        "index.ts"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; peripheral node `getUserEmail()` unexpectedly reaches hub `fetch()`"
+    },
+    {
+      "source": "getUserRepos()",
+      "target": "fetch()",
+      "source_files": [
+        "github.ts",
+        "index.ts"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "readFile()",
+      "target": "fetch()",
+      "source_files": [
+        "github.ts",
+        "index.ts"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "writeFile()",
+      "target": "fetch()",
+      "source_files": [
+        "github.ts",
+        "index.ts"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    }
+  ],
+  "questions": [
+    {
+      "type": "bridge_node",
+      "question": "Why does `fetch()` connect `fetch` to `github.ts`, `index.ts`?",
+      "why": "High betweenness centrality (0.233) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `authenticate()` connect `index.ts` to `fetch`?",
+      "why": "High betweenness centrality (0.003) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `parseState()` connect `index.ts` to `fetch`?",
+      "why": "High betweenness centrality (0.003) - this node is a cross-community bridge."
+    },
+    {
+      "type": "verify_inferred",
+      "question": "Are the 10 inferred relationships involving `fetch()` (e.g. with `deleteFile()` and `exchangeCode()`) actually correct?",
+      "why": "`fetch()` has 10 INFERRED edges - model-reasoned connections that need verification."
+    },
+    {
+      "type": "isolated_nodes",
+      "question": "What connects `UserInfo`, `Repo`, `FileInfo` to the rest of the system?",
+      "why": "3 weakly-connected nodes found - possible documentation gaps or missing edges."
+    }
+  ]
+}

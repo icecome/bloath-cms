@@ -75,7 +75,7 @@ export default function EditorPage() {
   const branch = searchParams.get('branch') || 'main';
   const paramBasePath = searchParams.get('basePath');
 
-  const isNew = slug === 'new';
+  const isNew = slug === 'new' && !slug.includes('.');
   const basePath = paramBasePath || (isNew ? (config.draftPath || '.draft') : '');
   const trashPath = config.trashPath || '.trash';
 
@@ -94,6 +94,11 @@ export default function EditorPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMetadataPanel, setShowMetadataPanel] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
+
+  // 从当前文件路径提取默认发布目录（用于已有文章发布时自动填充）
+  const defaultPublishTarget = currentFilePath
+    ? currentFilePath.split('/').slice(0, -1).join('/')
+    : '';
 
   // 加载已有文章
   useEffect(() => {
@@ -177,7 +182,7 @@ export default function EditorPage() {
       });
 
       if (isNew) {
-        navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}`, { replace: true });
+        navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}`);
       } else {
         setToast({ message: '草稿保存成功', type: 'success' });
       }
@@ -201,14 +206,17 @@ export default function EditorPage() {
     const targetSlug = effectiveFm.url.replace('.md', '');
     const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
 
-    if (!publishTarget) {
+    // 优先使用当前文件所在目录作为发布目标
+    const resolvedTarget = publishTarget || defaultPublishTarget;
+    if (!resolvedTarget) {
       setToast({ message: '请选择发布目标目录', type: 'error' });
       return;
     }
 
     setSaving(true);
+    let publishedPath = '';
     try {
-      const filePath = `${publishTarget}/${targetSlug}.md`;
+      const filePath = `${resolvedTarget}/${targetSlug}.md`;
       const fullContent = `${generateFrontmatter(effectiveFm)}\n\n${editorContent}`;
       const timestamp = formatTimestamp();
 
@@ -219,9 +227,12 @@ export default function EditorPage() {
         content: fullContent,
         message: `${targetSlug}.md-${timestamp}`,
         branch,
+        sha: currentFileSha || undefined,
         userName: user?.login
       });
+      publishedPath = filePath;
 
+      // 清理草稿
       const draftPath = getDraftPath(targetSlug);
       if (currentFileSha) {
         await moveFile(token, {
@@ -246,10 +257,17 @@ export default function EditorPage() {
       }
 
       setToast({ message: '发布成功', type: 'success' });
+      setPublishTarget('');
       navigate('/');
     } catch (err) {
       console.error('Failed to publish:', err);
-      setToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
+      // 如果发布成功但清理草稿失败，提示用户手动清理
+      if (publishedPath && (err as Error).message.includes('draft') || (err as Error).message.includes('trash')) {
+        setToast({ message: `文章已发布，但草稿清理失败: ${(err as Error).message}。请手动删除草稿。`, type: 'error' });
+        navigate('/');
+      } else {
+        setToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
+      }
     } finally {
       setSaving(false);
     }
@@ -331,7 +349,9 @@ export default function EditorPage() {
           return;
         }
 
-        if (e.ctrlKey || e.metaKey || e.altKey) {
+        // 仅拦截已知快捷键，其余组合键放行
+        const knownShortcuts = ['s', 'a', 'c', 'v', 'x', 'z', 'y'];
+        if ((e.ctrlKey || e.metaKey || e.altKey) && knownShortcuts.includes(e.key.toLowerCase())) {
           e.preventDefault();
           e.stopPropagation();
         }

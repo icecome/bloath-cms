@@ -19,10 +19,14 @@ function safeJsonParse(text: string): Record<string, unknown> {
   if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
     throw new Error('Invalid JSON payload');
   }
-  delete (obj as any).__proto__;
-  delete (obj as any).constructor;
-  delete (obj as any).prototype;
-  return obj;
+  // 使用 Object.create(null) 创建安全对象
+  const safeObj: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (key !== '__proto__' && key !== 'constructor' && key !== 'prototype') {
+      safeObj[key] = value;
+    }
+  }
+  return safeObj;
 }
 
 // 内容大小限制 (10MB)
@@ -174,9 +178,11 @@ async function generateState(frontendUrl: string, env: Env): Promise<string> {
   const encoder = new TextEncoder();
   const secretKey = env.SESSION_SECRET;
   if (!secretKey) throw new Error('SESSION_SECRET not configured');
+  // 统一密钥派生：先 SHA-256 哈希再作为密钥使用
+  const keyHash = await crypto.subtle.digest('SHA-256', encoder.encode(secretKey));
   const key = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(secretKey),
+    keyHash,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
@@ -206,17 +212,17 @@ async function parseState(state: string, env: Env): Promise<{ frontendUrl: strin
     return { frontendUrl: '', valid: false };
   }
 
-  // 验证 HMAC 签名，密钥使用 SESSION_SECRET
+  // 验证 HMAC 签名，密钥使用 SHA-256 哈希派生（与 generateState 保持一致）
   const encoder = new TextEncoder();
   const payload = `${frontendUrl}:${randomPart}`;
   const secretKey = env.SESSION_SECRET;
   if (!secretKey) {
     return { frontendUrl: '', valid: false };
   }
-  const keyBytes = encoder.encode(secretKey);
+  const keyHash = await crypto.subtle.digest('SHA-256', encoder.encode(secretKey));
 
   try {
-    const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+    const key = await crypto.subtle.importKey('raw', keyHash, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
     const sigBytes = hexToUint8Array(sigHex);
     const valid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(payload));
     return { frontendUrl, valid };
@@ -405,13 +411,18 @@ export default {
         const githubToken = authResult.githubToken;
 
         const data = safeJsonParse(await request.text()) as Record<string, any>;
-        const { owner, repo, path: filePath, content, message, sha, branch = 'main', userName } = data;
+        const { owner, repo, path: filePath, content, base64Content, message, sha, branch = 'main', userName } = data;
 
-        if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath || !content) {
+        // 支持 content（文本）或 base64Content（图片等二进制）
+        const fileContent = base64Content || content;
+        if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath || !fileContent) {
           return addCorsHeaders(Response.json({ error: 'Missing required fields' }, { status: 400 }), origin, env);
         }
-        if (typeof content === 'string' && content.length > MAX_CONTENT_SIZE) {
-          return addCorsHeaders(Response.json({ error: 'File too large (max 10MB)' }, { status: 400 }), origin, env);
+        if (typeof fileContent === 'string') {
+          // base64Content 编码后膨胀约 33%，实际可上传二进制内容约 7.5MB
+          if (fileContent.length > MAX_CONTENT_SIZE) {
+            return addCorsHeaders(Response.json({ error: 'File too large (max 10MB encoded)' }, { status: 400 }), origin, env);
+          }
         }
         if (!isSafePathParam(filePath, true)) {
           return addCorsHeaders(Response.json({ error: 'Invalid path' }, { status: 400 }), origin, env);
@@ -422,11 +433,12 @@ export default {
 
         // 构建 author 信息：用户名 + 来自 BloathCMS
         let author: { name: string; email: string } | undefined;
-        if (userName) {
+        if (userName && /^[a-zA-Z0-9_-]+$/.test(userName)) {
           author = { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
         }
 
-        await writeFile(githubToken, owner, repo, filePath, content, message, sha, branch, author);
+        // 如果传入的是 base64Content，直接传给 writeFile（跳过内部 base64 编码）
+        await writeFile(githubToken, owner, repo, filePath, fileContent, message, sha, branch, author, !!base64Content);
         return addCorsHeaders(Response.json({ success: true, data: { path: filePath } }), origin, env);
       }
 
@@ -450,7 +462,7 @@ export default {
 
         // 构建 author 信息
         let author: { name: string; email: string } | undefined;
-        if (userName) {
+        if (userName && /^[a-zA-Z0-9_-]+$/.test(userName)) {
           author = { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
         }
 
@@ -508,10 +520,9 @@ export default {
       return addCorsHeaders(Response.json({ error: 'Not found' }, { status: 404 }), origin, env);
     } catch (error) {
       console.error('Worker error:', error);
-      // 临时调试
-      const msg = error instanceof Error ? error.message : String(error);
+      // 生产环境不暴露详细错误信息
       return addCorsHeaders(Response.json(
-        { success: false, error: msg },
+        { success: false, error: 'Internal server error' },
         { status: 500 }
       ), origin, env);
     }

@@ -77,3 +77,20 @@ export interface ContentListParams {
   path: string;
   branch?: string;
 }
+
+// CDN 提供商
+export type CdnProvider = 'jsdelivr' | 'github_raw' | 'custom';
+
+// 同名文件策略
+export type DuplicateStrategy = 'skip' | 'overwrite';
+
+// 媒体库配置
+export interface MediaConfig {
+  imageOwner: string;
+  imageRepo: string;
+  cdnProvider: CdnProvider;
+  customCdnTemplate: string;
+  quality: number;
+  renameTemplate: string;
+  duplicateStrategy: DuplicateStrategy;
+}

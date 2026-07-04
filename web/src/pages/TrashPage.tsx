@@ -93,6 +93,10 @@ export default function TrashPage() {
 
   const handleRestore = async (file: FileItem, targetDir: string) => {
     if (!selectedRepo || !token || !targetDir.trim()) return;
+    if (!file.sha) {
+      setToast({ message: '文件缺少 SHA，无法恢复', type: 'error' });
+      return;
+    }
     setActionLoading(true);
     try {
       const newPath = `${targetDir.trim()}/${file.name}`;
@@ -174,17 +178,29 @@ export default function TrashPage() {
     setActionLoading(true);
     try {
       const filesToDelete = files.filter((f) => selectedFiles.has(f.path));
+      let deletedCount = 0;
+      const errors: string[] = [];
       for (const file of filesToDelete) {
-        await deleteFile(token, {
-          owner: selectedRepo.owner,
-          repo: selectedRepo.repo,
-          path: file.path,
-          sha: file.sha,
-          message: '[skip ci]',
-          userName: user?.login
-        });
+        try {
+          await deleteFile(token, {
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            path: file.path,
+            sha: file.sha,
+            message: '[skip ci]',
+            userName: user?.login
+          });
+          deletedCount++;
+        } catch (err) {
+          errors.push(`${file.name}: ${(err as Error).message}`);
+        }
       }
-      setToast({ message: `已永久删除 ${filesToDelete.length} 个文件`, type: 'success' });
+      if (deletedCount > 0) {
+        setToast({ message: `已永久删除 ${deletedCount} 个文件`, type: 'success' });
+      }
+      if (errors.length > 0) {
+        setToast({ message: `部分删除失败: ${errors.join('; ')}`, type: 'error' });
+      }
       setSelectedFiles(new Set());
       setPermanentDeleteConfirm(false);
       const updatedFiles = await scanMdFiles(token, selectedRepo, trashPath).catch(() => [] as FileItem[]);
@@ -459,8 +475,6 @@ export default function TrashPage() {
                     <button
                       onClick={() => handlePermanentDelete(file)}
                       disabled={actionLoading}
-                      className="p-1.5 text-[#6B7280] hover:text-[#EF4444] hover:bg-[#FEF2F2] rounded transition-colors disabled:opacity-40"
-                      title="永久删除"
                     >
                       <X className="w-4 h-4" />
                     </button>

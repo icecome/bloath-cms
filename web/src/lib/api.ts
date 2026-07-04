@@ -53,14 +53,18 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
 
   let data: { success: boolean; data?: T; error?: string };
   try {
+    const contentType = res.headers.get('content-type');
+    if (!contentType?.includes('application/json')) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
     data = await res.json();
   } catch {
     throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   }
 
   if (!data.success) throw new Error(data.error || '请求失败');
-  if (data.data === undefined) throw new Error('响应数据为空');
-  return data.data;
+  if ((data.data as unknown) === undefined) throw new Error('响应数据为空');
+  return data.data as T;
 }
 
 interface FileReadResult {
@@ -78,6 +82,7 @@ interface TreeItem {
   sha: string;
   type: 'blob' | 'tree';
   size?: number;
+  lastModified?: number;
 }
 
 export async function getRepos(token: string): Promise<Repo[]> {
@@ -147,21 +152,29 @@ export async function deleteFile(
   token: string,
   params: RepoInfo & { path: string; sha: string; message?: string; userName?: string }
 ): Promise<void> {
-  return apiFetch<void>(`${API_BASE}/api/repos/file`, {
-    method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
-    },
-    body: JSON.stringify({
-      owner: params.owner,
-      repo: params.repo,
-      path: params.path,
-      sha: params.sha,
-      message: params.message || '[skip ci]',
-      userName: params.userName
-    })
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    await apiFetch<void>(`${API_BASE}/api/repos/file`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        owner: params.owner,
+        repo: params.repo,
+        path: params.path,
+        sha: params.sha,
+        message: params.message || '[skip ci]',
+        userName: params.userName
+      }),
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -235,5 +248,31 @@ export async function getTree(token: string, params: RepoInfo): Promise<TreeItem
 
   return apiFetch<TreeItem[]>(`${API_BASE}/api/repos/tree?${searchParams}`, {
     headers: { Authorization: `Bearer ${token}` }
+  });
+}
+
+/**
+ * 上传图片（base64 编码）
+ */
+export async function uploadImage(
+  token: string,
+  params: RepoInfo & { path: string; base64Content: string; message?: string; branch?: string; userName?: string; sha?: string }
+): Promise<WriteResult> {
+  return apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      owner: params.owner,
+      repo: params.repo,
+      path: params.path,
+      base64Content: params.base64Content,
+      message: params.message || formatTimestamp(),
+      branch: params.branch || 'main',
+      userName: params.userName,
+      sha: params.sha
+    })
   });
 }
