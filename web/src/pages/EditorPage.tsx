@@ -329,14 +329,12 @@ export default function EditorPage() {
         }
 
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
-          e.preventDefault();
-          e.stopPropagation();
-          vditorInstanceRef.current?.focus();
+          // Ctrl+A 放行，让浏览器默认全选行为生效
           return;
         }
 
         // 仅拦截已知快捷键，其余组合键放行
-        const knownShortcuts = ['s', 'a', 'c', 'v', 'x', 'z', 'y'];
+        const knownShortcuts = ['s', 'c', 'v', 'x', 'z', 'y'];
         if ((e.ctrlKey || e.metaKey || e.altKey) && knownShortcuts.includes(e.key.toLowerCase())) {
           e.preventDefault();
           e.stopPropagation();
