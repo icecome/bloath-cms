@@ -182,6 +182,9 @@ export default function MediaPage() {
     let skipped = 0;
     const errors: string[] = [];
 
+    // 预先获取文件列表（只查一次，后续用本地缓存判断）
+    let currentFiles = await loadFilesSilently();
+
     for (const file of filesArray) {
       try {
         const blob = await compressImage(file, mediaConfig.quality);
@@ -190,8 +193,7 @@ export default function MediaPage() {
         const fileName = resolveRenameTemplate(mediaConfig.renameTemplate, file.name) + '.webp';
         const filePath = fileName;
 
-        // 上传前重新加载文件列表以确保存在性检查准确
-        const currentFiles = await loadFilesSilently();
+        // 检查重复
         const exists = currentFiles?.some((f) => f.name === fileName);
         if (exists && mediaConfig.duplicateStrategy === 'skip') {
           skipped++;
@@ -215,6 +217,10 @@ export default function MediaPage() {
           sha
         });
         uploaded++;
+        // 上传成功后更新本地缓存，避免重复查 GitHub
+        if (currentFiles) {
+          currentFiles = [{ name: fileName, path: filePath, sha: '', type: 'file' as const, size: blob.size, lastModified: Date.now(), url: '' }, ...currentFiles];
+        }
       } catch (err) {
         errors.push(`${file.name}: ${err instanceof Error ? err.message : '上传失败'}`);
       }
