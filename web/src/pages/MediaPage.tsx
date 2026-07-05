@@ -48,16 +48,6 @@ export default function MediaPage() {
 
   const isConfigured = mediaConfig.imageOwner && mediaConfig.imageRepo;
 
-  // 从文件名提取时间戳（格式：YYYYMMDDTHHmm-xxx）
-  const extractTimestamp = (filename: string): number => {
-    const match = filename.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
-    if (match) {
-      const [, year, month, day, hour, minute] = match;
-      return new Date(`${year}-${month}-${day}T${hour}:${minute}:00`).getTime();
-    }
-    return 0; // 无法解析的排末尾
-  };
-
   const handleGridColsChange = (value: number) => {
     setGridCols(value);
     localStorage.setItem('media-grid-cols', String(value));
