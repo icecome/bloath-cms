@@ -12,6 +12,14 @@ export interface Env {
   PROD_ORIGINS?: string;
 }
 
+// 自定义 API 错误类，携带 HTTP 状态码
+export class ApiError extends Error {
+  constructor(message: string, public statusCode: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 // 交换 code 获取 access_token
 export async function exchangeCode(code: string, clientSecret: string, clientId: string, redirectUri: string): Promise<string> {
   const response = await fetch('https://github.com/login/oauth/access_token', {
@@ -104,8 +112,9 @@ export async function readFile(
   path: string,
   branch: string = 'main'
 ): Promise<{ content: string; sha: string }> {
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
   const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`,
+    `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -115,7 +124,7 @@ export async function readFile(
   );
 
   if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.status}`);
+    throw new ApiError(response.status === 404 ? 'File not found' : `GitHub API error: ${response.status}`, response.status);
   }
 
   const data = await response.json() as { content: string; sha: string };

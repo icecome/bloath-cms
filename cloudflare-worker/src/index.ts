@@ -1,5 +1,5 @@
 // Cloudflare Worker 入口 - 路由分发和 CORS
-import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches, getTree } from './github';
+import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches, getTree, ApiError } from './github';
 import type { Env } from './github';
 
 // 路径参数安全校验
@@ -7,11 +7,11 @@ function isSafePathParam(value: string | null, allowSlash = false): boolean {
   if (!value) return false;
   // 禁止路径穿越
   if (value.includes('..')) return false;
+  // 禁止空字符和危险字符（shell 注入、XSS 等）
+  if (value.includes('\0')) return false;
   const dangerous = /[<>"'`;&|\\$(){}!#%]/;
   if (dangerous.test(value)) return false;
-  return allowSlash
-    ? /^[a-zA-Z0-9._\/\-]+$/.test(value)
-    : /^[a-zA-Z0-9._\-]+$/.test(value);
+  return true;
 }
 
 // 安全的 JSON 解析，防止原型污染和 DoS 攻击
@@ -560,6 +560,12 @@ export default {
       return addCorsHeaders(Response.json({ error: 'Not found' }, { status: 404 }), origin, env);
     } catch (error) {
       console.error('Worker error:', error);
+      if (error instanceof ApiError) {
+        return addCorsHeaders(Response.json(
+          { success: false, error: error.message },
+          { status: error.statusCode }
+        ), origin, env);
+      }
       // 生产环境不暴露详细错误信息
       return addCorsHeaders(Response.json(
         { success: false, error: 'Internal server error' },
