@@ -219,7 +219,7 @@ export default function MediaPage() {
         uploaded++;
         // 上传成功后更新本地缓存，避免重复查 GitHub
         if (currentFiles) {
-          currentFiles = [{ name: fileName, path: filePath, sha: '', type: 'file' as const, size: blob.size, lastModified: Date.now(), url: '' }, ...currentFiles];
+          currentFiles = [{ name: fileName, path: filePath, sha: '', size: blob.size, lastModified: Date.now(), url: '' }, ...currentFiles];
         }
       } catch (err) {
         errors.push(`${file.name}: ${err instanceof Error ? err.message : '上传失败'}`);
