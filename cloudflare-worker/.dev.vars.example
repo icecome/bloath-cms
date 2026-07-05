@@ -1,0 +1,18 @@
+# Cloudflare Worker 环境变量示例
+# 复制为 .dev.vars 并修改
+
+# GitHub OAuth 应用配置
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+
+# Session 加密密钥（至少 32 字符随机字符串）
+SESSION_SECRET=
+
+# 前端地址（OAuth 回调用）
+FRONTEND_URL=http://localhost:5173
+
+# 允许的 CORS 来源（逗号分隔，可选，默认包含 localhost）
+ALLOWED_ORIGINS=
+
+# 生产环境域名（逗号分隔，可选）
+PROD_ORIGINS=https://your-domain.com

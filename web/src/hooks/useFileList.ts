@@ -43,7 +43,7 @@ export async function scanMdFiles(
       name: item.name,
       path: item.path,
       sha: item.sha,
-      type: (item.type === 'blob' ? 'file' : 'dir') as 'file' | 'dir',
+      type: item.type,
       size: item.size
     }));
 }

@@ -10,9 +10,10 @@ interface AuthState {
   user: User | null;
   token: string | null;
   loading: boolean;
+  toast: string | null;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { API_BASE } from '../lib/constants';
 
 export function useAuth() {
   const [state, setState] = useState<AuthState>(() => {
@@ -31,7 +32,8 @@ export function useAuth() {
     return {
       user,
       token,
-      loading: false
+      loading: false,
+      toast: null
     };
   });
 
@@ -39,7 +41,7 @@ export function useAuth() {
   const tokenRef = useRef(state.token);
   tokenRef.current = state.token;
 
-  // 验证 token
+  // 验证 token，支持自动续期
   const verifyToken = useCallback(async (tokenToVerify?: string) => {
     const token = tokenToVerify || tokenRef.current;
     if (!token) return false;
@@ -52,14 +54,21 @@ export function useAuth() {
       if (!res.ok) {
         sessionStorage.removeItem('token');
         sessionStorage.removeItem('user');
-        setState({ user: null, token: null, loading: false });
+        setState(prev => ({ ...prev, user: null, token: null, loading: false, toast: '登录已过期，请重新登录' }));
         return false;
+      }
+
+      // 检查是否需要更新 token（自动续期）
+      const newToken = res.headers.get('X-Session-Token');
+      if (newToken) {
+        sessionStorage.setItem('token', newToken);
+        tokenRef.current = newToken;
       }
 
       const data = await res.json();
       if (data.success && data.user) {
         sessionStorage.setItem('user', JSON.stringify(data.user));
-        setState({ user: data.user, token, loading: false });
+        setState(prev => ({ ...prev, user: data.user, token: newToken || token, loading: false }));
         return true;
       }
 
@@ -67,7 +76,7 @@ export function useAuth() {
     } catch {
       sessionStorage.removeItem('token');
       sessionStorage.removeItem('user');
-      setState({ user: null, token: null, loading: false });
+      setState(prev => ({ ...prev, user: null, token: null, loading: false, toast: '网络错误，请检查连接' }));
       return false;
     }
   }, []); // 无依赖，使用 ref 获取最新 token
@@ -76,7 +85,12 @@ export function useAuth() {
   const setUserData = useCallback((user: User, token: string) => {
     sessionStorage.setItem('token', token);
     sessionStorage.setItem('user', JSON.stringify(user));
-    setState({ user, token, loading: false });
+    setState(prev => ({ ...prev, user, token, loading: false, toast: null }));
+  }, []);
+
+  // 清除 toast
+  const clearToast = useCallback(() => {
+    setState(prev => ({ ...prev, toast: null }));
   }, []);
 
   // 登录
@@ -96,16 +110,16 @@ export function useAuth() {
   const logout = useCallback(() => {
     sessionStorage.removeItem('token');
     sessionStorage.removeItem('user');
-    setState({ user: null, token: null, loading: false });
+    setState(prev => ({ ...prev, user: null, token: null, loading: false, toast: null }));
   }, []);
 
-  // 定期验证 token
+  // 定期验证 token（每 7 分钟验证一次，配合 15 分钟有效期）
   useEffect(() => {
     if (!state.token || !state.user) return;
 
     const interval = setInterval(() => {
       verifyToken();
-    }, 3600000);
+    }, 420000); // 7 分钟
 
     return () => clearInterval(interval);
   }, [state.token, state.user, verifyToken]);
@@ -114,9 +128,11 @@ export function useAuth() {
     user: state.user,
     token: state.token,
     loading: state.loading,
+    toast: state.toast,
     login,
     logout,
     setUserData,
-    verifyToken
+    verifyToken,
+    clearToast
   };
 }

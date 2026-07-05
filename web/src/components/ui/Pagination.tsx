@@ -1,10 +1,11 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { PAGE_SIZE } from '../../lib/constants';
 
 interface PaginationProps {
   currentPage: number;
   totalPages: number;
   totalItems: number;
-  pageSize: number;
+  pageSize?: number;
   onPageChange: (page: number) => void;
 }
 
@@ -12,7 +13,7 @@ export default function Pagination({
   currentPage,
   totalPages,
   totalItems,
-  pageSize = 20,
+  pageSize = PAGE_SIZE,
   onPageChange
 }: PaginationProps) {
   if (totalPages <= 1) return null;

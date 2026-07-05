@@ -1,40 +1,44 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const loginCalled = useRef(false);
 
-  // 从 query 参数解析 token 和用户信息
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    const loginName = params.get('login');
-    const avatar = params.get('avatar');
-    const name = params.get('name');
-
-    if (token && loginName) {
-      // 存储 token 和用户信息到 sessionStorage
-      sessionStorage.setItem('token', token);
-      sessionStorage.setItem('user', JSON.stringify({
-        login: loginName,
-        avatar_url: avatar || '',
-        name: name || ''
-      }));
-
-      // 清除 URL 参数，避免暴露敏感信息
-      window.history.replaceState(null, '', window.location.pathname);
-
-      // 直接跳转到主页
+    // 先检查 sessionStorage 是否已有 token（刷新后保留）
+    const storedToken = sessionStorage.getItem('token');
+    if (storedToken) {
       navigate('/', { replace: true });
       return;
     }
 
-    // 如果已有 token，直接跳转到主页
-    const storedToken = sessionStorage.getItem('token');
-    if (storedToken) {
-      navigate('/', { replace: true });
+    // 防止 React Strict Mode 重复执行
+    if (loginCalled.current) return;
+
+    // 从 URL hash fragment 读取 session token（OAuth 回调通过 hash 传递）
+    const hash = window.location.hash;
+    if (hash && hash.startsWith('#token=')) {
+      loginCalled.current = true;
+      const params = new URLSearchParams(hash.slice(1)); // 去掉 #
+      const token = params.get('token');
+      const loginName = params.get('login');
+      const avatar = params.get('avatar');
+      const name = params.get('name');
+
+      if (token && loginName) {
+        sessionStorage.setItem('token', token);
+        sessionStorage.setItem('user', JSON.stringify({
+          login: loginName,
+          avatar_url: avatar || '',
+          name: name || ''
+        }));
+        // 清除 hash
+        window.history.replaceState(null, '', window.location.pathname);
+        navigate('/', { replace: true });
+      }
     }
   }, [navigate]);
 

@@ -1,25 +1,30 @@
 // Cloudflare Worker 入口 - 路由分发和 CORS
 import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches, getTree } from './github';
-import type { ApiResponse, ContentEntry, Repo } from '../../shared/types';
 import type { Env } from './github';
 
 // 路径参数安全校验
 function isSafePathParam(value: string | null, allowSlash = false): boolean {
   if (!value) return false;
-  const dangerous = /[<>"'`;&|\\$(){}[\]!#%]/;
+  // 禁止路径穿越
+  if (value.includes('..')) return false;
+  const dangerous = /[<>"'`;&|\\$(){}!#%]/;
   if (dangerous.test(value)) return false;
   return allowSlash
-    ? /^[a-zA-Z0-9._\/\-\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\s]+$/.test(value)
-    : /^[a-zA-Z0-9._\-\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\s]+$/.test(value);
+    ? /^[a-zA-Z0-9._\/\-]+$/.test(value)
+    : /^[a-zA-Z0-9._\-]+$/.test(value);
 }
 
-// 安全的 JSON 解析，防止原型污染
+// 安全的 JSON 解析，防止原型污染和 DoS 攻击
 function safeJsonParse(text: string): Record<string, unknown> {
+  // 防止超大 JSON 攻击（限制 20MB，兼容 base64 编码的大文件上传）
+  if (text.length > 20 * 1024 * 1024) {
+    throw new Error('JSON payload too large');
+  }
   const obj = JSON.parse(text) as Record<string, unknown>;
   if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
     throw new Error('Invalid JSON payload');
   }
-  // 使用 Object.create(null) 创建安全对象
+  // 使用新对象替代 delete，防止原型污染
   const safeObj: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     if (key !== '__proto__' && key !== 'constructor' && key !== 'prototype') {
@@ -33,11 +38,13 @@ function safeJsonParse(text: string): Record<string, unknown> {
 const MAX_CONTENT_SIZE = 10 * 1024 * 1024;
 
 // 认证中间件 - 验证 session token 并返回 GitHub access_token
-async function authenticate(request: Request, env: Env): Promise<{ githubToken: string } | Response> {
+// 返回结果包含 needsRenewal 标志，用于自动续期
+async function authenticate(request: Request, env: Env): Promise<{ githubToken: string; needsRenewal: boolean } | Response> {
   const sessionToken = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!sessionToken) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  
   const result = await validateSessionToken(sessionToken, env);
   if (!result) {
     return Response.json({ error: 'Session expired' }, { status: 401 });
@@ -45,10 +52,38 @@ async function authenticate(request: Request, env: Env): Promise<{ githubToken: 
   return result;
 }
 
+// 辅助函数：为响应添加自动续期头
+async function addSessionRenewalHeader(
+  response: Response,
+  authResult: { githubToken: string; needsRenewal: boolean },
+  env: Env,
+  deviceFingerprint?: string
+): Promise<Response> {
+  if (authResult.needsRenewal) {
+    const newToken = await generateSessionToken(authResult.githubToken, env, deviceFingerprint);
+    if (typeof newToken === 'string') {
+      response.headers.set('X-Session-Token', newToken);
+    }
+  }
+  return response;
+}
+
+// 生成设备指纹（基于 User-Agent 和 Accept-Language）
+async function generateDeviceFingerprint(request: Request): Promise<string> {
+  const ua = request.headers.get('User-Agent') || '';
+  const lang = request.headers.get('Accept-Language') || '';
+  const data = `${ua.slice(0, 50)}|${lang}`;
+  const encoder = new TextEncoder();
+  const hash = await crypto.subtle.digest('SHA-256', encoder.encode(data));
+  return Array.from(new Uint8Array(hash).slice(0, 8))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // AES-GCM 加密生成 session token
-async function generateSessionToken(githubToken: string, env: Env): Promise<string | Response> {
-  const expiresAt = Date.now() + 3600000;
-  const payload = JSON.stringify({ githubToken, expiresAt });
+async function generateSessionToken(githubToken: string, env: Env, deviceFingerprint?: string): Promise<string | Response> {
+  // 缩短有效期到 15 分钟，降低泄露风险
+  const expiresAt = Date.now() + 900000;
+  const payload = JSON.stringify({ githubToken, expiresAt, deviceFingerprint });
 
   const secretKey = env.SESSION_SECRET;
   if (!secretKey) {
@@ -82,8 +117,8 @@ async function generateSessionToken(githubToken: string, env: Env): Promise<stri
   return btoa(String.fromCharCode(...combined));
 }
 
-// AES-GCM 解密验证 session token
-function validateSessionToken(sessionToken: string, env: Env): Promise<{ githubToken: string } | null> {
+// AES-GCM 解密验证 session token，返回验证结果和是否需要续期
+function validateSessionToken(sessionToken: string, env: Env): Promise<{ githubToken: string; needsRenewal: boolean } | null> {
   return (async () => {
     try {
       const secretKey = env.SESSION_SECRET;
@@ -116,7 +151,12 @@ function validateSessionToken(sessionToken: string, env: Env): Promise<{ githubT
       if (!payload.githubToken || !payload.expiresAt) return null;
       if (Date.now() > payload.expiresAt) return null;
 
-      return { githubToken: payload.githubToken };
+      // 检查是否需要续期（剩余时间 < 总时间的 50%，即 7.5 分钟）
+      const remaining = payload.expiresAt - Date.now();
+      const totalDuration = 900000; // 15 分钟
+      const needsRenewal = remaining < totalDuration / 2;
+
+      return { githubToken: payload.githubToken, needsRenewal };
     } catch {
       return null;
     }
@@ -124,24 +164,21 @@ function validateSessionToken(sessionToken: string, env: Env): Promise<{ githubT
 }
 
 // CORS 头
-function corsHeaders(origin: string, _env: Env): Headers | null {
-  // 开发环境
-  const devOrigins = [
+function corsHeaders(origin: string, env: Env): Headers | null {
+  // 允许的来源列表：从环境变量读取，支持自定义部署
+  const envOrigins = env.ALLOWED_ORIGINS || '';
+  const customOrigins = envOrigins.split(',').map(o => o.trim()).filter(Boolean);
+  const defaultOrigins = [
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:3002',
     'http://localhost:5173'
   ];
-  // 生产环境 Pages 域名
-  const prodOrigins = [
-    'https://bloath-cms-web.pages.dev',
-    'https://bloath.icecome.com',
-    'https://bloath-cms.pages.dev',
-    'https://bloath-cms.icecome.workers.dev',
-    'https://bloath-cms-worker.api.icecome.com'
-  ];
+  const prodOrigins = env.PROD_ORIGINS
+    ? env.PROD_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+    : [];
 
-  const allowedOrigins = [...devOrigins, ...prodOrigins];
+  const allowedOrigins = [...defaultOrigins, ...customOrigins, ...prodOrigins];
   const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : null;
 
   if (!allowedOrigin) return null;
@@ -168,12 +205,14 @@ function addCorsHeaders(response: Response, origin: string, env: Env): Response 
   return response;
 }
 
-// 生成带签名的 state，编码 frontendUrl 信息
+// 生成带签名的 state，编码 frontendUrl 和时间戳
+// 格式：frontendUrl:randomPart:timestamp:signature
 async function generateState(frontendUrl: string, env: Env): Promise<string> {
   const randomBytes = new Uint8Array(16);
   crypto.getRandomValues(randomBytes);
   const randomPart = Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-  const payload = `${frontendUrl}:${randomPart}`;
+  const timestamp = Date.now().toString();
+  const payload = `${frontendUrl}:${randomPart}:${timestamp}`;
   // 使用 HMAC-SHA256 签名，密钥使用 SESSION_SECRET
   const encoder = new TextEncoder();
   const secretKey = env.SESSION_SECRET;
@@ -192,13 +231,28 @@ async function generateState(frontendUrl: string, env: Env): Promise<string> {
   return `${payload}:${sigHex}`;
 }
 
-// 验证并解析 state（带 HMAC 签名校验）
+// 验证并解析 state（带 HMAC 签名校验和时间戳验证）
+// 格式：frontendUrl:randomPart:timestamp:signature
 async function parseState(state: string, env: Env): Promise<{ frontendUrl: string; valid: boolean }> {
   const parts = state.split(':');
-  if (parts.length < 3) return { frontendUrl: '', valid: false };
-  const randomPart = parts[parts.length - 2];
+  // 新格式需要至少 4 部分：frontendUrl, randomPart, timestamp, signature
+  if (parts.length < 4) return { frontendUrl: '', valid: false };
+  
+  const timestamp = parts[parts.length - 2];
   const sigHex = parts[parts.length - 1];
-  const frontendUrl = parts.slice(0, -2).join(':');
+  const randomPart = parts[parts.length - 3];
+  const frontendUrl = parts.slice(0, -3).join(':');
+
+  // 校验时间戳（10分钟有效期）
+  const stateTimestamp = parseInt(timestamp, 10);
+  if (isNaN(stateTimestamp)) {
+    return { frontendUrl: '', valid: false };
+  }
+  const now = Date.now();
+  const STATE_EXPIRY = 10 * 60 * 1000; // 10分钟
+  if (now - stateTimestamp > STATE_EXPIRY) {
+    return { frontendUrl: '', valid: false };
+  }
 
   // 校验 frontendUrl 格式
   let parsedUrl: URL;
@@ -214,7 +268,7 @@ async function parseState(state: string, env: Env): Promise<{ frontendUrl: strin
 
   // 验证 HMAC 签名，密钥使用 SHA-256 哈希派生（与 generateState 保持一致）
   const encoder = new TextEncoder();
-  const payload = `${frontendUrl}:${randomPart}`;
+  const payload = `${frontendUrl}:${randomPart}:${timestamp}`;
   const secretKey = env.SESSION_SECRET;
   if (!secretKey) {
     return { frontendUrl: '', valid: false };
@@ -234,7 +288,7 @@ async function parseState(state: string, env: Env): Promise<{ frontendUrl: strin
 function hexToUint8Array(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+    bytes[i >> 1] = parseInt(hex.substr(i, 2), 16);
   }
   return bytes;
 }
@@ -252,9 +306,7 @@ export default {
 
     // 处理 CORS 预检请求
     if (request.method === 'OPTIONS') {
-      console.log('[cors] OPTIONS request, origin:', origin);
       const cors = corsHeaders(origin, env);
-      console.log('[cors] corsHeaders result:', cors ? 'found' : 'null');
       if (!cors) {
         return new Response(null, { status: 403 });
       }
@@ -286,7 +338,7 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Missing code or state' }, { status: 400 }), origin, env);
         }
 
-        // 验证并解析 state（带 HMAC 签名校验）
+        // 验证 state 签名
         const stateData = await parseState(state, env);
         if (!stateData.valid) {
           return addCorsHeaders(Response.json({ error: 'Invalid state' }, { status: 400 }), origin, env);
@@ -294,54 +346,42 @@ export default {
 
         const storedFrontendUrl = stateData.frontendUrl || frontendUrl;
 
+        // 在后端完成 code 交换（code 只能使用一次，必须在 callback 中处理）
         const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
         const user = await getUserInfo(accessToken);
 
-        // AES-GCM 加密生成 session token
-        const sessionTokenResult = await generateSessionToken(accessToken, env);
+        // 生成设备指纹并绑定到 session token
+        const deviceFingerprint = await generateDeviceFingerprint(request);
+        const sessionTokenResult = await generateSessionToken(accessToken, env, deviceFingerprint);
         if (sessionTokenResult instanceof Response) {
           return addCorsHeaders(sessionTokenResult, origin, env);
         }
-        const sessionToken = sessionTokenResult;
 
-        // 重定向到前端，通过 query 参数传递 session token 和用户信息
-        const redirectUrl = `${storedFrontendUrl}/login?token=${encodeURIComponent(sessionToken)}&login=${encodeURIComponent(user.login || '')}&avatar=${encodeURIComponent(user.avatar_url || '')}&name=${encodeURIComponent(user.name || '')}`;
+        // 通过 URL hash fragment 传递 session token（hash 不会发送到服务器，也不会被预加载）
+        const redirectUrl = `${storedFrontendUrl}/login#token=${encodeURIComponent(sessionTokenResult)}&login=${encodeURIComponent(user.login || '')}&avatar=${encodeURIComponent(user.avatar_url || '')}&name=${encodeURIComponent(user.name || '')}`;
         return addCorsHeaders(new Response(null, {
           status: 302,
           headers: { 'Location': redirectUrl }
         }), origin, env);
       }
 
-      // 前端 GitHub 回调回来后，调用此端点完成登录
-      if (url.pathname === '/api/auth/complete' && request.method === 'POST') {
-        try {
-          const body = await request.json() as { accessToken: string };
-          if (!body.accessToken) {
-            return addCorsHeaders(Response.json({ error: 'Missing access token' }, { status: 400 }), origin, env);
-          }
-          const sessionTokenResult = await generateSessionToken(body.accessToken, env);
-          if (sessionTokenResult instanceof Response) {
-            return addCorsHeaders(sessionTokenResult, origin, env);
-          }
-          return addCorsHeaders(Response.json({ success: true, sessionToken: sessionTokenResult }), origin, env);
-        } catch {
-          return addCorsHeaders(Response.json({ error: 'Invalid request body' }, { status: 400 }), origin, env);
-        }
-      }
+
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
         const authResult = await authenticate(request, env);
         if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
 
         const user = await getUserInfo(authResult.githubToken);
-        return addCorsHeaders(Response.json({
+        const response = Response.json({
           success: true,
           user: {
             login: user.login,
             avatar_url: user.avatar_url,
             name: user.name
           }
-        }), origin, env);
+        });
+        const deviceFingerprint = await generateDeviceFingerprint(request);
+        return addCorsHeaders(await addSessionRenewalHeader(response, authResult, env, deviceFingerprint), origin, env);
       }
 
       if (url.pathname === '/api/repos' && request.method === 'GET') {

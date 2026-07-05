@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
@@ -11,8 +11,7 @@ import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
 import Pagination from '../components/ui/Pagination';
 import { FileText, Search, Trash2, Pencil } from 'lucide-react';
-
-const PAGE_SIZE = 20;
+import { PAGE_SIZE } from '../lib/constants';
 
 export default function DashboardPage() {
   const { token, user } = useAuth();
@@ -181,7 +180,7 @@ export default function DashboardPage() {
             </div>
 
             {/* 列表 */}
-            {paginatedFiles.map((file) => (
+            {paginatedFiles.map((file: FileItem) => (
               <div
                 key={file.path}
                 className="flex items-center px-4 py-3.5 cursor-pointer border-b border-[#F2F2F2] transition-colors hover:bg-[#F9FAFA]"

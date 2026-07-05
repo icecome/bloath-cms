@@ -1,26 +1,10 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Calendar, User, Tag, Folder, Image, Video, Lock, Link as LinkIcon, FileText } from 'lucide-react';
-
-interface Frontmatter {
-  url?: string;
-  title?: string;
-  date?: string;
-  author?: string;
-  categories?: string[];
-  tags?: string[];
-  encrypt?: boolean;
-  encryptPasswordKey?: string;
-  encryptTitle?: string;
-  encryptMessage?: string;
-  pictures?: string[];
-  video?: string[];
-  link?: string;
-  link_text?: string;
-}
+import type { ArticleFrontmatter } from '../../../../shared/types';
 
 interface FrontmatterPanelProps {
-  frontmatter: Frontmatter;
-  setFm: (key: keyof Frontmatter, value: unknown) => void;
+  frontmatter: ArticleFrontmatter;
+  setFm: (key: keyof ArticleFrontmatter, value: unknown) => void;
   removeArrayItem: (key: 'categories' | 'tags' | 'pictures' | 'video', index: number) => void;
   newCategory: string;
   setNewCategory: (v: string) => void;

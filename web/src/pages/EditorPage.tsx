@@ -10,23 +10,9 @@ import FrontmatterPanel from '../components/editor/FrontmatterPanel';
 import { ArrowLeft, Save, Send, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import Vditor from 'vditor';
 import yaml from 'js-yaml';
+import type { ArticleFrontmatter } from '../../../shared/types';
 
-interface Frontmatter {
-  url?: string;
-  title?: string;
-  date?: string;
-  author?: string;
-  categories?: string[];
-  tags?: string[];
-  encrypt?: boolean;
-  encryptPasswordKey?: string;
-  encryptTitle?: string;
-  encryptMessage?: string;
-  pictures?: string[];
-  video?: string[];
-  link?: string;
-  link_text?: string;
-}
+interface Frontmatter extends ArticleFrontmatter {}
 
 function parseFrontmatter(raw: string): { fm: Frontmatter; body: string } {
   const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);

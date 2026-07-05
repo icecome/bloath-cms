@@ -9,9 +9,8 @@ import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
 import Pagination from '../components/ui/Pagination';
 import DirectorySelectorDropdown from '../components/ui/DirectorySelectorDropdown';
+import { PAGE_SIZE } from '../lib/constants';
 import { FileText, Search, Trash2, RotateCcw, X } from 'lucide-react';
-
-const PAGE_SIZE = 20;
 
 export default function TrashPage() {
   const { token, user } = useAuth();

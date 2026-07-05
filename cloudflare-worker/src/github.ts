@@ -1,11 +1,15 @@
 // Cloudflare Workers 后端 - GitHub API 封装
 // 用于在 Cloudflare Workers 中运行
 
+import type { FileInfo } from '../../shared/types';
+
 export interface Env {
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
   SESSION_SECRET: string;
   FRONTEND_URL: string;
+  ALLOWED_ORIGINS?: string;
+  PROD_ORIGINS?: string;
 }
 
 // 交换 code 获取 access_token
@@ -24,9 +28,15 @@ export async function exchangeCode(code: string, clientSecret: string, clientId:
     })
   });
 
-  const data = await response.json() as { message?: string };
+  const data = await response.json() as { message?: string; error?: string; access_token?: string };
   if (!response.ok) {
-    throw new Error(data.message || 'Failed to exchange code for token');
+    console.error('[exchangeCode] GitHub error:', response.status, data);
+    throw new Error(data.message || data.error || 'Failed to exchange code for token');
+  }
+
+  if (!data.access_token) {
+    console.error('[exchangeCode] No access_token returned:', JSON.stringify(data));
+    throw new Error('GitHub returned empty access_token');
   }
 
   const tokenData = data as { access_token?: string };
@@ -35,6 +45,9 @@ export async function exchangeCode(code: string, clientSecret: string, clientId:
 
 // 获取用户信息
 export async function getUserInfo(token: string): Promise<UserInfo> {
+  if (!token) {
+    throw new Error('Empty access token');
+  }
   const response = await fetch('https://api.github.com/user', {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -325,8 +338,9 @@ export async function getTree(
               };
             }
           }
-        } catch {
-          // ignore
+        } catch (err) {
+          // 记录警告但不阻断，文件可能缺少 lastModified 信息
+          console.warn(`[getTree] Failed to fetch lastModified for ${file.path}: ${err instanceof Error ? err.message : 'unknown'}`);
         }
         return file;
       })
@@ -355,12 +369,4 @@ export interface Repo {
   default_branch: string;
 }
 
-// 文件信息
-export interface FileInfo {
-  name: string;
-  path: string;
-  sha: string;
-  type: 'file' | 'dir';
-  size?: number;
-  lastModified?: number;
-}
+// 获取用户信息

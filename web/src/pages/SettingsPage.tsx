@@ -150,7 +150,7 @@ export default function SettingsPage() {
                   value={mediaConfig.imageOwner}
                   onChange={(e) => updateMediaConfig({ imageOwner: e.target.value.trim() })}
                   className="flex-1 px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
-                  placeholder="仓库所有者，如 icecome"
+                  placeholder="仓库所有者"
                 />
                 <span className="flex items-center text-[#9CA3AF]">/</span>
                 <input

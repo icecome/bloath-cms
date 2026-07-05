@@ -68,6 +68,7 @@ export interface FileInfo {
   sha: string;
   type: 'file' | 'dir';
   size?: number;
+  lastModified?: number;
 }
 
 // 内容列表请求
@@ -93,4 +94,22 @@ export interface MediaConfig {
   quality: number;
   renameTemplate: string;
   duplicateStrategy: DuplicateStrategy;
+}
+
+// 文章 frontmatter
+export interface ArticleFrontmatter {
+  url?: string;
+  title?: string;
+  date?: string;
+  author?: string;
+  categories?: string[];
+  tags?: string[];
+  encrypt?: boolean;
+  encryptPasswordKey?: string;
+  encryptTitle?: string;
+  encryptMessage?: string;
+  pictures?: string[];
+  video?: string[];
+  link?: string;
+  link_text?: string;
 }

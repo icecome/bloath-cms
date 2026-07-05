@@ -19,7 +19,7 @@ export interface RepoInfo {
   branch?: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { API_BASE } from './constants';
 
 const API_TIMEOUT_MS = 10000;
 
@@ -39,8 +39,9 @@ export function formatTimestamp(): string {
 
 /**
  * 统一 API 请求封装，自动处理错误响应
+ * @param skipDataCheck - 为 true 时不检查 data 字段（用于 DELETE 等无返回数据的接口）
  */
-async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = false): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, options);
@@ -63,7 +64,10 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   if (!data.success) throw new Error(data.error || '请求失败');
-  if ((data.data as unknown) === undefined) throw new Error('响应数据为空');
+  if (!skipDataCheck) {
+    // 仅检查 undefined，允许 null/0/false 等合法 falsy 值
+    if (data.data === undefined) throw new Error('响应数据为空');
+  }
   return data.data as T;
 }
 
@@ -80,7 +84,7 @@ interface TreeItem {
   name: string;
   path: string;
   sha: string;
-  type: 'blob' | 'tree';
+  type: 'file' | 'dir';
   size?: number;
   lastModified?: number;
 }
@@ -171,7 +175,7 @@ export async function deleteFile(
         userName: params.userName
       }),
       signal: controller.signal
-    });
+    }, true);
   } finally {
     clearTimeout(timeoutId);
   }

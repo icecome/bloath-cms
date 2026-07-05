@@ -43,9 +43,20 @@ export default function MediaPage() {
     return saved ? parseInt(saved, 10) : 5;
   });
   const [currentPage, setCurrentPage] = useState(1);
+  const [deleteConfirm, setDeleteConfirm] = useState<MediaFile | null>(null);
   const PAGE_SIZE = 40;
 
   const isConfigured = mediaConfig.imageOwner && mediaConfig.imageRepo;
+
+  // 从文件名提取时间戳（格式：YYYYMMDDTHHmm-xxx）
+  const extractTimestamp = (filename: string): number => {
+    const match = filename.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
+    if (match) {
+      const [, year, month, day, hour, minute] = match;
+      return new Date(`${year}-${month}-${day}T${hour}:${minute}:00`).getTime();
+    }
+    return 0; // 无法解析的排末尾
+  };
 
   const handleGridColsChange = (value: number) => {
     setGridCols(value);
@@ -234,7 +245,14 @@ export default function MediaPage() {
   // 删除文件
   const handleDelete = async (file: MediaFile) => {
     if (!token || !user) return;
-    if (!confirm(`确定删除 ${file.name}？`)) return;
+    setDeleteConfirm(file);
+  };
+
+  // 执行删除
+  const executeDelete = async () => {
+    const file = deleteConfirm;
+    if (!file || !token || !user) return;
+    setDeleteConfirm(null);
 
     try {
       await deleteFile(token, {
@@ -419,7 +437,7 @@ export default function MediaPage() {
             <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
               {files.slice(0, currentPage * PAGE_SIZE).map((file) => (
               <div
-                key={file.sha}
+                key={file.path}
                 className="group border border-[#E8E8E8] rounded-sm overflow-hidden hover:border-[#D1D5DB] transition-colors bg-white"
               >
                 {/* 缩略图 */}
@@ -497,6 +515,31 @@ export default function MediaPage() {
           </>
         )}
       </div>
+
+      {/* 删除确认弹窗 */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-sm shadow-sm p-4 w-full max-w-sm mx-4 border border-[#E8E8E8]">
+            <p className="text-sm text-[#1F1F1F] mb-4">
+              确定要删除 <span className="font-mono text-[#6B7280]">{deleteConfirm.name}</span> 吗？
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-3 py-1.5 text-sm border border-[#E8E8E8] text-[#374151] hover:bg-[#F9FAFA] rounded-sm transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={executeDelete}
+                className="px-3 py-1.5 text-sm text-white bg-red-600 hover:bg-red-700 rounded-sm transition-colors"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 预览弹窗 */}
       {previewFile && (
