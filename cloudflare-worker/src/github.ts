@@ -288,12 +288,26 @@ export async function getRepoBranches(
   return data.map((branch: any) => branch.name);
 }
 
+// 从文件名提取时间戳（支持 8 位日期和 14 位时间戳）
+function extractTimestampFromFilename(name: string): number {
+  const match = name.match(/^(\d{8})(\d{6})?/);
+  if (!match) return 0;
+  const dateStr = match[2] ? `${match[1]}${match[2]}` : `${match[1]}000000`;
+  const ts = new Date(
+    `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}T${dateStr.slice(8,10)}:${dateStr.slice(10,12)}:${dateStr.slice(12,14)}Z`
+  ).getTime();
+  return isNaN(ts) ? 0 : ts;
+}
+
 // 使用 GitHub Trees API 一次性获取整个目录树（替代递归扫描）
+// mode: 'commits' = 通过 commits API 获取时间（内容库/草稿箱/回收站）
+//       'filename' = 优先从文件名提取时间，回退到 commits API（媒体库）
 export async function getTree(
   token: string,
   owner: string,
   repo: string,
-  branch: string = 'main'
+  branch: string = 'main',
+  mode: 'commits' | 'filename' = 'commits'
 ): Promise<FileInfo[]> {
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
@@ -310,7 +324,6 @@ export async function getTree(
   }
 
   const data = await response.json() as { tree: any[] };
-  // 只返回文件，过滤掉目录和子模块
   const fileItems = data.tree
     .filter((item: any) => item.type === 'blob')
     .map((item: any) => {
@@ -321,41 +334,75 @@ export async function getTree(
         sha: item.sha,
         type: 'file' as const,
         size: item.size,
-        lastModified: 0 // 初始化为 0，后续通过 commits API 填充
+        lastModified: 0
       };
     });
 
-  // 通过 commits API 获取每个文件的最后修改时间
-  // 使用 per-file 查询：commits?path=xxx&per_page=1
-  // 注：列表 API 默认不包含 files 数组，必须按路径单独查询
-  try {
-    const batchSize = 10;
-    for (let i = 0; i < fileItems.length; i += batchSize) {
-      const batch = fileItems.slice(i, i + batchSize);
-      await Promise.all(batch.map(async (file) => {
-        const resp = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(file.path)}&sha=${encodeURIComponent(branch)}&per_page=1`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'User-Agent': 'Bloath-CMS'
+  // 填充 lastModified
+  if (mode === 'filename') {
+    // 媒体库模式：优先从文件名提取时间戳，无时间戳的文件回退到 commits API
+    for (const file of fileItems) {
+      file.lastModified = extractTimestampFromFilename(file.name);
+    }
+    // 对文件名无法提取时间的文件，使用 commits API 回退
+    const needCommits = fileItems.filter(f => f.lastModified === 0);
+    if (needCommits.length > 0) {
+      try {
+        const batchSize = 10;
+        for (let i = 0; i < needCommits.length; i += batchSize) {
+          const batch = needCommits.slice(i, i + batchSize);
+          await Promise.all(batch.map(async (file) => {
+            const resp = await fetch(
+              `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(file.path)}&sha=${encodeURIComponent(branch)}&per_page=1`,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  'User-Agent': 'Bloath-CMS'
+                }
+              }
+            );
+            if (resp.ok) {
+              const data = await resp.json() as any[];
+              if (data.length > 0) {
+                file.lastModified = new Date(data[0].commit.committer.date).getTime();
+              }
+            }
+          }));
+        }
+      } catch (err) {
+        console.warn(`[getTree] Failed to fetch commits fallback: ${err instanceof Error ? err.message : 'unknown'}`);
+      }
+    }
+  } else {
+    // 内容库模式：全部通过 commits API 获取
+    try {
+      const batchSize = 10;
+      for (let i = 0; i < fileItems.length; i += batchSize) {
+        const batch = fileItems.slice(i, i + batchSize);
+        await Promise.all(batch.map(async (file) => {
+          const resp = await fetch(
+            `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(file.path)}&sha=${encodeURIComponent(branch)}&per_page=1`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'User-Agent': 'Bloath-CMS'
+              }
+            }
+          );
+          if (resp.ok) {
+            const data = await resp.json() as any[];
+            if (data.length > 0) {
+              file.lastModified = new Date(data[0].commit.committer.date).getTime();
             }
           }
-        );
-        if (resp.ok) {
-          const data = await resp.json() as any[];
-          if (data.length > 0) {
-            file.lastModified = new Date(data[0].commit.committer.date).getTime();
-          }
-        }
-      }));
+        }));
+      }
+    } catch (err) {
+      console.warn(`[getTree] Failed to fetch commits: ${err instanceof Error ? err.message : 'unknown'}`);
     }
-  } catch (err) {
-    console.warn(`[getTree] Failed to fetch commits for lastModified: ${err instanceof Error ? err.message : 'unknown'}`);
   }
 
-  // 按 lastModified 降序排序
-  return fileItems.sort((a, b) => b.lastModified - a.lastModified);
+  return fileItems;
 }
 
 // 获取用户信息

@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useCollections } from '../contexts/CollectionsContext';
 import { useAuth } from '../hooks/useAuth';
 import { getTree, uploadImage, deleteFile } from '../lib/api';
+import { sortByLastModified } from '../lib/sortFiles';
 import { resolveRenameTemplate } from '../lib/rename';
 import {
   Upload,
@@ -76,11 +77,11 @@ export default function MediaPage() {
       const treeItems = await getTree({
         owner: mediaConfig.imageOwner,
         repo: mediaConfig.imageRepo,
-        branch: mediaConfig.imageBranch
+        branch: mediaConfig.imageBranch,
+        mode: 'filename'
       });
 
-      const mediaFiles: MediaFile[] = treeItems
-        .filter((f) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name))
+      const mediaFiles: MediaFile[] = treeItems.filter((f) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name))
         .map((f) => ({
           name: f.name,
           path: f.path,
@@ -88,8 +89,8 @@ export default function MediaPage() {
           size: f.size,
           url: getCdnUrl(f.path),
           lastModified: f.lastModified || 0
-        }))
-        .sort((a, b) => b.lastModified - a.lastModified);
+        }));
+      sortByLastModified(mediaFiles);
       setFiles(mediaFiles);
       setCurrentPage(1);
     } catch (err) {
@@ -106,10 +107,10 @@ export default function MediaPage() {
       const treeItems = await getTree({
         owner: mediaConfig.imageOwner,
         repo: mediaConfig.imageRepo,
-        branch: mediaConfig.imageBranch
+        branch: mediaConfig.imageBranch,
+        mode: 'filename'
       });
-      return treeItems
-        .filter((f) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name))
+      const mediaFiles: MediaFile[] = treeItems.filter((f) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name))
         .map((f) => ({
           name: f.name,
           path: f.path,
@@ -117,8 +118,9 @@ export default function MediaPage() {
           size: f.size,
           url: getCdnUrl(f.path),
           lastModified: f.lastModified || 0
-        }))
-        .sort((a, b) => b.lastModified - a.lastModified);
+        }));
+      sortByLastModified(mediaFiles);
+      return mediaFiles;
     } catch {
       return null;
     }

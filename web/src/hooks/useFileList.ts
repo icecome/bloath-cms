@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getTree } from '../lib/api';
 import { getCachedFiles, setCachedFiles } from '../lib/fileCache';
+import { sortByLastModified } from '../lib/sortFiles';
 
 export interface FileItem {
   name: string;
@@ -65,8 +66,7 @@ export function useFileList(basePath: string, selectedRepo: RepoInfo | null, ena
     if (!silent) setLoading(true);
     try {
       const result = await scanMdFiles(selectedRepo, basePath);
-      // 按 Git 提交时间降序排列
-      result.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+      sortByLastModified(result);
       setCachedFiles(selectedRepo, basePath, result);
       setFiles(result);
     } catch (err) {

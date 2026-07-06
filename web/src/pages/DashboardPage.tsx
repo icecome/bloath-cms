@@ -7,6 +7,7 @@ import { moveFile } from '../lib/api';
 import { scanMdFiles } from '../hooks/useFileList';
 import type { FileItem } from '../hooks/useFileList';
 import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
+import { sortByLastModified } from '../lib/sortFiles';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
@@ -49,7 +50,7 @@ export default function DashboardPage() {
     Promise.all(paths.map(p => scanMdFiles(selectedRepo, p)))
       .then(results => {
         const allFiles = results.flat();
-        allFiles.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+        sortByLastModified(allFiles);
         paths.forEach((p, i) => setCachedFiles(selectedRepo, p, results[i]));
         setFiles(allFiles);
       })

@@ -6,6 +6,7 @@ import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile, readFile, writeFile, deleteFile } from '../lib/api';
 import { scanMdFiles, type FileItem } from '../hooks/useFileList';
 import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
+import { sortByLastModified } from '../lib/sortFiles';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
@@ -64,8 +65,7 @@ export default function DraftsPage() {
     // 后台刷新
     scanMdFiles(selectedRepo, draftPath)
       .then(files => {
-        // 按 Git 提交时间降序排列（最新的在前）
-        files.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+        sortByLastModified(files);
         setCachedFiles(selectedRepo, draftPath, files);
         setFiles(files);
       })

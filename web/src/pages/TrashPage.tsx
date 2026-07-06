@@ -5,6 +5,7 @@ import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile, deleteFile } from '../lib/api';
 import { scanMdFiles, type FileItem } from '../hooks/useFileList';
 import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
+import { sortByLastModified } from '../lib/sortFiles';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
@@ -50,6 +51,7 @@ export default function TrashPage() {
     // 后台刷新
     scanMdFiles(selectedRepo, trashPath)
       .then(files => {
+        sortByLastModified(files);
         setCachedFiles(selectedRepo, trashPath, files);
         setFiles(files);
       })

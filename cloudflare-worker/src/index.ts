@@ -607,7 +607,9 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
-        const tree = await getTree(githubToken, owner!, repo!, branch);
+        const mode = (params.get('mode') || 'commits') as 'commits' | 'filename';
+
+        const tree = await getTree(githubToken, owner!, repo!, branch, mode);
         return addCorsHeaders(Response.json({ success: true, data: tree }), origin, env);
       }
 

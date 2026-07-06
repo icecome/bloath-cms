@@ -273,13 +273,16 @@ export async function getBranches(
 
 /**
  * 使用 GitHub Trees API 一次性获取整个目录树（替代递归扫描）
+ * mode: 'commits' = 通过 commits API 获取时间（内容库/草稿箱/回收站）
+ *       'filename' = 优先从文件名提取时间，回退到 commits API（媒体库）
  */
-export async function getTree(params: RepoInfo): Promise<TreeItem[]> {
+export async function getTree(params: RepoInfo & { mode?: 'commits' | 'filename' }): Promise<TreeItem[]> {
   const searchParams = new URLSearchParams({
     owner: params.owner,
     repo: params.repo,
     branch: params.branch || 'main'
   });
+  if (params.mode) searchParams.set('mode', params.mode);
 
   return apiFetch<TreeItem[]>(`${API_BASE}/api/repos/tree?${searchParams}`);
 }
