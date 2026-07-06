@@ -2,16 +2,13 @@
 import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches, getTree, ApiError } from './github';
 import type { Env } from './github';
 
-// 路径参数安全校验
+// 路径参数安全校验：白名单模式，仅允许字母、数字、中文、点、连字符、下划线、斜杠
 function isSafePathParam(value: string | null, allowSlash = false): boolean {
   if (!value) return false;
-  // 禁止路径穿越
   if (value.includes('..')) return false;
-  // 禁止空字符和危险字符（shell 注入、XSS 等）
   if (value.includes('\0')) return false;
-  const dangerous = /[<>"'`;&|\\$(){}!#%]/;
-  if (dangerous.test(value)) return false;
-  return true;
+  const pattern = allowSlash ? /^[a-zA-Z0-9\u4e00-\u9fff._/\-]+$/ : /^[a-zA-Z0-9\u4e00-\u9fff._\-]+$/;
+  return pattern.test(value);
 }
 
 // 安全的 JSON 解析，防止原型污染和 DoS 攻击
@@ -37,32 +34,63 @@ function safeJsonParse(text: string): Record<string, unknown> {
 // 内容大小限制 (10MB)
 const MAX_CONTENT_SIZE = 10 * 1024 * 1024;
 
-// 认证中间件 - 验证 session token 并返回 GitHub access_token
-// 返回结果包含 needsRenewal 标志，用于自动续期
+// 从 Cookie 中解析 session token
+function getSessionTokenFromCookie(request: Request): string | null {
+  const cookie = request.headers.get('Cookie');
+  if (!cookie) return null;
+  const match = cookie.match(/(?:^|;\s*)session=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+// CSRF 防护：校验自定义 header
+function checkCsrf(request: Request): boolean {
+  return request.headers.get('X-Requested-With') === 'XMLHttpRequest';
+}
+
+// 认证中间件 - 从 Cookie 读取 session token 并验证
 async function authenticate(request: Request, env: Env): Promise<{ githubToken: string; needsRenewal: boolean } | Response> {
-  const sessionToken = request.headers.get('Authorization')?.replace('Bearer ', '');
+  if (!checkCsrf(request)) {
+    return Response.json({ error: 'CSRF validation failed' }, { status: 403 });
+  }
+
+  const sessionToken = getSessionTokenFromCookie(request);
   if (!sessionToken) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  
-  const result = await validateSessionToken(sessionToken, env);
+
+  const currentFingerprint = await generateDeviceFingerprint(request);
+  const result = await validateSessionToken(sessionToken, env, currentFingerprint);
   if (!result) {
     return Response.json({ error: 'Session expired' }, { status: 401 });
   }
   return result;
 }
 
-// 辅助函数：为响应添加自动续期头
-async function addSessionRenewalHeader(
+// 构建 Set-Cookie 头的值
+function buildSessionCookie(token: string, maxAge: number, isSecure: boolean): string {
+  const parts = [
+    `session=${encodeURIComponent(token)}`,
+    'Path=/api',
+    `Max-Age=${maxAge}`,
+    'HttpOnly',
+    'SameSite=Lax'
+  ];
+  if (isSecure) parts.push('Secure');
+  return parts.join('; ');
+}
+
+// 辅助函数：为响应添加自动续期 Cookie
+async function addSessionRenewalCookie(
   response: Response,
   authResult: { githubToken: string; needsRenewal: boolean },
   env: Env,
+  isSecure: boolean,
   deviceFingerprint?: string
 ): Promise<Response> {
   if (authResult.needsRenewal) {
     const newToken = await generateSessionToken(authResult.githubToken, env, deviceFingerprint);
     if (typeof newToken === 'string') {
-      response.headers.set('X-Session-Token', newToken);
+      response.headers.set('Set-Cookie', buildSessionCookie(newToken, 21600, isSecure));
     }
   }
   return response;
@@ -81,8 +109,7 @@ async function generateDeviceFingerprint(request: Request): Promise<string> {
 
 // AES-GCM 加密生成 session token
 async function generateSessionToken(githubToken: string, env: Env, deviceFingerprint?: string): Promise<string | Response> {
-  // 缩短有效期到 15 分钟，降低泄露风险
-  const expiresAt = Date.now() + 900000;
+  const expiresAt = Date.now() + 21600000; // 6 小时
   const payload = JSON.stringify({ githubToken, expiresAt, deviceFingerprint });
 
   const secretKey = env.SESSION_SECRET;
@@ -118,7 +145,7 @@ async function generateSessionToken(githubToken: string, env: Env, deviceFingerp
 }
 
 // AES-GCM 解密验证 session token，返回验证结果和是否需要续期
-function validateSessionToken(sessionToken: string, env: Env): Promise<{ githubToken: string; needsRenewal: boolean } | null> {
+function validateSessionToken(sessionToken: string, env: Env, currentFingerprint?: string): Promise<{ githubToken: string; needsRenewal: boolean } | null> {
   return (async () => {
     try {
       const secretKey = env.SESSION_SECRET;
@@ -151,9 +178,14 @@ function validateSessionToken(sessionToken: string, env: Env): Promise<{ githubT
       if (!payload.githubToken || !payload.expiresAt) return null;
       if (Date.now() > payload.expiresAt) return null;
 
-      // 检查是否需要续期（剩余时间 < 总时间的 50%，即 7.5 分钟）
+      // 验证设备指纹
+      if (payload.deviceFingerprint && currentFingerprint && payload.deviceFingerprint !== currentFingerprint) {
+        return null;
+      }
+
+      // 检查是否需要续期（剩余时间 < 总时间的 50%，即 3 小时）
       const remaining = payload.expiresAt - Date.now();
-      const totalDuration = 900000; // 15 分钟
+      const totalDuration = 21600000; // 6 小时
       const needsRenewal = remaining < totalDuration / 2;
 
       return { githubToken: payload.githubToken, needsRenewal };
@@ -186,10 +218,24 @@ function corsHeaders(origin: string, env: Env): Headers | null {
   const headers = new Headers();
   headers.set('Access-Control-Allow-Origin', allowedOrigin);
   headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Frontend-Url');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With, X-Frontend-Url');
+  headers.set('Access-Control-Allow-Credentials', 'true');
   headers.set('Access-Control-Max-Age', '86400');
 
   return headers;
+}
+
+// 添加安全头（CSP + 通用安全头）
+function addSecurityHeaders(response: Response, env: Env): Response {
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+  // CSP 从环境变量读取，默认为编辑器适配的宽松但安全的配置
+  const csp = env.CONTENT_SECURITY_POLICY || "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://api.github.com https://github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+  response.headers.set('Content-Security-Policy', csp);
+
+  return response;
 }
 
 // 添加 CORS 头到响应
@@ -199,9 +245,7 @@ function addCorsHeaders(response: Response, origin: string, env: Env): Response 
   cors.forEach((value, key) => {
     response.headers.set(key, value);
   });
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  response.headers.set('X-Frame-Options', 'DENY');
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  addSecurityHeaders(response, env);
   return response;
 }
 
@@ -322,6 +366,8 @@ export default {
         return Response.redirect(frontendUrl + url.pathname + url.search, 301);
       }
 
+      const isSecure = url.protocol === 'https:';
+
       // API 请求路由分发
       if (url.pathname === '/api/auth/login' && request.method === 'GET') {
         const state = await generateState(frontendUrl, env);
@@ -335,18 +381,18 @@ export default {
         const state = url.searchParams.get('state');
 
         if (!code || !state) {
-          return addCorsHeaders(Response.json({ error: 'Missing code or state' }, { status: 400 }), origin, env);
+          return Response.redirect(`${frontendUrl}/login?error=invalid_request`, 302);
         }
 
         // 验证 state 签名
         const stateData = await parseState(state, env);
         if (!stateData.valid) {
-          return addCorsHeaders(Response.json({ error: 'Invalid state' }, { status: 400 }), origin, env);
+          return Response.redirect(`${frontendUrl}/login?error=invalid_state`, 302);
         }
 
         const storedFrontendUrl = stateData.frontendUrl || frontendUrl;
 
-        // 在后端完成 code 交换（code 只能使用一次，必须在 callback 中处理）
+        // 在后端完成 code 交换
         const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
         const user = await getUserInfo(accessToken);
 
@@ -354,18 +400,27 @@ export default {
         const deviceFingerprint = await generateDeviceFingerprint(request);
         const sessionTokenResult = await generateSessionToken(accessToken, env, deviceFingerprint);
         if (sessionTokenResult instanceof Response) {
-          return addCorsHeaders(sessionTokenResult, origin, env);
+          return Response.redirect(`${frontendUrl}/login?error=server_error`, 302);
         }
 
-        // 通过 URL hash fragment 传递 session token（hash 不会发送到服务器，也不会被预加载）
-        const redirectUrl = `${storedFrontendUrl}/login#token=${encodeURIComponent(sessionTokenResult)}&login=${encodeURIComponent(user.login || '')}&avatar=${encodeURIComponent(user.avatar_url || '')}&name=${encodeURIComponent(user.name || '')}`;
-        return addCorsHeaders(new Response(null, {
+        // 设置 HttpOnly Cookie 并重定向到首页
+        const response = new Response(null, {
           status: 302,
-          headers: { 'Location': redirectUrl }
-        }), origin, env);
+          headers: {
+            'Location': storedFrontendUrl + '/'
+          }
+        });
+        response.headers.set('Set-Cookie', buildSessionCookie(sessionTokenResult, 21600, isSecure));
+        return addSecurityHeaders(response, env);
       }
 
-
+      if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
+        // 清除 session cookie
+        const response = Response.json({ success: true });
+        const clearCookie = buildSessionCookie('', 0, isSecure);
+        response.headers.set('Set-Cookie', clearCookie);
+        return addCorsHeaders(response, origin, env);
+      }
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
         const authResult = await authenticate(request, env);
@@ -381,7 +436,7 @@ export default {
           }
         });
         const deviceFingerprint = await generateDeviceFingerprint(request);
-        return addCorsHeaders(await addSessionRenewalHeader(response, authResult, env, deviceFingerprint), origin, env);
+        return addCorsHeaders(await addSessionRenewalCookie(response, authResult, env, isSecure, deviceFingerprint), origin, env);
       }
 
       if (url.pathname === '/api/repos' && request.method === 'GET') {

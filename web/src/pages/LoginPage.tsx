@@ -1,46 +1,16 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 function LoginPage() {
-  const { login } = useAuth();
+  const { login, user } = useAuth();
   const navigate = useNavigate();
-  const loginCalled = useRef(false);
 
   useEffect(() => {
-    // 先检查 sessionStorage 是否已有 token（刷新后保留）
-    const storedToken = sessionStorage.getItem('token');
-    if (storedToken) {
+    if (user) {
       navigate('/', { replace: true });
-      return;
     }
-
-    // 防止 React Strict Mode 重复执行
-    if (loginCalled.current) return;
-
-    // 从 URL hash fragment 读取 session token（OAuth 回调通过 hash 传递）
-    const hash = window.location.hash;
-    if (hash && hash.startsWith('#token=')) {
-      loginCalled.current = true;
-      const params = new URLSearchParams(hash.slice(1)); // 去掉 #
-      const token = params.get('token');
-      const loginName = params.get('login');
-      const avatar = params.get('avatar');
-      const name = params.get('name');
-
-      if (token && loginName) {
-        sessionStorage.setItem('token', token);
-        sessionStorage.setItem('user', JSON.stringify({
-          login: loginName,
-          avatar_url: avatar || '',
-          name: name || ''
-        }));
-        // 清除 hash
-        window.history.replaceState(null, '', window.location.pathname);
-        navigate('/', { replace: true });
-      }
-    }
-  }, [navigate]);
+  }, [user, navigate]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#FAFAFA]">

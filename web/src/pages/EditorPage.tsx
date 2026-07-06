@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, useMatch } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
-import { readFile, writeFile, moveFile, formatTimestamp } from '../lib/api';
+import { readFile, writeFile, moveFile, formatTimestamp, renameFile } from '../lib/api';
 import Toast from '../components/ui/Toast';
 import VditorEditor from '../components/editor/VditorEditor';
 import FrontmatterPanel from '../components/editor/FrontmatterPanel';
@@ -50,7 +50,7 @@ export default function EditorPage() {
   const match = useMatch('/editor/*');
   const slug = match?.params['*'] || '';
   const [searchParams] = useSearchParams();
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
@@ -62,7 +62,6 @@ export default function EditorPage() {
   const paramBasePath = searchParams.get('basePath');
 
   const isNew = slug === 'new' && !slug.includes('.');
-  const basePath = paramBasePath || (isNew ? (config.draftPath || '.draft') : '');
   const trashPath = config.trashPath || '.trash';
 
   const [publishTarget, setPublishTarget] = useState('');
@@ -81,6 +80,9 @@ export default function EditorPage() {
   const [showMetadataPanel, setShowMetadataPanel] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
 
+  // 已有文章的 basePath 从 currentFilePath 推导，新建文章用 draftPath
+  const basePath = paramBasePath || (isNew ? (config.draftPath || '.draft') : (currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : ''));
+
   // 从当前文件路径提取默认发布目录（用于已有文章发布时自动填充）
   const defaultPublishTarget = currentFilePath
     ? currentFilePath.split('/').slice(0, -1).join('/')
@@ -88,13 +90,13 @@ export default function EditorPage() {
 
   // 加载已有文章
   useEffect(() => {
-    if (isNew || !token || !slug || !basePath) return;
+    if (isNew || !user || !slug || !basePath) return;
 
     setLoading(true);
     setError('');
     const filePath = `${basePath}/${slug}.md`;
 
-    readFile(token, { owner, repo, path: filePath, branch })
+    readFile({ owner, repo, path: filePath, branch })
       .then(({ content: fileContent, sha }) => {
         const { fm, body } = parseFrontmatter(fileContent);
         setFrontmatter(fm);
@@ -111,7 +113,7 @@ export default function EditorPage() {
         setError(err.message || '加载失败');
       })
       .finally(() => setLoading(false));
-  }, [isNew, slug, token, basePath, owner, repo, branch]);
+  }, [isNew, slug, user, basePath, owner, repo, branch]);
 
   const handleVditorReady = useCallback((instance: Vditor) => {
     vditorInstanceRef.current = instance;
@@ -137,7 +139,7 @@ export default function EditorPage() {
   };
 
   const handleSave = async () => {
-    if (!token) return;
+    if (!user) return;
 
     // 如果 URL 为空，自动生成默认值
     const effectiveFm = { ...frontmatter };
@@ -145,7 +147,7 @@ export default function EditorPage() {
       effectiveFm.url = getDefaultSlug();
       setFm('url', effectiveFm.url);
     }
-    const targetSlug = isNew ? effectiveFm.url : slug;
+    const targetSlug = effectiveFm.url || slug;
     const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
     const targetPath = isNew
       ? `${config.draftPath || '.draft'}/${targetSlug}.md`
@@ -156,21 +158,49 @@ export default function EditorPage() {
       const fullContent = `${generateFrontmatter(effectiveFm)}\n\n${editorContent}`;
       const timestamp = formatTimestamp();
 
-      await writeFile(token, {
-        owner,
-        repo,
-        path: targetPath,
-        content: fullContent,
-        message: `[skip ci] ${targetSlug}.md-${timestamp}`,
-        branch,
-        sha: currentFileSha || undefined,
-        userName: user?.login
-      });
+      // 检测 URL 变更：已有文章且 URL 与路由 slug 不同
+      const urlChanged = !isNew && effectiveFm.url && effectiveFm.url !== slug && currentFilePath;
 
-      if (isNew) {
-        navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}`);
+      if (urlChanged) {
+        // URL 变更：写入新路径，删除旧文件
+        const oldPath = currentFilePath;
+        // 从当前文件路径推导目录（currentFilePath 在 useEffect 中已设置）
+        const saveBasePath = currentFilePath.split('/').slice(0, -1).join('/');
+        const newPath = `${saveBasePath}/${targetSlug}.md`;
+
+        await renameFile({
+          owner,
+          repo,
+          oldPath,
+          newPath,
+          content: fullContent,
+          message: `[skip ci] ${targetSlug}.md-${timestamp}`,
+          branch,
+          sha: currentFileSha || undefined,
+          userName: user?.login
+        });
+
+        setCurrentFilePath(newPath);
+        setCurrentFileSha('');
+        setToast({ message: '保存成功（文件名已更新）', type: 'success' });
+        navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}${basePath ? `&basePath=${basePath}` : ''}`);
       } else {
-        setToast({ message: '草稿保存成功', type: 'success' });
+        await writeFile({
+          owner,
+          repo,
+          path: targetPath,
+          content: fullContent,
+          message: `[skip ci] ${targetSlug}.md-${timestamp}`,
+          branch,
+          sha: currentFileSha || undefined,
+          userName: user?.login
+        });
+
+        if (isNew) {
+          navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}`);
+        } else {
+          setToast({ message: '草稿保存成功', type: 'success' });
+        }
       }
     } catch (err) {
       console.error('Failed to save:', err);
@@ -181,7 +211,7 @@ export default function EditorPage() {
   };
 
   const handlePublish = async () => {
-    if (!token || !selectedRepo) return;
+    if (!user || !selectedRepo) return;
 
     // 如果 URL 为空：新建文章自动生成默认值，已有文章 fallback 到路由 slug
     const effectiveFm = { ...frontmatter };
@@ -206,7 +236,7 @@ export default function EditorPage() {
       const fullContent = `${generateFrontmatter(effectiveFm)}\n\n${editorContent}`;
       const timestamp = formatTimestamp();
 
-      await writeFile(token, {
+      await writeFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         path: filePath,
@@ -221,7 +251,7 @@ export default function EditorPage() {
       // 清理草稿
       const draftPath = getDraftPath(targetSlug);
       if (currentFileSha) {
-        await moveFile(token, {
+        await moveFile({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           fromPath: draftPath,
@@ -232,7 +262,7 @@ export default function EditorPage() {
           userName: user?.login
         });
       } else {
-        await writeFile(token, {
+        await writeFile({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           path: draftPath,
@@ -260,7 +290,7 @@ export default function EditorPage() {
   };
 
   const handleDeleteArticle = async () => {
-    if (!token || !selectedRepo || !currentFilePath) return;
+    if (!user || !selectedRepo || !currentFilePath) return;
 
     // 删除操作针对已有文章，URL 为空时 fallback 到路由 slug
     const effectiveFm = { ...frontmatter };
@@ -273,7 +303,7 @@ export default function EditorPage() {
 
     setSaving(true);
     try {
-      await moveFile(token, {
+      await moveFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         fromPath: currentFilePath,

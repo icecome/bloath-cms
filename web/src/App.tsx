@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { CollectionsProvider } from './contexts/CollectionsContext';
 import { RepoProvider } from './contexts/RepoContext';
@@ -16,19 +16,10 @@ import './styles/globals.css';
 const EditorPage = lazy(() => import('./pages/EditorPage'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, token, verifyToken } = useAuth();
-  const [verifying, setVerifying] = useState(false);
+  const { user, loading } = useAuth();
 
-  useEffect(() => {
-    // 如果有 token 但没有用户数据，验证 token
-    if (token && !user) {
-      setVerifying(true);
-      verifyToken(token).then(() => setVerifying(false));
-    }
-  }, [token, user, verifyToken]);
-
-  // 验证中显示加载状态
-  if (verifying) {
+  // 加载中显示加载状态
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3B82F6]"></div>

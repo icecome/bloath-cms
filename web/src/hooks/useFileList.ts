@@ -20,20 +20,15 @@ export interface RepoInfo {
  * 将 N 个递归请求减少为 1 个请求
  */
 export async function scanMdFiles(
-  token: string,
   repo: RepoInfo,
   basePath: string
 ): Promise<FileItem[]> {
-  // 使用 Trees API 一次性获取所有文件
-  const allFiles = await getTree(token, repo);
+  const allFiles = await getTree(repo);
 
-  // 过滤出 basePath 下的 .md 文件
   const normalizedBase = basePath.replace(/^\/+|\/+$/g, '');
   return allFiles
     .filter((item) => {
-      // 只保留 .md 文件
       if (!item.name.endsWith('.md')) return false;
-      // 如果指定了 basePath，只保留该路径下的文件
       if (normalizedBase) {
         return item.path.startsWith(normalizedBase + '/') || item.path === normalizedBase;
       }
@@ -48,27 +43,27 @@ export async function scanMdFiles(
     }));
 }
 
-export function useFileList(basePath: string, selectedRepo: RepoInfo | null, token: string | null) {
+export function useFileList(basePath: string, selectedRepo: RepoInfo | null, enabled: boolean) {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (!selectedRepo || !token) {
+    if (!selectedRepo || !enabled) {
       setFiles([]);
       return;
     }
 
     setLoading(true);
     try {
-      const files = await scanMdFiles(token, selectedRepo, basePath);
-      setFiles(files);
+      const result = await scanMdFiles(selectedRepo, basePath);
+      setFiles(result);
     } catch (err) {
       console.error(`扫描路径 ${basePath} 失败:`, err);
       setFiles([]);
     } finally {
       setLoading(false);
     }
-  }, [basePath, selectedRepo, token]);
+  }, [basePath, selectedRepo, enabled]);
 
   useEffect(() => {
     refresh();

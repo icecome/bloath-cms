@@ -26,7 +26,7 @@ interface MediaFile {
 }
 
 export default function MediaPage() {
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const { mediaConfig } = useCollections();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<MediaFile[]>([]);
@@ -69,11 +69,11 @@ export default function MediaPage() {
 
   // 加载文件列表
   const loadFiles = useCallback(async () => {
-    if (!token || !isConfigured) return;
+    if (!user || !isConfigured) return;
     setLoading(true);
     setError('');
     try {
-      const treeItems = await getTree(token, {
+      const treeItems = await getTree({
         owner: mediaConfig.imageOwner,
         repo: mediaConfig.imageRepo,
         branch: 'main'
@@ -97,13 +97,13 @@ export default function MediaPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, isConfigured, mediaConfig, getCdnUrl]);
+  }, [user, isConfigured, mediaConfig, getCdnUrl]);
 
   // 静默加载文件列表（不显示 loading/error）
   const loadFilesSilently = useCallback(async (): Promise<MediaFile[] | null> => {
-    if (!token || !isConfigured) return null;
+    if (!user || !isConfigured) return null;
     try {
-      const treeItems = await getTree(token, {
+      const treeItems = await getTree({
         owner: mediaConfig.imageOwner,
         repo: mediaConfig.imageRepo,
         branch: 'main'
@@ -122,7 +122,7 @@ export default function MediaPage() {
     } catch {
       return null;
     }
-  }, [token, isConfigured, mediaConfig, getCdnUrl]);
+  }, [user, isConfigured, mediaConfig, getCdnUrl]);
 
   useEffect(() => {
     if (isConfigured) loadFiles();
@@ -164,7 +164,7 @@ export default function MediaPage() {
 
   // 上传文件
   const handleUpload = async (fileList: FileList | File[]) => {
-    if (!token || !user || !isConfigured) return;
+    if (!user || !isConfigured) return;
 
     const filesArray = Array.from(fileList).filter((f) =>
       f.type.startsWith('image/')
@@ -206,7 +206,7 @@ export default function MediaPage() {
           sha = existing?.sha;
         }
 
-        await uploadImage(token, {
+        await uploadImage({
           owner: mediaConfig.imageOwner,
           repo: mediaConfig.imageRepo,
           path: filePath,
@@ -240,18 +240,18 @@ export default function MediaPage() {
 
   // 删除文件
   const handleDelete = async (file: MediaFile) => {
-    if (!token || !user) return;
+    if (!user) return;
     setDeleteConfirm(file);
   };
 
   // 执行删除
   const executeDelete = async () => {
     const file = deleteConfirm;
-    if (!file || !token || !user) return;
+    if (!file || !user) return;
     setDeleteConfirm(null);
 
     try {
-      await deleteFile(token, {
+      await deleteFile({
         owner: mediaConfig.imageOwner,
         repo: mediaConfig.imageRepo,
         path: file.path,

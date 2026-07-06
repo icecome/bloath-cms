@@ -14,7 +14,7 @@ import { FileText, Search, Trash2, Pencil } from 'lucide-react';
 import { PAGE_SIZE } from '../lib/constants';
 
 export default function DashboardPage() {
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
@@ -27,7 +27,7 @@ export default function DashboardPage() {
   const lastDeletedRef = useRef<{ file: FileItem; originalPath: string } | null>(null);
 
   useEffect(() => {
-    if (!selectedRepo || !token) {
+    if (!selectedRepo || !user) {
       setFiles([]);
       setCurrentPage(1);
       return;
@@ -37,10 +37,10 @@ export default function DashboardPage() {
     const paths = (config.paths || []).filter(p => !p.includes('*') && p.trim() !== '');
 
     // 并行扫描所有顶层路径
-    Promise.all(paths.map(p => scanMdFiles(token, selectedRepo, p)))
+    Promise.all(paths.map(p => scanMdFiles(selectedRepo, p)))
       .then(results => setFiles(results.flat()))
       .finally(() => setLoading(false));
-  }, [selectedRepo, token, config]);
+  }, [selectedRepo, user, config]);
 
   const filteredFiles = useMemo(() =>
     files.filter((f) =>
@@ -84,12 +84,12 @@ export default function DashboardPage() {
   };
 
   const handleDelete = async (file: FileItem) => {
-    if (!selectedRepo || !token) return;
+    if (!selectedRepo || !user) return;
 
     const trashPath = `${config.trashPath || '.trash'}/${file.name}`;
 
     try {
-      await moveFile(token, {
+      await moveFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         fromPath: file.path,
@@ -111,7 +111,7 @@ export default function DashboardPage() {
         type: 'success',
         onUndo: async () => {
           try {
-            await moveFile(token, {
+            await moveFile({
               owner: selectedRepo.owner,
               repo: selectedRepo.repo,
               fromPath: trashPath,

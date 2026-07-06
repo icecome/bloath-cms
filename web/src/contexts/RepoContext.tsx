@@ -13,7 +13,7 @@ interface RepoContextType {
   setSelectedRepo: (repo: RepoState | null) => void;
   branches: string[];
   loadingBranches: boolean;
-  loadBranches: (owner: string, repo: string, token: string) => void;
+  loadBranches: (owner: string, repo: string) => void;
 }
 
 const STORAGE_KEY = 'bloath_selected_repo';
@@ -30,7 +30,7 @@ function loadSavedRepo(): RepoState | null {
 }
 
 export function RepoProvider({ children }: { children: ReactNode }) {
-  const { token } = useAuth();
+  const { user } = useAuth();
   const [selectedRepo, setSelectedRepoState] = useState<RepoState | null>(loadSavedRepo);
   const [branches, setBranches] = useState<string[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
@@ -44,12 +44,11 @@ export function RepoProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadBranches = useCallback(async (owner: string, repo: string, token: string) => {
-    if (!token) return;
+  const loadBranches = useCallback(async (owner: string, repo: string) => {
     setLoadingBranches(true);
     try {
-      const branches = await getBranches(token, owner, repo);
-      setBranches(branches);
+      const branchList = await getBranches(owner, repo);
+      setBranches(branchList);
     } catch (err) {
       console.error('加载分支失败:', err);
       setBranches(['main']);
@@ -59,12 +58,12 @@ export function RepoProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (selectedRepo && token) {
-      loadBranches(selectedRepo.owner, selectedRepo.repo, token);
+    if (selectedRepo && user) {
+      loadBranches(selectedRepo.owner, selectedRepo.repo);
     } else if (selectedRepo) {
       setBranches([]);
     }
-  }, [selectedRepo, token, loadBranches]);
+  }, [selectedRepo, user, loadBranches]);
 
   return (
     <RepoContext.Provider value={{ selectedRepo, setSelectedRepo, branches, loadingBranches, loadBranches }}>

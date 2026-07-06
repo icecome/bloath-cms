@@ -235,7 +235,7 @@ function SidebarContent({
 }
 
 export default function MainLayout() {
-  const { user, logout, token } = useAuth();
+  const { user, logout } = useAuth();
   const { selectedRepo, setSelectedRepo, branches, loadBranches } = useRepo();
   const location = useLocation();
   const navigate = useNavigate();
@@ -246,16 +246,16 @@ export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    if (token) {
-      getRepos(token).then(setRepos).catch(console.error);
+    if (user) {
+      getRepos().then(setRepos).catch(console.error);
     }
-  }, [token]);
+  }, [user]);
 
   useEffect(() => {
-    if (selectedRepo && token) {
-      loadBranches(selectedRepo.owner, selectedRepo.repo, token);
+    if (selectedRepo && user) {
+      loadBranches(selectedRepo.owner, selectedRepo.repo);
     }
-  }, [selectedRepo, token, loadBranches]);
+  }, [selectedRepo, user, loadBranches]);
 
   // 路由变化时关闭侧边栏
   useEffect(() => {

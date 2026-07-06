@@ -10,6 +10,7 @@ export interface Env {
   FRONTEND_URL: string;
   ALLOWED_ORIGINS?: string;
   PROD_ORIGINS?: string;
+  CONTENT_SECURITY_POLICY?: string;
 }
 
 // 自定义 API 错误类，携带 HTTP 状态码

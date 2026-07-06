@@ -16,3 +16,7 @@ ALLOWED_ORIGINS=
 
 # 生产环境域名（逗号分隔，可选）
 PROD_ORIGINS=https://your-domain.com
+
+# 内容安全策略（可选，默认已提供宽松适配的默认值）
+# 如需自定义可覆盖，示例：default-src 'self'; script-src 'self'; ...
+CONTENT_SECURITY_POLICY=

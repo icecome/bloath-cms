@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 export default function DraftsPage() {
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
@@ -46,21 +46,21 @@ export default function DraftsPage() {
   const availableDirs = config.paths || [];
 
   useEffect(() => {
-    if (!selectedRepo || !token) {
+    if (!selectedRepo || !user) {
       setFiles([]);
       setCurrentPage(1);
       return;
     }
 
     setLoading(true);
-    scanMdFiles(token, selectedRepo, draftPath)
+    scanMdFiles(selectedRepo, draftPath)
       .then(setFiles)
       .catch((err: Error) => {
         console.error(`扫描路径 ${draftPath} 失败:`, err);
         setFiles([]);
       })
       .finally(() => setLoading(false));
-  }, [selectedRepo, token, draftPath]);
+  }, [selectedRepo, user, draftPath]);
 
   const filteredFiles = useMemo(() =>
     files.filter((f) =>
@@ -116,13 +116,13 @@ export default function DraftsPage() {
   };
 
   const handlePublish = async () => {
-    if (!selectedRepo || !token || selectedFiles.size === 0 || !publishTarget.trim()) return;
+    if (!selectedRepo || !user || selectedFiles.size === 0 || !publishTarget.trim()) return;
     setActionLoading(true);
     try {
       const filesToMove = files.filter((f) => selectedFiles.has(f.path));
       for (const file of filesToMove) {
         const newPath = `${publishTarget.trim()}/${file.name}`;
-        await moveFile(token, {
+        await moveFile({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           fromPath: file.path,
@@ -137,7 +137,7 @@ export default function DraftsPage() {
       setSelectedFiles(new Set());
       setPublishTarget('');
       setShowPublishDropdown(false);
-      const updatedFiles = await scanMdFiles(token, selectedRepo, draftPath);
+      const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
@@ -147,13 +147,13 @@ export default function DraftsPage() {
   };
 
   const handleMove = async () => {
-    if (!selectedRepo || !token || selectedFiles.size === 0 || !moveTarget.trim()) return;
+    if (!selectedRepo || !user || selectedFiles.size === 0 || !moveTarget.trim()) return;
     setActionLoading(true);
     try {
       const filesToMove = files.filter((f) => selectedFiles.has(f.path));
       for (const file of filesToMove) {
         const newPath = `${moveTarget.trim()}/${file.name}`;
-        await moveFile(token, {
+        await moveFile({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           fromPath: file.path,
@@ -168,7 +168,7 @@ export default function DraftsPage() {
       setSelectedFiles(new Set());
       setMoveTarget('');
       setShowMoveDropdown(false);
-      const updatedFiles = await scanMdFiles(token, selectedRepo, draftPath);
+      const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `移动失败: ${(err as Error).message}`, type: 'error' });
@@ -178,7 +178,7 @@ export default function DraftsPage() {
   };
 
   const handleDelete = async () => {
-    if (!selectedRepo || !token || selectedFiles.size === 0) return;
+    if (!selectedRepo || !user || selectedFiles.size === 0) return;
 
     const filesToDelete = files.filter((f) => selectedFiles.has(f.path));
     const trashPaths = filesToDelete.map(f => `${trashPath}/${f.name}`);
@@ -188,7 +188,7 @@ export default function DraftsPage() {
       // 批量移动到回收站
       for (let i = 0; i < filesToDelete.length; i++) {
         const file = filesToDelete[i];
-        await moveFile(token, {
+        await moveFile({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           fromPath: file.path,
@@ -221,12 +221,12 @@ export default function DraftsPage() {
   };
 
   const handleSingleDelete = async (file: FileItem) => {
-    if (!selectedRepo || !token) return;
+    if (!selectedRepo || !user) return;
 
     const trashFile = `${trashPath}/${file.name}`;
 
     try {
-      await moveFile(token, {
+      await moveFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         fromPath: file.path,
@@ -248,11 +248,10 @@ export default function DraftsPage() {
         type: 'success',
         onUndo: async () => {
           try {
-            const freshToken = sessionStorage.getItem('token');
-            if (!freshToken || !selectedRepo) return;
+            if (!selectedRepo) return;
             const restoredFile = lastDeletedRef.current!.files[0];
             const originalPath = lastDeletedRef.current!.originalPaths[0];
-            await moveFile(freshToken, {
+            await moveFile({
               owner: selectedRepo.owner,
               repo: selectedRepo.repo,
               fromPath: trashFile,
@@ -275,11 +274,11 @@ export default function DraftsPage() {
   };
 
   const handleRename = async () => {
-    if (!selectedRepo || !token || !renameFile || !renameValue.trim()) return;
+    if (!selectedRepo || !user || !renameFile || !renameValue.trim()) return;
     setActionLoading(true);
     try {
       // 读取原文件内容
-      const { content: fileContent, sha } = await readFile(token, {
+      const { content: fileContent, sha } = await readFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         path: renameFile.path,
@@ -292,7 +291,7 @@ export default function DraftsPage() {
       const newPath = `${newDir}/${newName}`;
 
       // 写入新文件（不修改 frontmatter）
-      await writeFile(token, {
+      await writeFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         path: newPath,
@@ -303,7 +302,7 @@ export default function DraftsPage() {
       });
 
       // 删除旧文件
-      await deleteFile(token, {
+      await deleteFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         path: renameFile.path,
@@ -317,7 +316,7 @@ export default function DraftsPage() {
       setRenameFile(null);
       setRenameValue('');
       // 刷新列表
-      const updatedFiles = await scanMdFiles(token, selectedRepo, draftPath);
+      const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `重命名失败: ${(err as Error).message}`, type: 'error' });

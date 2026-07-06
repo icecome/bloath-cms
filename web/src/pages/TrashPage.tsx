@@ -13,7 +13,7 @@ import { PAGE_SIZE } from '../lib/constants';
 import { FileText, Search, Trash2, RotateCcw, X } from 'lucide-react';
 
 export default function TrashPage() {
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const trashPath = config.trashPath || '.trash';
@@ -32,14 +32,14 @@ export default function TrashPage() {
   const availableDirs = config.paths || [];
 
   useEffect(() => {
-    if (!selectedRepo || !token) {
+    if (!selectedRepo || !user) {
       setFiles([]);
       setCurrentPage(1);
       return;
     }
 
     setLoading(true);
-    scanMdFiles(token, selectedRepo, trashPath)
+    scanMdFiles(selectedRepo, trashPath)
       .then(setFiles)
       .catch((err: Error) => {
         // .trash 目录不存在是正常情况（首次使用）
@@ -52,7 +52,7 @@ export default function TrashPage() {
         }
       })
       .finally(() => setLoading(false));
-  }, [selectedRepo, token, trashPath]);
+  }, [selectedRepo, user, trashPath]);
 
   const filteredFiles = useMemo(() =>
     files.filter((f) =>
@@ -91,7 +91,7 @@ export default function TrashPage() {
   };
 
   const handleRestore = async (file: FileItem, targetDir: string) => {
-    if (!selectedRepo || !token || !targetDir.trim()) return;
+    if (!selectedRepo || !user || !targetDir.trim()) return;
     if (!file.sha) {
       setToast({ message: '文件缺少 SHA，无法恢复', type: 'error' });
       return;
@@ -99,7 +99,7 @@ export default function TrashPage() {
     setActionLoading(true);
     try {
       const newPath = `${targetDir.trim()}/${file.name}`;
-      await moveFile(token, {
+      await moveFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         fromPath: file.path,
@@ -110,7 +110,7 @@ export default function TrashPage() {
         userName: user?.login
       });
       setToast({ message: `已将 ${file.name} 移动到 ${targetDir}`, type: 'success' });
-      const updatedFiles = await scanMdFiles(token, selectedRepo, trashPath).catch(() => [] as FileItem[]);
+      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as FileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
@@ -120,10 +120,10 @@ export default function TrashPage() {
   };
 
   const handlePermanentDelete = async (file: FileItem) => {
-    if (!selectedRepo || !token) return;
+    if (!selectedRepo || !user) return;
     setActionLoading(true);
     try {
-      await deleteFile(token, {
+      await deleteFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         path: file.path,
@@ -132,7 +132,7 @@ export default function TrashPage() {
         userName: user?.login
       });
       setToast({ message: `已永久删除 ${file.name}`, type: 'success' });
-      const updatedFiles = await scanMdFiles(token, selectedRepo, trashPath).catch(() => [] as FileItem[]);
+      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as FileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
@@ -142,13 +142,13 @@ export default function TrashPage() {
   };
 
   const handleBulkRestore = async () => {
-    if (!selectedRepo || !token || selectedFiles.size === 0 || !restoreTarget.trim()) return;
+    if (!selectedRepo || !user || selectedFiles.size === 0 || !restoreTarget.trim()) return;
     setActionLoading(true);
     try {
       const filesToRestore = files.filter((f) => selectedFiles.has(f.path));
       for (const file of filesToRestore) {
         const newPath = `${restoreTarget.trim()}/${file.name}`;
-        await moveFile(token, {
+        await moveFile({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           fromPath: file.path,
@@ -163,7 +163,7 @@ export default function TrashPage() {
       setSelectedFiles(new Set());
       setRestoreTarget('');
       setShowRestoreDropdown(false);
-      const updatedFiles = await scanMdFiles(token, selectedRepo, trashPath).catch(() => [] as FileItem[]);
+      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as FileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
@@ -173,7 +173,7 @@ export default function TrashPage() {
   };
 
   const handleBulkPermanentDelete = async () => {
-    if (!selectedRepo || !token || selectedFiles.size === 0) return;
+    if (!selectedRepo || !user || selectedFiles.size === 0) return;
     setActionLoading(true);
     try {
       const filesToDelete = files.filter((f) => selectedFiles.has(f.path));
@@ -181,7 +181,7 @@ export default function TrashPage() {
       const errors: string[] = [];
       for (const file of filesToDelete) {
         try {
-          await deleteFile(token, {
+          await deleteFile({
             owner: selectedRepo.owner,
             repo: selectedRepo.repo,
             path: file.path,
@@ -202,7 +202,7 @@ export default function TrashPage() {
       }
       setSelectedFiles(new Set());
       setPermanentDeleteConfirm(false);
-      const updatedFiles = await scanMdFiles(token, selectedRepo, trashPath).catch(() => [] as FileItem[]);
+      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as FileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
