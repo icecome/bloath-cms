@@ -90,6 +90,9 @@ export default function EditorPage() {
     ? currentFilePath.split('/').slice(0, -1).join('/')
     : '';
 
+  // 判断当前文章是否在草稿箱中（否则视为内容库文章）
+  const isDraftArticle = !!(currentFilePath && (config.draftPath || '.draft') && currentFilePath.startsWith(config.draftPath || '.draft'));
+
   // 返回处理：根据 returnTo 参数决定返回路径
   const handleBack = () => {
     if (returnTo === 'drafts') {
@@ -262,28 +265,30 @@ export default function EditorPage() {
       });
       publishedPath = filePath;
 
-      // 清理草稿
-      const draftPath = getDraftPath(targetSlug);
-      if (currentFileSha) {
-        await moveFile({
-          owner: selectedRepo.owner,
-          repo: selectedRepo.repo,
-          fromPath: draftPath,
-          toPath: `${trashPath}/${targetSlug}.md`,
-          sha: currentFileSha,
-          branch,
-          message: `[skip ci] 移至回收站: ${targetSlug}`,
-          userName: user?.login
-        });
-      } else {
-        await writeFile({
-          owner: selectedRepo.owner,
-          repo: selectedRepo.repo,
-          path: draftPath,
-          content: '',
-          message: `[skip ci] 删除草稿: ${targetSlug}`,
-          userName: user?.login
-        });
+      // 仅对草稿箱文章执行草稿清理（内容库文章原地更新，无需清理）
+      if (isDraftArticle) {
+        const draftPath = getDraftPath(targetSlug);
+        if (currentFileSha) {
+          await moveFile({
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            fromPath: draftPath,
+            toPath: `${trashPath}/${targetSlug}.md`,
+            sha: currentFileSha,
+            branch,
+            message: `[skip ci] 移至回收站: ${targetSlug}`,
+            userName: user?.login
+          });
+        } else {
+          await writeFile({
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            path: draftPath,
+            content: '',
+            message: `[skip ci] 删除草稿: ${targetSlug}`,
+            userName: user?.login
+          });
+        }
       }
 
       setToast({ message: '发布成功', type: 'success' });
@@ -466,60 +471,77 @@ export default function EditorPage() {
           >
             <Settings2 className="w-4 h-4" />
           </button>
-          {!isNew && (
-            <div className="relative">
-              <button
-                onClick={() => setShowPublishDropdown(!showPublishDropdown)}
-                disabled={saving}
-                className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-green-500 text-white rounded-sm hover:bg-green-600 disabled:opacity-50 transition-colors"
-              >
-                <Send className="w-4 h-4" />
-                <span className="hidden md:inline">发布</span>
-              </button>
-              {showPublishDropdown && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-border z-50 min-w-[250px] p-2 shadow-sm" role="menu">
-                  <p className="text-xs text-muted-foreground mb-2 px-1">发布到目标目录：</p>
-                  <div className="space-y-0.5">
-                    {availableDirs.map((dir) => (
-                      <button
-                        key={dir}
-                        onClick={() => { setPublishTarget(dir); setShowPublishDropdown(false); }}
-                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-secondary transition-colors ${
-                          publishTarget === dir ? 'text-foreground font-medium' : 'text-muted-foreground'
-                        }`}
-                        role="menuitem"
-                      >
-                        {publishTarget === dir && <span className="text-green-500">✓</span>}
-                        <span className="truncate">{dir}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-2 pt-2 border-t border-border">
-                    <input
-                      type="text"
-                      value={publishTarget}
-                      onChange={(e) => setPublishTarget(e.target.value)}
-                      placeholder="或输入自定义路径"
-                      className="w-full px-2.5 py-1.5 text-xs border border-border bg-white text-foreground placeholder:text-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
-                    />
-                    <button
-                      onClick={() => { setShowPublishDropdown(false); handlePublish(); }}
-                      disabled={!publishTarget.trim() || saving}
-                      className="w-full px-2.5 py-1.5 text-xs text-white bg-green-500 rounded-sm hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {saving ? '发布中...' : '确认发布'}
-                    </button>
-                  </div>
+          {!isNew && (() => {
+            if (isDraftArticle) {
+              // 草稿箱文章：展示目录选择下拉框
+              return (
+                <div className="relative">
                   <button
-                    onClick={() => setShowPublishDropdown(false)}
-                    className="w-full mt-1 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary rounded-sm transition-colors"
+                    onClick={() => setShowPublishDropdown(!showPublishDropdown)}
+                    disabled={saving}
+                    className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-green-500 text-white rounded-sm hover:bg-green-600 disabled:opacity-50 transition-colors"
                   >
-                    取消
+                    <Send className="w-4 h-4" />
+                    <span className="hidden md:inline">发布</span>
                   </button>
+                  {showPublishDropdown && (
+                    <div className="absolute right-0 top-full mt-1 bg-white border border-border z-50 min-w-[250px] p-2 shadow-sm" role="menu">
+                      <p className="text-xs text-muted-foreground mb-2 px-1">发布到目标目录：</p>
+                      <div className="space-y-0.5">
+                        {availableDirs.map((dir) => (
+                          <button
+                            key={dir}
+                            onClick={() => { setPublishTarget(dir); setShowPublishDropdown(false); }}
+                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-secondary transition-colors ${
+                              publishTarget === dir ? 'text-foreground font-medium' : 'text-muted-foreground'
+                            }`}
+                            role="menuitem"
+                          >
+                            {publishTarget === dir && <span className="text-green-500">✓</span>}
+                            <span className="truncate">{dir}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-border">
+                        <input
+                          type="text"
+                          value={publishTarget}
+                          onChange={(e) => setPublishTarget(e.target.value)}
+                          placeholder="或输入自定义路径"
+                          className="w-full px-2.5 py-1.5 text-xs border border-border bg-white text-foreground placeholder:text-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
+                        />
+                        <button
+                          onClick={() => { setShowPublishDropdown(false); handlePublish(); }}
+                          disabled={!publishTarget.trim() || saving}
+                          className="w-full px-2.5 py-1.5 text-xs text-white bg-green-500 rounded-sm hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {saving ? '发布中...' : '确认发布'}
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => setShowPublishDropdown(false)}
+                        className="w-full mt-1 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary rounded-sm transition-colors"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+              );
+            } else {
+              // 内容库文章：直接触发发布（原地更新）
+              return (
+                <button
+                  onClick={() => handlePublish()}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-green-500 text-white rounded-sm hover:bg-green-600 disabled:opacity-50 transition-colors"
+                >
+                  <Send className="w-4 h-4" />
+                  <span className="hidden md:inline">{saving ? '发布中...' : '发布'}</span>
+                </button>
+              );
+            }
+          })()}
           <button
             onClick={handleSave}
             disabled={saving}

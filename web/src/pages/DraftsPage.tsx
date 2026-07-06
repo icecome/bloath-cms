@@ -11,7 +11,7 @@ import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
 import Pagination from '../components/ui/Pagination';
-import DirectorySelectorDropdown from '../components/ui/DirectorySelectorDropdown';
+
 import { PAGE_SIZE } from '../lib/constants';
 import {
   FileText,
@@ -391,31 +391,13 @@ export default function DraftsPage() {
               <div className="w-px h-4 bg-border"></div>
 
               {/* 发布 */}
-              <div className="relative">
-                <button
-                  onClick={() => {
-                    setShowPublishDropdown(!showPublishDropdown);
-                    setShowMoveDropdown(false);
-                  }}
-                  disabled={actionLoading}
-                  className="text-sm px-3 py-1.5 text-primary hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
-                >
-                  发布
-                </button>
-                {showPublishDropdown && (
-                  <DirectorySelectorDropdown
-                    availableDirs={availableDirs}
-                    value={publishTarget}
-                    onChange={setPublishTarget}
-                    onConfirm={handlePublish}
-                    confirmLabel={actionLoading ? '发布中...' : `发布 ${selectedFiles.size} 篇`}
-                    onCancel={() => setShowPublishDropdown(false)}
-                    disabled={actionLoading}
-                    isLoading={actionLoading}
-                    variant="publish"
-                  />
-                )}
-              </div>
+              <button
+                onClick={() => setShowPublishDropdown(true)}
+                disabled={actionLoading}
+                className="text-sm px-3 py-1.5 text-primary hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
+              >
+                发布
+              </button>
 
               {/* 移动 */}
               <div className="relative">
@@ -653,6 +635,62 @@ export default function DraftsPage() {
                 className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {actionLoading ? '处理中...' : '确认重命名'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 发布目录选择弹窗 */}
+      {showPublishDropdown && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowPublishDropdown(false)}>
+          <div className="bg-card rounded-lg p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-medium text-foreground mb-4">
+              发布 {selectedFiles.size} 篇草稿
+            </h3>
+            <div className="mb-4">
+              <p className="text-sm text-muted-foreground mb-2">发布到目标目录：</p>
+              <div className="space-y-0.5 mb-3">
+                {availableDirs.length === 0 ? (
+                  <p className="text-xs text-muted-foreground px-1">暂无可用目录</p>
+                ) : (
+                  availableDirs.map((dir) => (
+                    <button
+                      key={dir}
+                      onClick={() => setPublishTarget(dir)}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-accent rounded-sm transition-colors ${
+                        publishTarget === dir ? 'text-foreground font-medium bg-accent' : 'text-muted-foreground'
+                      }`}
+                    >
+                      {publishTarget === dir && <span className="text-green-500">✓</span>}
+                      <span className="truncate">{dir}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <label className="block text-sm text-muted-foreground mb-1">或输入自定义路径</label>
+              <input
+                type="text"
+                value={publishTarget}
+                onChange={(e) => setPublishTarget(e.target.value)}
+                placeholder="如 content/posts/sub"
+                className="w-full px-3 py-2 text-sm border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary transition-colors"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowPublishDropdown(false)}
+                disabled={actionLoading}
+                className="px-4 py-2 text-sm text-muted-foreground hover:bg-accent rounded-sm transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => { setShowPublishDropdown(false); handlePublish(); }}
+                disabled={!publishTarget.trim() || actionLoading}
+                className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {actionLoading ? '发布中...' : `确认发布`}
               </button>
             </div>
           </div>

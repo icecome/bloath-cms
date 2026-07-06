@@ -338,67 +338,81 @@ export async function getTree(
       };
     });
 
+  // 先获取仓库最新 commit 时间作为兜底
+  let latestCommitDate = 0;
+  try {
+    const headResp = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}?per_page=1`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'User-Agent': 'Bloath-CMS'
+        }
+      }
+    );
+    if (headResp.ok) {
+      const headData = await headResp.json() as any;
+      if (headData?.commit?.committer?.date) {
+        latestCommitDate = new Date(headData.commit.committer.date).getTime();
+      }
+    }
+  } catch (err) {
+    console.warn(`[getTree] Failed to fetch latest commit: ${err instanceof Error ? err.message : 'unknown'}`);
+  }
+
+  // 获取单个文件的最后修改时间（独立 try/catch，一个文件失败不影响其他）
+  const fetchLastModified = async (file: { path: string }): Promise<number> => {
+    try {
+      const resp = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(file.path)}&sha=${encodeURIComponent(branch)}&per_page=1`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'User-Agent': 'Bloath-CMS'
+          }
+        }
+      );
+      if (resp.ok) {
+        const data = await resp.json() as any[];
+        if (data.length > 0 && data[0]?.commit?.committer?.date) {
+          return new Date(data[0].commit.committer.date).getTime();
+        }
+      } else {
+        console.warn(`[getTree] Commits API ${resp.status} for ${file.path}`);
+      }
+    } catch (err) {
+      console.warn(`[getTree] Failed to fetch commit for ${file.path}: ${err instanceof Error ? err.message : 'unknown'}`);
+    }
+    return 0;
+  };
+
   // 填充 lastModified
   if (mode === 'filename') {
-    // 媒体库模式：优先从文件名提取时间戳，无时间戳的文件回退到 commits API
+    // 媒体库模式：优先从文件名提取时间戳
     for (const file of fileItems) {
       file.lastModified = extractTimestampFromFilename(file.name);
     }
-    // 对文件名无法提取时间的文件，使用 commits API 回退
+    // 对文件名无法提取时间的文件，使用 commits API
     const needCommits = fileItems.filter(f => f.lastModified === 0);
     if (needCommits.length > 0) {
-      try {
-        const batchSize = 10;
-        for (let i = 0; i < needCommits.length; i += batchSize) {
-          const batch = needCommits.slice(i, i + batchSize);
-          await Promise.all(batch.map(async (file) => {
-            const resp = await fetch(
-              `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(file.path)}&sha=${encodeURIComponent(branch)}&per_page=1`,
-              {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  'User-Agent': 'Bloath-CMS'
-                }
-              }
-            );
-            if (resp.ok) {
-              const data = await resp.json() as any[];
-              if (data.length > 0) {
-                file.lastModified = new Date(data[0].commit.committer.date).getTime();
-              }
-            }
-          }));
-        }
-      } catch (err) {
-        console.warn(`[getTree] Failed to fetch commits fallback: ${err instanceof Error ? err.message : 'unknown'}`);
+      const batchSize = 5;
+      for (let i = 0; i < needCommits.length; i += batchSize) {
+        const batch = needCommits.slice(i, i + batchSize);
+        await Promise.all(batch.map(async (file) => {
+          const commitTime = await fetchLastModified(file);
+          file.lastModified = commitTime || latestCommitDate;
+        }));
       }
     }
   } else {
     // 内容库模式：全部通过 commits API 获取
-    try {
-      const batchSize = 10;
-      for (let i = 0; i < fileItems.length; i += batchSize) {
-        const batch = fileItems.slice(i, i + batchSize);
-        await Promise.all(batch.map(async (file) => {
-          const resp = await fetch(
-            `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(file.path)}&sha=${encodeURIComponent(branch)}&per_page=1`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                'User-Agent': 'Bloath-CMS'
-              }
-            }
-          );
-          if (resp.ok) {
-            const data = await resp.json() as any[];
-            if (data.length > 0) {
-              file.lastModified = new Date(data[0].commit.committer.date).getTime();
-            }
-          }
-        }));
-      }
-    } catch (err) {
-      console.warn(`[getTree] Failed to fetch commits: ${err instanceof Error ? err.message : 'unknown'}`);
+    const batchSize = 5;
+    for (let i = 0; i < fileItems.length; i += batchSize) {
+      const batch = fileItems.slice(i, i + batchSize);
+      await Promise.all(batch.map(async (file) => {
+        const commitTime = await fetchLastModified(file);
+        file.lastModified = commitTime || latestCommitDate;
+      }));
     }
   }
 
