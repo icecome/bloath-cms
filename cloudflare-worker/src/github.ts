@@ -325,56 +325,30 @@ export async function getTree(
       };
     });
 
-  // 通过 commits API 分页获取文件的 Git 最后修改时间
+  // 通过 commits API 获取每个文件的最后修改时间
+  // 使用 per-file 查询：commits?path=xxx&per_page=1
+  // 注：列表 API 默认不包含 files 数组，必须按路径单独查询
   try {
-    const pathToTime: Map<string, number> = new Map();
-    const allPaths = new Set(fileItems.map(f => f.path));
-    let page = 1;
-
-    while (allPaths.size > 0) {
-      const commitsResp = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=100&page=${page}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'User-Agent': 'Bloath-CMS'
-          }
-        }
-      );
-
-      if (!commitsResp.ok) break;
-
-      const commitsData = await commitsResp.json() as any[];
-      if (commitsData.length === 0) break;
-
-      for (const commit of commitsData) {
-        const commitDate = new Date(commit.commit.committer.date).getTime();
-        if (commit.files && Array.isArray(commit.files)) {
-          for (const file of commit.files) {
-            const filePath = file.filename;
-            if (filePath && !pathToTime.has(filePath) && allPaths.has(filePath)) {
-              pathToTime.set(filePath, commitDate);
-              allPaths.delete(filePath);
+    const batchSize = 10;
+    for (let i = 0; i < fileItems.length; i += batchSize) {
+      const batch = fileItems.slice(i, i + batchSize);
+      await Promise.all(batch.map(async (file) => {
+        const resp = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(file.path)}&sha=${encodeURIComponent(branch)}&per_page=1`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'User-Agent': 'Bloath-CMS'
             }
           }
+        );
+        if (resp.ok) {
+          const data = await resp.json() as any[];
+          if (data.length > 0) {
+            file.lastModified = new Date(data[0].commit.committer.date).getTime();
+          }
         }
-      }
-
-      // 所有文件都已匹配，提前终止
-      if (allPaths.size === 0) break;
-
-      // 不足 100 条说明已到最后一页
-      if (commitsData.length < 100) break;
-
-      page++;
-    }
-
-    // 填充 lastModified
-    for (const file of fileItems) {
-      const time = pathToTime.get(file.path);
-      if (time) {
-        file.lastModified = time;
-      }
+      }));
     }
   } catch (err) {
     console.warn(`[getTree] Failed to fetch commits for lastModified: ${err instanceof Error ? err.message : 'unknown'}`);
