@@ -50,7 +50,7 @@ export default function DashboardPage() {
       .then(results => {
         const allFiles = results.flat();
         allFiles.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
-        paths.forEach(p => setCachedFiles(selectedRepo, p, results[paths.indexOf(p)]));
+        paths.forEach((p, i) => setCachedFiles(selectedRepo, p, results[i]));
         setFiles(allFiles);
       })
       .finally(() => setLoading(false));
