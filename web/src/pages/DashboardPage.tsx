@@ -165,15 +165,15 @@ export default function DashboardPage() {
 
       {/* 筛选栏 */}
       {selectedRepo && (
-        <div className="px-4 md:px-8 py-4 flex items-center justify-between border-b border-[#F2F2F2]">
+        <div className="px-4 md:px-8 py-4 flex items-center justify-between border-b border-border-subtle">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="按文件名或提交信息筛选..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-white text-[#1F1F1F] placeholder-[#9CA3AF] border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
             />
           </div>
         </div>
@@ -191,7 +191,7 @@ export default function DashboardPage() {
         ) : filteredFiles.length > 0 ? (
           <div>
             {/* 桌面端表头 */}
-            <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-[#6B7280] bg-[#F5F6F7] border-b border-[#E8E8E8]">
+            <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-muted-foreground bg-accent border-b border-border">
               <div className="w-[40%]">文件名</div>
               <div className="w-[40%]">提交路径</div>
               <div className="w-[20%] text-right">操作</div>
@@ -201,18 +201,18 @@ export default function DashboardPage() {
             {paginatedFiles.map((file: FileItem) => (
               <div
                 key={file.path}
-                className="flex items-center px-4 py-3.5 cursor-pointer border-b border-[#F2F2F2] transition-colors hover:bg-[#F9FAFA]"
+                className="flex items-center px-4 py-3.5 cursor-pointer border-b border-border-subtle transition-colors hover:bg-accent"
                 onClick={() => handleEdit(file)}
               >
                 {/* 桌面端：表格行 */}
                 <div className="hidden md:flex items-center w-[40%] gap-2.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#22C55E] flex-shrink-0" />
-                  <span className="text-sm font-medium text-[#1F1F1F] truncate">
+                  <div className="w-2.5 h-2.5 rounded-full bg-success flex-shrink-0" />
+                  <span className="text-sm font-medium text-foreground truncate">
                     {file.name.replace('.md', '')}
                   </span>
                 </div>
                 <div className="hidden md:block w-[40%]">
-                  <span className="text-sm text-[#6B7280]">{file.path}</span>
+                  <span className="text-sm text-muted-foreground">{file.path}</span>
                 </div>
                 <div className="hidden md:flex w-[20%] items-center justify-end gap-2">
                   <button
@@ -220,7 +220,7 @@ export default function DashboardPage() {
                       e.stopPropagation();
                       handleEdit(file);
                     }}
-                    className="text-sm text-[#3B82F6] hover:underline"
+                    className="text-sm text-primary hover:underline"
                   >
                     编辑
                   </button>
@@ -229,7 +229,7 @@ export default function DashboardPage() {
                       e.stopPropagation();
                       handleDelete(file);
                     }}
-                    className="text-[#6B7280] hover:text-[#EF4444] transition-colors"
+                    className="text-muted-foreground hover:text-destructive transition-colors"
                     title="移至回收站"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -238,12 +238,12 @@ export default function DashboardPage() {
 
                 {/* 移动端：卡片布局 */}
                 <div className="flex md:hidden flex-1 min-w-0 items-center gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#22C55E] flex-shrink-0" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-success flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-[#1F1F1F] truncate">
+                    <div className="text-sm font-medium text-foreground truncate">
                       {file.name.replace('.md', '')}
                     </div>
-                    <div className="text-xs text-[#9CA3AF] truncate mt-0.5">
+                    <div className="text-xs text-muted-foreground truncate mt-0.5">
                       {file.path}
                     </div>
                   </div>
@@ -253,7 +253,7 @@ export default function DashboardPage() {
                         e.stopPropagation();
                         handleEdit(file);
                       }}
-                      className="p-1.5 text-[#3B82F6] hover:bg-[#EFF6FF] rounded transition-colors"
+                      className="p-1.5 text-primary hover:bg-accent rounded transition-colors"
                       title="编辑"
                     >
                       <Pencil className="w-4 h-4" />
@@ -263,7 +263,7 @@ export default function DashboardPage() {
                         e.stopPropagation();
                         handleDelete(file);
                       }}
-                      className="p-1.5 text-[#6B7280] hover:text-[#EF4444] hover:bg-[#FEF2F2] rounded transition-colors"
+                      className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-accent rounded transition-colors"
                       title="移至回收站"
                     >
                       <Trash2 className="w-4 h-4" />

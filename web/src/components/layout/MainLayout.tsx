@@ -64,9 +64,9 @@ function SidebarContent({
       {/* Logo */}
       <div className="px-5 py-4 flex items-center gap-2.5">
         <div className="w-6 h-6 flex items-center justify-center">
-          <span className="text-lg font-bold text-[#1F1F1F]">B</span>
+          <span className="text-lg font-bold text-foreground">B</span>
         </div>
-        <span className="text-sm font-semibold text-[#1F1F1F]">Bloath CMS</span>
+        <span className="text-sm font-semibold text-foreground">Bloath CMS</span>
       </div>
 
       {/* 新建文章按钮 */}
@@ -74,7 +74,7 @@ function SidebarContent({
         <button
           onClick={() => { onNewArticle(); onNavClick(); }}
           disabled={!selectedRepo}
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#1F1F1F] rounded-sm hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           <Plus className="w-3 h-3" />
           <span>新建文章</span>
@@ -86,28 +86,28 @@ function SidebarContent({
         <div className="relative">
           <button
             onClick={() => { setShowRepoDropdown(!showRepoDropdown); setShowBranchDropdown(false); }}
-            className="w-full h-9 px-3 text-sm border border-[#E8E8E8] rounded-sm text-[#374151] hover:bg-[#F9FAFA] transition-colors flex items-center gap-2 truncate"
+            className="w-full h-9 px-3 text-sm border border-border rounded-sm text-foreground hover:bg-accent transition-colors flex items-center gap-2 truncate"
           >
-            <Folder className="w-4 h-4 text-[#6B7280] flex-shrink-0" />
+            <Folder className="w-4 h-4 text-muted-foreground flex-shrink-0" />
             <span className="truncate">
               {selectedRepo ? `${selectedRepo.owner}/${selectedRepo.repo}` : '选择仓库'}
             </span>
-            <ChevronDown className={`w-4 h-4 text-[#6B7280] flex-shrink-0 transition-transform ${showRepoDropdown ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform ${showRepoDropdown ? 'rotate-180' : ''}`} />
           </button>
 
           {showRepoDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#E8E8E8] z-50 max-h-48 overflow-auto">
+            <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border z-50 max-h-48 overflow-auto">
               {repos.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-[#6B7280]">加载中...</div>
+                <div className="px-3 py-2 text-sm text-muted-foreground">加载中...</div>
               ) : (
                 repos.map((repo: any) => (
                   <button
                     key={repo.full_name}
                     onClick={() => { onRepoChange(repo.full_name); onNavClick(); }}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[#F9FAFA] transition-colors border-b border-[#F2F2F2] last:border-b-0 ${
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent transition-colors border-b border-border-subtle last:border-b-0 ${
                       selectedRepo?.owner === repo.owner && selectedRepo?.repo === repo.repo
-                        ? 'text-[#1F1F1F] font-medium'
-                        : 'text-[#374151]'
+                        ? 'text-foreground font-medium'
+                        : 'text-foreground'
                     }`}
                   >
                     {selectedRepo?.owner === repo.owner && selectedRepo?.repo === repo.repo && (
@@ -129,25 +129,25 @@ function SidebarContent({
             <button
               onClick={() => { setShowBranchDropdown(!showBranchDropdown); setShowRepoDropdown(false); }}
               disabled={branches.length === 0}
-              className="w-full h-8 px-3 text-sm border border-[#F2F2F2] bg-[#F9FAFA] rounded-sm text-[#374151] hover:bg-[#F3F4F6] transition-colors flex items-center gap-2 truncate disabled:opacity-50"
+              className="w-full h-8 px-3 text-sm border border-border-subtle bg-accent rounded-sm text-foreground hover:bg-muted transition-colors flex items-center gap-2 truncate disabled:opacity-50"
             >
               <span className="truncate">分支: {selectedRepo.branch}</span>
-              <ChevronDown className={`w-3.5 h-3.5 text-[#6B7280] flex-shrink-0 transition-transform ${showBranchDropdown ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground flex-shrink-0 transition-transform ${showBranchDropdown ? 'rotate-180' : ''}`} />
             </button>
 
             {showBranchDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#E8E8E8] z-50 max-h-40 overflow-auto">
+              <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border z-50 max-h-40 overflow-auto">
                 {branches.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-[#6B7280]">加载中...</div>
+                  <div className="px-3 py-2 text-sm text-muted-foreground">加载中...</div>
                 ) : (
                   branches.map((branch: string) => (
                     <button
                       key={branch}
                       onClick={() => { onBranchChange(branch); onNavClick(); }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[#F9FAFA] transition-colors ${
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent transition-colors ${
                         selectedRepo?.branch === branch
-                          ? 'text-[#1F1F1F] font-medium'
-                          : 'text-[#374151]'
+                          ? 'text-foreground font-medium'
+                          : 'text-foreground'
                       }`}
                     >
                       {selectedRepo?.branch === branch && (
@@ -164,11 +164,11 @@ function SidebarContent({
       )}
 
       {/* 分隔线 */}
-      <div className="mx-4 border-t border-[#F2F2F2]"></div>
+      <div className="mx-4 border-t border-border-subtle"></div>
 
       {/* 导航菜单 */}
       <nav className="px-2 py-2 flex-1">
-        <div className="px-3 py-1.5 text-xs font-medium text-[#6B7280] uppercase tracking-wider">内容</div>
+        <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">内容</div>
         {navItems.map((item) => (
           <Link
             key={item.path}
@@ -176,8 +176,8 @@ function SidebarContent({
             onClick={onNavClick}
             className={`flex items-center gap-2 px-3 py-2 rounded-sm text-sm transition-colors ${
               isActive(item.path)
-                ? 'bg-[#F9FAFA] text-[#1F1F1F] font-medium'
-                : 'text-[#374151] hover:bg-[#F3F4F6]'
+                ? 'bg-accent text-foreground font-medium'
+                : 'text-foreground hover:bg-muted'
             }`}
           >
             {item.icon}
@@ -187,39 +187,39 @@ function SidebarContent({
       </nav>
 
       {/* 底部用户信息 */}
-      <div className="border-t border-[#F2F2F2] px-4 py-3">
+      <div className="border-t border-border-subtle px-4 py-3">
         {user && (
           <div className="relative">
             <button
               onClick={() => setShowAccountDropdown(!showAccountDropdown)}
-              className="w-full flex items-center gap-2 hover:bg-[#F9FAFA] rounded-sm p-2 transition-colors text-left"
+              className="w-full flex items-center gap-2 hover:bg-accent rounded-sm p-2 transition-colors text-left"
             >
               <div className="w-7 h-7 rounded-sm overflow-hidden flex-shrink-0">
                 <img src={user.avatar_url} alt={user.login} className="w-full h-full object-cover" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-[#1F1F1F] truncate">{user.name || user.login}</p>
+                <p className="text-sm font-medium text-foreground truncate">{user.name || user.login}</p>
               </div>
-              <ChevronDown className={`w-3.5 h-3.5 text-[#6B7280] flex-shrink-0 transition-transform ${showAccountDropdown ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground flex-shrink-0 transition-transform ${showAccountDropdown ? 'rotate-180' : ''}`} />
             </button>
 
             {showAccountDropdown && (
-              <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-[#E8E8E8] z-50">
-                <div className="px-3 py-2 border-b border-[#F2F2F2]">
-                  <p className="text-sm font-medium text-[#1F1F1F]">{user.name || user.login}</p>
-                  <p className="text-sm text-[#6B7280]">@{user.login}</p>
+              <div className="absolute bottom-full left-0 right-0 mb-1 bg-card border border-border z-50">
+                <div className="px-3 py-2 border-b border-border-subtle">
+                  <p className="text-sm font-medium text-foreground">{user.name || user.login}</p>
+                  <p className="text-sm text-muted-foreground">@{user.login}</p>
                 </div>
                 <div className="py-1">
                   <button
                     onClick={() => { onSwitchAccount(); onNavClick(); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-[#F9FAFA] transition-colors text-[#374151]"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-accent transition-colors text-foreground"
                   >
                     <Users className="w-4 h-4" />
                     切换账号
                   </button>
                   <button
                     onClick={() => { onLogout(); onNavClick(); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-[#F9FAFA] transition-colors text-[#6B7280]"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-accent transition-colors text-muted-foreground"
                   >
                     <LogOut className="w-4 h-4" />
                     退出登录
@@ -297,9 +297,9 @@ export default function MainLayout() {
   const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <div className="flex h-full bg-[#FAFAFA]">
+    <div className="flex h-full bg-background">
       {/* 桌面端侧边栏 - 隐藏于移动端 */}
-      <aside className="hidden md:flex w-[260px] bg-white border-r border-[#E8E8E8] flex-col flex-shrink-0">
+      <aside className="hidden md:flex w-[260px] bg-card border-r border-border flex-col flex-shrink-0">
         <SidebarContent
           repos={repos}
           selectedRepo={selectedRepo}
@@ -329,7 +329,7 @@ export default function MainLayout() {
       )}
 
       {/* 移动端侧边栏抽屉 */}
-      <aside className={`fixed top-0 left-0 bottom-0 w-[280px] bg-white z-50 md:hidden transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed top-0 left-0 bottom-0 w-[280px] bg-card z-50 md:hidden transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <SidebarContent
           repos={repos}
           selectedRepo={selectedRepo}
@@ -353,19 +353,19 @@ export default function MainLayout() {
       {/* 主内容区 */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* 顶部 Header */}
-        <header className="px-4 md:px-8 h-12 flex items-center justify-between flex-shrink-0 border-b border-[#F2F2F2]">
+        <header className="px-4 md:px-8 h-12 flex items-center justify-between flex-shrink-0 border-b border-border-subtle">
           <div className="flex items-center gap-3">
             {/* 移动端汉堡菜单按钮 */}
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="md:hidden text-[#6B7280] hover:text-[#1F1F1F] transition-colors"
+              className="md:hidden text-muted-foreground hover:text-foreground transition-colors"
             >
               {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
-            <div className="flex items-center gap-2 text-xs text-[#6B7280]">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>Bloath</span>
-              <span className="text-[#D1D5DB]">/</span>
-              <span className="text-[#1F1F1F] font-medium">
+              <span className="text-border">/</span>
+              <span className="text-foreground font-medium">
                 {['/', '/drafts', '/trash', '/media', '/settings'].find(p => {
                   if (p === '/') return location.pathname === '/';
                   return location.pathname.startsWith(p);

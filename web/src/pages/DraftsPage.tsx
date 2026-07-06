@@ -364,31 +364,31 @@ export default function DraftsPage() {
 
       {/* 搜索栏 + 操作工具栏 */}
       {selectedRepo && (
-        <div className="px-4 md:px-8 py-4 border-b border-[#F2F2F2]">
+        <div className="px-4 md:px-8 py-4 border-b border-border-subtle">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="搜索草稿..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-white text-[#1F1F1F] placeholder-[#9CA3AF] border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors"
+              className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
             />
           </div>
 
           {selectedFiles.size > 0 && (
             <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-[#6B7280] bg-[#F9FAFA] px-2.5 py-1.5 rounded-sm">
+              <span className="text-sm text-muted-foreground bg-accent px-2.5 py-1.5 rounded-sm">
                 已选 {selectedFiles.size} 篇
               </span>
               <button
                 onClick={handleSelectAll}
-                className="text-sm text-[#6B7280] hover:text-[#1F1F1F] hover:bg-[#F9FAFA] px-2.5 py-1.5 rounded-sm transition-colors"
+                className="text-sm text-muted-foreground hover:text-foreground hover:bg-accent px-2.5 py-1.5 rounded-sm transition-colors"
               >
                 {selectedFiles.size === filteredFiles.length ? '取消全选' : '全选'}
               </button>
 
-              <div className="w-px h-4 bg-[#E8E8E8]"></div>
+              <div className="w-px h-4 bg-border"></div>
 
               {/* 发布 */}
               <div className="relative">
@@ -398,7 +398,7 @@ export default function DraftsPage() {
                     setShowMoveDropdown(false);
                   }}
                   disabled={actionLoading}
-                  className="text-sm px-3 py-1.5 text-[#3B82F6] hover:bg-[#F9FAFA] rounded-sm transition-colors disabled:opacity-40"
+                  className="text-sm px-3 py-1.5 text-primary hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
                 >
                   发布
                 </button>
@@ -425,31 +425,31 @@ export default function DraftsPage() {
                     setShowPublishDropdown(false);
                   }}
                   disabled={actionLoading}
-                  className="text-sm px-3 py-1.5 text-[#6B7280] hover:bg-[#F9FAFA] rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                  className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
                 >
                   <Move className="w-3.5 h-3.5" />
                   移动
                 </button>
                 {showMoveDropdown && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-[#E8E8E8] z-40 min-w-[220px] p-2">
-                    <p className="text-sm text-[#6B7280] mb-2 px-1">移动到：</p>
+                  <div className="absolute top-full left-0 mt-1 bg-card border border-border z-40 min-w-[220px] p-2">
+                    <p className="text-sm text-muted-foreground mb-2 px-1">移动到：</p>
                     <input
                       type="text"
                       value={moveTarget}
                       onChange={(e) => setMoveTarget(e.target.value)}
                       placeholder="输入目标路径，如 content/.draft/sub"
-                      className="w-full px-2.5 py-1.5 text-sm border border-[#E8E8E8] bg-white text-[#1F1F1F] placeholder-[#9CA3AF] rounded-sm focus:outline-none focus:border-[#3B82F6] mb-2 transition-colors"
+                      className="w-full px-2.5 py-1.5 text-sm border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
                     />
                     <button
                       onClick={handleMove}
                       disabled={!moveTarget.trim() || actionLoading}
-                      className="w-full px-2.5 py-1.5 text-sm text-white bg-[#1F1F1F] rounded-sm hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="w-full px-2.5 py-1.5 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
                       {actionLoading ? '移动中...' : `移动 ${selectedFiles.size} 篇`}
                     </button>
                     <button
                       onClick={() => setShowMoveDropdown(false)}
-                      className="w-full mt-1 px-2.5 py-1.5 text-sm text-[#6B7280] hover:bg-[#F9FAFA] rounded-sm transition-colors"
+                      className="w-full mt-1 px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-accent rounded-sm transition-colors"
                     >
                       取消
                     </button>
@@ -457,19 +457,19 @@ export default function DraftsPage() {
                 )}
               </div>
 
-              <div className="w-px h-4 bg-[#E8E8E8]"></div>
+              <div className="w-px h-4 bg-border"></div>
 
               {/* 删除 */}
               <button
                 onClick={handleDelete}
                 disabled={actionLoading}
-                className="text-sm px-3 py-1.5 text-[#6B7280] hover:bg-[#F9FAFA] hover:text-[#EF4444] rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-destructive rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 删除
               </button>
 
-              <div className="w-px h-4 bg-[#E8E8E8]"></div>
+              <div className="w-px h-4 bg-border"></div>
 
               {/* 重命名（仅选中1个文件时可用） */}
               <button
@@ -480,7 +480,7 @@ export default function DraftsPage() {
                   }
                 }}
                 disabled={selectedFiles.size !== 1 || actionLoading}
-                className="text-sm px-3 py-1.5 text-[#6B7280] hover:bg-[#F9FAFA] hover:text-[#3B82F6] rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-primary rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
                 title="重命名"
               >
                 <Pencil className="w-3.5 h-3.5" />
@@ -503,13 +503,13 @@ export default function DraftsPage() {
         ) : filteredFiles.length > 0 ? (
           <div>
             {/* 桌面端表头 */}
-            <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-[#6B7280] bg-[#F5F6F7] border-b border-[#E8E8E8]">
+            <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-muted-foreground bg-accent border-b border-border">
               <div className="w-8 flex items-center justify-center">
                 <input
                   type="checkbox"
                   checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0}
                   onChange={handleSelectAll}
-                  className="w-4 h-4 rounded-sm border-[#E8E8E8] bg-white text-[#3B82F6] focus:ring-[#3B82F6]"
+                  className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
                 />
               </div>
               <div className="w-[40%]">文件名</div>
@@ -521,8 +521,8 @@ export default function DraftsPage() {
             {paginatedFiles.map((file) => (
               <div
                 key={file.path}
-                className={`flex items-center px-4 py-3.5 border-b border-[#F2F2F2] transition-colors hover:bg-[#F9FAFA] ${
-                  selectedFiles.has(file.path) ? 'bg-[#F9FAFA]' : ''
+                className={`flex items-center px-4 py-3.5 border-b border-border-subtle transition-colors hover:bg-accent ${
+                  selectedFiles.has(file.path) ? 'bg-accent' : ''
                 }`}
                 onClick={(e) => {
                   if ((e.target as HTMLElement).closest('input[type="checkbox"]') ||
@@ -536,28 +536,28 @@ export default function DraftsPage() {
                     type="checkbox"
                     checked={selectedFiles.has(file.path)}
                     onChange={() => handleSelectFile(file.path)}
-                    className="w-4 h-4 rounded-sm border-[#E8E8E8] bg-white text-[#3B82F6] focus:ring-[#3B82F6]"
+                    className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
                   />
                 </div>
                 <div className="hidden md:flex items-center w-[40%] gap-2.5 px-3">
-                  <FileText className="w-4 h-4 text-[#6B7280] flex-shrink-0" />
-                  <span className="text-sm text-[#1F1F1F] truncate">
+                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  <span className="text-sm text-foreground truncate">
                     {file.name.replace('.md', '')}
                   </span>
                 </div>
                 <div className="hidden md:block w-[40%] px-3">
-                  <span className="text-sm text-[#6B7280] truncate block">{file.path}</span>
+                  <span className="text-sm text-muted-foreground truncate block">{file.path}</span>
                 </div>
                 <div className="hidden md:flex w-[20%] items-center justify-end gap-2 px-3">
                   <button
                     onClick={() => handleEdit(file)}
-                    className="text-sm text-[#3B82F6] hover:underline cursor-pointer"
+                    className="text-sm text-primary hover:underline cursor-pointer"
                   >
                     编辑
                   </button>
                   <button
                     onClick={() => handleSingleDelete(file)}
-                    className="text-[#6B7280] hover:text-[#EF4444] transition-colors"
+                    className="text-muted-foreground hover:text-destructive transition-colors"
                     title="移至回收站"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -570,28 +570,28 @@ export default function DraftsPage() {
                     type="checkbox"
                     checked={selectedFiles.has(file.path)}
                     onChange={() => handleSelectFile(file.path)}
-                    className="w-4 h-4 rounded-sm border-[#E8E8E8] bg-white text-[#3B82F6] focus:ring-[#3B82F6] flex-shrink-0"
+                    className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary flex-shrink-0"
                   />
-                  <FileText className="w-4 h-4 text-[#6B7280] flex-shrink-0" />
+                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-[#1F1F1F] truncate">
+                    <div className="text-sm font-medium text-foreground truncate">
                       {file.name.replace('.md', '')}
                     </div>
-                    <div className="text-xs text-[#9CA3AF] truncate mt-0.5">
+                    <div className="text-xs text-muted-foreground truncate mt-0.5">
                       {file.path}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                       onClick={() => handleEdit(file)}
-                      className="p-1.5 text-[#3B82F6] hover:bg-[#EFF6FF] rounded transition-colors"
+                      className="p-1.5 text-primary hover:bg-accent rounded transition-colors"
                       title="编辑"
                     >
                       <Pencil className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleSingleDelete(file)}
-                      className="p-1.5 text-[#6B7280] hover:text-[#EF4444] hover:bg-[#FEF2F2] rounded transition-colors"
+                      className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-accent rounded transition-colors"
                       title="移至回收站"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -623,34 +623,34 @@ export default function DraftsPage() {
       {/* 重命名对话框 */}
       {showRenameDialog && renameFile && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowRenameDialog(false)}>
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-medium text-[#1F1F1F] mb-4">重命名草稿</h3>
+          <div className="bg-card rounded-lg p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-medium text-foreground mb-4">重命名草稿</h3>
             <div className="mb-4">
-              <label className="block text-sm text-[#6B7280] mb-2">新文件名（不含 .md）</label>
+              <label className="block text-sm text-muted-foreground mb-2">新文件名（不含 .md）</label>
               <input
                 type="text"
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-[#E8E8E8] bg-white text-[#1F1F1F] placeholder-[#9CA3AF] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors"
+                className="w-full px-3 py-2 text-sm border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary transition-colors"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleRename();
                   if (e.key === 'Escape') setShowRenameDialog(false);
                 }}
               />
-              <p className="text-xs text-[#9CA3AF] mt-1">仅修改文件名，不修改 frontmatter</p>
+              <p className="text-xs text-muted-foreground mt-1">仅修改文件名，不修改 frontmatter</p>
             </div>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowRenameDialog(false)}
-                className="px-4 py-2 text-sm text-[#6B7280] hover:bg-[#F9FAFA] rounded-sm transition-colors"
+                className="px-4 py-2 text-sm text-muted-foreground hover:bg-accent rounded-sm transition-colors"
               >
                 取消
               </button>
               <button
                 onClick={handleRename}
                 disabled={!renameValue.trim() || actionLoading}
-                className="px-4 py-2 text-sm text-white bg-[#1F1F1F] rounded-sm hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {actionLoading ? '处理中...' : '确认重命名'}
               </button>

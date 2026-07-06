@@ -236,23 +236,23 @@ export default function TrashPage() {
       {/* 永久删除确认弹窗 */}
       {permanentDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-red-500">
-            <p className="text-sm text-[#1F1F1F] mb-4">
+          <div className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-destructive">
+            <p className="text-sm text-foreground mb-4">
               确定要永久删除选中的 {selectedFiles.size} 个文件吗？<br />
-              <span className="text-red-600">此操作不可恢复。</span>
+              <span className="text-destructive">此操作不可恢复。</span>
             </p>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setPermanentDeleteConfirm(false)}
                 disabled={actionLoading}
-                className="px-3 py-1.5 text-sm border border-[#E8E8E8] text-[#374151] hover:bg-[#F9FAFA] rounded-sm transition-colors disabled:opacity-40"
+                className="px-3 py-1.5 text-sm border border-border text-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
               >
                 取消
               </button>
               <button
                 onClick={handleBulkPermanentDelete}
                 disabled={actionLoading}
-                className="px-3 py-1.5 text-sm text-white bg-red-600 hover:bg-red-700 rounded-sm transition-colors disabled:opacity-40"
+                className="px-3 py-1.5 text-sm text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
               >
                 {actionLoading ? '删除中...' : '永久删除'}
               </button>
@@ -263,38 +263,38 @@ export default function TrashPage() {
 
       {/* 搜索栏 + 操作工具栏 */}
       {selectedRepo && (
-        <div className="px-4 md:px-8 py-4 border-b border-[#F2F2F2]">
+        <div className="px-4 md:px-8 py-4 border-b border-border-subtle">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="搜索回收站..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-white text-[#1F1F1F] placeholder-[#9CA3AF] border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors"
+              className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
             />
           </div>
 
           {selectedFiles.size > 0 && (
             <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-[#6B7280] bg-[#F9FAFA] px-2.5 py-1.5 rounded-sm">
+              <span className="text-sm text-muted-foreground bg-accent px-2.5 py-1.5 rounded-sm">
                 已选 {selectedFiles.size} 个
               </span>
               <button
                 onClick={handleSelectAll}
-                className="text-sm text-[#6B7280] hover:text-[#1F1F1F] hover:bg-[#F9FAFA] px-2.5 py-1.5 rounded-sm transition-colors"
+                className="text-sm text-muted-foreground hover:text-foreground hover:bg-accent px-2.5 py-1.5 rounded-sm transition-colors"
               >
                 {selectedFiles.size === filteredFiles.length ? '取消全选' : '全选'}
               </button>
 
-              <div className="w-px h-4 bg-[#E8E8E8]"></div>
+              <div className="w-px h-4 bg-border"></div>
 
               {/* 恢复 */}
               <div className="relative">
                 <button
                   onClick={() => setShowRestoreDropdown(!showRestoreDropdown)}
                   disabled={actionLoading}
-                  className="text-sm px-3 py-1.5 text-[#3B82F6] hover:bg-[#F9FAFA] rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                  className="text-sm px-3 py-1.5 text-primary hover:bg-accent rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   恢复
@@ -314,13 +314,13 @@ export default function TrashPage() {
                 )}
               </div>
 
-              <div className="w-px h-4 bg-[#E8E8E8]"></div>
+              <div className="w-px h-4 bg-border"></div>
 
               {/* 永久删除 */}
               <button
                 onClick={() => setPermanentDeleteConfirm(true)}
                 disabled={actionLoading}
-                className="text-sm px-3 py-1.5 text-[#6B7280] hover:bg-[#F9FAFA] hover:text-[#EF4444] rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-destructive rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
               >
                 <X className="w-3.5 h-3.5" />
                 永久删除
@@ -342,13 +342,13 @@ export default function TrashPage() {
         ) : filteredFiles.length > 0 ? (
           <div>
             {/* 桌面端表头 */}
-            <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-[#6B7280] bg-[#F5F6F7] border-b border-[#E8E8E8]">
+            <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-muted-foreground bg-accent border-b border-border">
               <div className="w-8 flex items-center justify-center">
                 <input
                   type="checkbox"
                   checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0}
                   onChange={handleSelectAll}
-                  className="w-4 h-4 rounded-sm border-[#E8E8E8] bg-white text-[#3B82F6] focus:ring-[#3B82F6]"
+                  className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
                 />
               </div>
               <div className="w-[50%]">文件名</div>
@@ -360,8 +360,8 @@ export default function TrashPage() {
             {paginatedFiles.map((file) => (
               <div
                 key={file.path}
-                className={`flex items-center px-4 py-3.5 border-b border-[#F2F2F2] transition-colors hover:bg-[#F9FAFA] ${
-                  selectedFiles.has(file.path) ? 'bg-[#F9FAFA]' : ''
+                className={`flex items-center px-4 py-3.5 border-b border-border-subtle transition-colors hover:bg-accent ${
+                  selectedFiles.has(file.path) ? 'bg-accent' : ''
                 }`}
               >
                 {/* 桌面端：表格行 */}
@@ -370,15 +370,15 @@ export default function TrashPage() {
                     type="checkbox"
                     checked={selectedFiles.has(file.path)}
                     onChange={() => handleSelectFile(file.path)}
-                    className="w-4 h-4 rounded-sm border-[#E8E8E8] bg-white text-[#3B82F6] focus:ring-[#3B82F6]"
+                    className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
                   />
                 </div>
                 <div className="hidden md:flex items-center w-[50%] gap-2.5 px-3">
-                  <Trash2 className="w-4 h-4 text-[#EF4444] flex-shrink-0" />
-                  <span className="text-sm text-[#1F1F1F] truncate">{file.name.replace('.md', '')}</span>
+                  <Trash2 className="w-4 h-4 text-destructive flex-shrink-0" />
+                  <span className="text-sm text-foreground truncate">{file.name.replace('.md', '')}</span>
                 </div>
                 <div className="hidden md:block w-[30%] px-3">
-                  <span className="text-sm text-[#6B7280] truncate block">{file.path}</span>
+                  <span className="text-sm text-muted-foreground truncate block">{file.path}</span>
                 </div>
                 <div className="hidden md:flex w-[20%] items-center justify-end gap-2 px-3">
                   <div className="relative inline-block">
@@ -390,19 +390,19 @@ export default function TrashPage() {
                           setShowFileRestoreDropdown(file.path);
                         }
                       }}
-                      className="text-sm text-[#3B82F6] hover:underline cursor-pointer"
+                      className="text-sm text-primary hover:underline cursor-pointer"
                       title="恢复到指定目录"
                     >
                       恢复
                     </button>
                     {showFileRestoreDropdown === file.path && (
                       <div
-                        className="absolute right-0 top-full mt-1 bg-white border border-[#E8E8E8] z-50 max-h-[200px] overflow-y-auto p-2"
+                        className="absolute right-0 top-full mt-1 bg-card border border-border z-50 max-h-[200px] overflow-y-auto p-2"
                         style={{ maxWidth: 'calc(100vw - 320px)' }}
                         onClick={(e) => e.stopPropagation()}
                       >
                         {availableDirs.length === 0 ? (
-                          <p className="text-xs text-[#6B7280] px-2 py-1">暂无可用目录</p>
+                          <p className="text-xs text-muted-foreground px-2 py-1">暂无可用目录</p>
                         ) : (
                           availableDirs.map((dir) => (
                             <button
@@ -411,7 +411,7 @@ export default function TrashPage() {
                                 handleRestore(file, dir);
                                 setShowFileRestoreDropdown('');
                               }}
-                              className="w-full text-left text-sm px-2.5 py-1.5 hover:bg-[#F9FAFA] transition-colors text-[#374151] truncate"
+                              className="w-full text-left text-sm px-2.5 py-1.5 hover:bg-accent transition-colors text-foreground truncate"
                             >
                               {dir}
                             </button>
@@ -423,7 +423,7 @@ export default function TrashPage() {
                   <button
                     onClick={() => handlePermanentDelete(file)}
                     disabled={actionLoading}
-                    className="text-[#6B7280] hover:text-[#EF4444] transition-colors disabled:opacity-40"
+                    className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
                     title="永久删除"
                   >
                     <X className="w-4 h-4" />
@@ -436,14 +436,14 @@ export default function TrashPage() {
                     type="checkbox"
                     checked={selectedFiles.has(file.path)}
                     onChange={() => handleSelectFile(file.path)}
-                    className="w-4 h-4 rounded-sm border-[#E8E8E8] bg-white text-[#3B82F6] focus:ring-[#3B82F6] flex-shrink-0"
+                    className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary flex-shrink-0"
                   />
-                  <Trash2 className="w-4 h-4 text-[#EF4444] flex-shrink-0" />
+                  <Trash2 className="w-4 h-4 text-destructive flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-[#1F1F1F] truncate">
+                    <div className="text-sm font-medium text-foreground truncate">
                       {file.name.replace('.md', '')}
                     </div>
-                    <div className="text-xs text-[#9CA3AF] truncate mt-0.5">
+                    <div className="text-xs text-muted-foreground truncate mt-0.5">
                       {file.path}
                     </div>
                   </div>
@@ -457,18 +457,18 @@ export default function TrashPage() {
                             setShowFileRestoreDropdown(file.path);
                           }
                         }}
-                        className="p-1.5 text-[#3B82F6] hover:bg-[#EFF6FF] rounded transition-colors"
+                        className="p-1.5 text-primary hover:bg-accent rounded transition-colors"
                         title="恢复"
                       >
                         <RotateCcw className="w-4 h-4" />
                       </button>
                       {showFileRestoreDropdown === file.path && (
                         <div
-                          className="absolute right-0 top-full mt-1 bg-white border border-[#E8E8E8] z-50 max-h-[200px] overflow-y-auto p-2 w-48"
+                          className="absolute right-0 top-full mt-1 bg-card border border-border z-50 max-h-[200px] overflow-y-auto p-2 w-48"
                           onClick={(e) => e.stopPropagation()}
                         >
                           {availableDirs.length === 0 ? (
-                            <p className="text-xs text-[#6B7280] px-2 py-1">暂无可用目录</p>
+                            <p className="text-xs text-muted-foreground px-2 py-1">暂无可用目录</p>
                           ) : (
                             availableDirs.map((dir) => (
                               <button
@@ -477,7 +477,7 @@ export default function TrashPage() {
                                   handleRestore(file, dir);
                                   setShowFileRestoreDropdown('');
                                 }}
-                                className="w-full text-left text-sm px-2.5 py-1.5 hover:bg-[#F9FAFA] transition-colors text-[#374151] truncate"
+                                className="w-full text-left text-sm px-2.5 py-1.5 hover:bg-accent transition-colors text-foreground truncate"
                               >
                                 {dir}
                               </button>

@@ -4,49 +4,49 @@
 
 @layer base {
   :root {
-    /* 极简扁平 · 极细边框 · 大量留白 */
-    
-    /* 基础色 */
-    --background: 0 0% 98%; /* #FAFAFA 极浅灰背景 */
-    --foreground: 0 0% 12%; /* #1F1F1F 近乎黑色 */
-    
-    /* 卡片 */
+    /* Heptabase 风格 · 暖色调 · 极细边框 · 大量留白 */
+
+    /* 背景色 */
+    --background: 0 0% 97%; /* #F7F7F7 页面画布 - 暖米白 */
+    --foreground: 0 0% 18%; /* #2E2E2E 主文字 - 暖近黑 */
+
+    /* 卡片表面 */
     --card: 0 0% 100%; /* #FFFFFF 纯白 */
-    --card-foreground: 0 0% 12%;
-    
-    /* 主色调：纯净蓝 */
-    --primary: 221 83% 53%; /* #3B82F6 */
+    --card-foreground: 0 0% 18%;
+
+    /* 主色调：品牌蓝 */
+    --primary: 214 100% 56%; /* #207DFF 交互强调 */
     --primary-foreground: 0 0% 100%;
-    
+
     /* 次级色 */
-    --secondary: 0 0% 97%; /* #F7F7F7 */
-    --secondary-foreground: 0 0% 43%; /* #6B7280 */
-    
+    --secondary: 0 0% 99%; /* #FCFCFC 次级表面 */
+    --secondary-foreground: 240 5% 44%; /* #6A6972 次要文字 */
+
     /* 弱化色 */
-    --muted: 0 0% 97%;
-    --muted-foreground: 0 0% 43%;
-    
+    --muted: 40 13% 94%; /* #F0F0EA 暖色面板 */
+    --muted-foreground: 30 7% 44%; /* #777169 三级文字 */
+
     /* 强调色 */
-    --accent: 0 0% 96%; /* #F5F5F5 */
-    --accent-foreground: 0 0% 12%;
-    
+    --accent: 0 0% 97%; /* #F7F7F7 */
+    --accent-foreground: 0 0% 18%;
+
     /* 边框：极细浅色 */
-    --border: 0 0% 92%; /* #E8E8E8 */
-    --border-light: 0 0% 95%; /* #F2F2F2 */
-    
+    --border: 0 0% 92%; /* 标准边框 */
+    --border-subtle: 0 0% 96%; /* 极细分隔线 */
+
     /* 焦点环 */
-    --ring: 221 83% 53%;
-    
-    /* 成功/警告/错误 */
-    --success: 142 71% 45%;
-    --warning: 38 92% 50%;
-    --destructive: 0 84% 60%;
-    
+    --ring: 214 100% 56%;
+
+    /* 语义色 */
+    --success: 97 63% 50%; /* #75C33A 绿色 */
+    --warning: 37 75% 55%; /* #E0A23A 琥珀色 */
+    --destructive: 359 75% 59%; /* #E5484D 红色 */
+
     /* 圆角：极小圆角，偏扁平 */
     --radius: 0.25rem; /* 4px */
     --radius-lg: 0.375rem; /* 6px */
     --radius-xl: 0.5rem; /* 8px */
-    
+
     /* 扁平阴影（几乎不用） */
     --shadow-sm: none;
     --shadow-md: none;
@@ -164,20 +164,20 @@
 
   /* --- 编辑器主题 CSS 变量 --- */
   :root {
-    --vditor-marker-color: hsl(0 0% 67%);       /* 标记符号：中性灰 */
-    --vditor-marker-opacity: 0.55;               /* 标记符号透明度 */
-    --vditor-heading-color: hsl(0 0% 12%);       /* 标题文字：前景色 */
-    --vditor-bold-color: hsl(0 0% 12%);          /* 加粗文字：前景色 */
-    --vditor-italic-color: hsl(0 0% 30%);        /* 斜体文字：稍浅 */
-    --vditor-strike-color: hsl(0 0% 50%);        /* 删除线：中灰 */
-    --vditor-code-bg: hsl(0 0% 96%);             /* 行内代码背景 */
-    --vditor-code-color: hsl(221 83% 40%);       /* 行内代码：蓝色系 */
-    --vditor-link-color: hsl(221 83% 53%);       /* 链接：主色 */
-    --vditor-quote-border: hsl(0 0% 85%);        /* 引用边框 */
-    --vditor-quote-color: hsl(0 0% 43%);         /* 引用文字 */
-    --vditor-hr-color: hsl(0 0% 88%);            /* 分割线 */
-    --vditor-table-border: hsl(0 0% 92%);        /* 表格边框 */
-    --vditor-table-header-bg: hsl(0 0% 97%);     /* 表头背景 */
+    --vditor-marker-color: #9CA3AF;
+    --vditor-marker-opacity: 0.55;
+    --vditor-heading-color: #2E2E2E;
+    --vditor-bold-color: #2E2E2E;
+    --vditor-italic-color: #555;
+    --vditor-strike-color: #888;
+    --vditor-code-bg: #F5F5F5;
+    --vditor-code-color: #1558B5;
+    --vditor-link-color: #207DFF;
+    --vditor-quote-border: #D6D6D6;
+    --vditor-quote-color: #777169;
+    --vditor-hr-color: #E0E0E0;
+    --vditor-table-border: #EBEBEB;
+    --vditor-table-header-bg: #F7F7F7;
   }
 
   /* --- IR / SV 模式：CodeMirror 语法标记样式 --- */
