@@ -288,25 +288,6 @@ export async function getRepoBranches(
   return data.map((branch: any) => branch.name);
 }
 
-// 从文件名提取时间戳（格式：YYYYmmddHHMMSS...）
-function extractTimestampFromFilename(filename: string): number {
-  const match = filename.match(/^(\d{14})/);
-  if (!match) return 0;
-  try {
-    const [year, month, day, hour, minute, second] = [
-      match[1].substring(0, 4),
-      match[1].substring(4, 6),
-      match[1].substring(6, 8),
-      match[1].substring(8, 10),
-      match[1].substring(10, 12),
-      match[1].substring(12, 14)
-    ];
-    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(minute), parseInt(second)).getTime();
-  } catch {
-    return 0;
-  }
-}
-
 // 使用 GitHub Trees API 一次性获取整个目录树（替代递归扫描）
 export async function getTree(
   token: string,
@@ -334,24 +315,25 @@ export async function getTree(
     .filter((item: any) => item.type === 'blob')
     .map((item: any) => {
       const name = item.path.split('/').pop() || item.path;
-      // 优先从文件名提取时间戳（系统生成的文件名包含 YYYYmmddHHMMSS）
-      const lastModified = extractTimestampFromFilename(name);
       return {
         name,
         path: item.path,
         sha: item.sha,
         type: 'file' as const,
         size: item.size,
-        lastModified: lastModified || 0
+        lastModified: 0 // 初始化为 0，后续通过 commits API 填充
       };
     });
 
-  // 回退：对文件名不含时间戳的文件，通过 commits API 获取修改时间
-  const unmatchedPaths = fileItems.filter(f => f.lastModified === 0).map(f => f.path);
-  if (unmatchedPaths.length > 0) {
-    try {
+  // 通过 commits API 分页获取文件的 Git 最后修改时间
+  try {
+    const pathToTime: Map<string, number> = new Map();
+    const allPaths = new Set(fileItems.map(f => f.path));
+    let page = 1;
+
+    while (allPaths.size > 0) {
       const commitsResp = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=100`,
+        `https://api.github.com/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=100&page=${page}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -360,40 +342,42 @@ export async function getTree(
         }
       );
 
-      if (commitsResp.ok) {
-        const commitsData = await commitsResp.json() as any[];
-        
-        // 构建路径 -> 最新提交时间的映射
-        // 注意：commits API 返回的是从新到旧的顺序，后面的 commit 更早
-        // 所以始终覆盖（不设 has 判断），用更早的 commit 覆盖，最终得到最早的匹配时间
-        // 但我们需要最新的提交时间，所以应该从新到旧遍历，首次匹配即最新
-        const pathToTime: Map<string, number> = new Map();
-        for (const commit of commitsData) {
-          const commitDate = new Date(commit.commit.committer.date).getTime();
-          if (commit.files && Array.isArray(commit.files)) {
-            for (const file of commit.files) {
-              const filePath = file.filename;
-              // 首次匹配即为最新提交时间（commits 从新到旧）
-              if (filePath && !pathToTime.has(filePath)) {
-                pathToTime.set(filePath, commitDate);
-              }
-            }
-          }
-        }
+      if (!commitsResp.ok) break;
 
-        // 直接修改原 fileItems 对象的 lastModified 属性
-        for (const file of fileItems) {
-          if (file.lastModified === 0) {
-            const time = pathToTime.get(file.path);
-            if (time) {
-              file.lastModified = time;
+      const commitsData = await commitsResp.json() as any[];
+      if (commitsData.length === 0) break;
+
+      for (const commit of commitsData) {
+        const commitDate = new Date(commit.commit.committer.date).getTime();
+        if (commit.files && Array.isArray(commit.files)) {
+          for (const file of commit.files) {
+            const filePath = file.filename;
+            if (filePath && !pathToTime.has(filePath) && allPaths.has(filePath)) {
+              pathToTime.set(filePath, commitDate);
+              allPaths.delete(filePath);
             }
           }
         }
       }
-    } catch (err) {
-      console.warn(`[getTree] Failed to fetch commits for lastModified: ${err instanceof Error ? err.message : 'unknown'}`);
+
+      // 所有文件都已匹配，提前终止
+      if (allPaths.size === 0) break;
+
+      // 不足 100 条说明已到最后一页
+      if (commitsData.length < 100) break;
+
+      page++;
     }
+
+    // 填充 lastModified
+    for (const file of fileItems) {
+      const time = pathToTime.get(file.path);
+      if (time) {
+        file.lastModified = time;
+      }
+    }
+  } catch (err) {
+    console.warn(`[getTree] Failed to fetch commits for lastModified: ${err instanceof Error ? err.message : 'unknown'}`);
   }
 
   // 按 lastModified 降序排序
