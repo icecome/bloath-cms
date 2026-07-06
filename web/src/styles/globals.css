@@ -155,4 +155,329 @@
   .toolbar-hidden .vditor-toolbar {
     display: none !important;
   }
+
+  /* ============================================
+     Vditor 编辑器主题 · 语法标记高亮
+     与项目极简扁平风格一致：标记符号使用 muted 灰色，
+     内容文字使用项目主色调，整体克制不花哨
+     ============================================ */
+
+  /* --- 编辑器主题 CSS 变量 --- */
+  :root {
+    --vditor-marker-color: hsl(0 0% 67%);       /* 标记符号：中性灰 */
+    --vditor-marker-opacity: 0.55;               /* 标记符号透明度 */
+    --vditor-heading-color: hsl(0 0% 12%);       /* 标题文字：前景色 */
+    --vditor-bold-color: hsl(0 0% 12%);          /* 加粗文字：前景色 */
+    --vditor-italic-color: hsl(0 0% 30%);        /* 斜体文字：稍浅 */
+    --vditor-strike-color: hsl(0 0% 50%);        /* 删除线：中灰 */
+    --vditor-code-bg: hsl(0 0% 96%);             /* 行内代码背景 */
+    --vditor-code-color: hsl(221 83% 40%);       /* 行内代码：蓝色系 */
+    --vditor-link-color: hsl(221 83% 53%);       /* 链接：主色 */
+    --vditor-quote-border: hsl(0 0% 85%);        /* 引用边框 */
+    --vditor-quote-color: hsl(0 0% 43%);         /* 引用文字 */
+    --vditor-hr-color: hsl(0 0% 88%);            /* 分割线 */
+    --vditor-table-border: hsl(0 0% 92%);        /* 表格边框 */
+    --vditor-table-header-bg: hsl(0 0% 97%);     /* 表头背景 */
+  }
+
+  /* --- IR / SV 模式：CodeMirror 语法标记样式 --- */
+
+  /* 标题标记 ## */
+  .vditor-ir .cm-header,
+  .vditor-sv .cm-header {
+    color: var(--vditor-marker-color);
+    opacity: var(--vditor-marker-opacity);
+    font-weight: normal;
+  }
+
+  /* 加粗标记 ** */
+  .vditor-ir .cm-strong .cm-strong,
+  .vditor-sv .cm-strong .cm-strong {
+    color: var(--vditor-marker-color);
+    opacity: var(--vditor-marker-opacity);
+    font-weight: normal;
+  }
+
+  /* 斜体标记 _ * */
+  .vditor-ir .cm-em .cm-em,
+  .vditor-sv .cm-em .cm-em {
+    color: var(--vditor-marker-color);
+    opacity: var(--vditor-marker-opacity);
+    font-style: normal;
+  }
+
+  /* 删除线标记 ~~ */
+  .vditor-ir .cm-strikethrough .cm-strikethrough,
+  .vditor-sv .cm-strikethrough .cm-strikethrough {
+    color: var(--vditor-marker-color);
+    opacity: var(--vditor-marker-opacity);
+    text-decoration: none;
+  }
+
+  /* 行内代码标记 ` */
+  .vditor-ir .cm-comment,
+  .vditor-sv .cm-comment {
+    color: var(--vditor-marker-color);
+    opacity: var(--vditor-marker-opacity);
+  }
+
+  /* 链接标记 []() */
+  .vditor-ir .cm-link,
+  .vditor-sv .cm-link {
+    color: var(--vditor-marker-color);
+    opacity: var(--vditor-marker-opacity);
+    text-decoration: none;
+  }
+  .vditor-ir .cm-url,
+  .vditor-sv .cm-url {
+    color: var(--vditor-marker-color);
+    opacity: calc(var(--vditor-marker-opacity) * 0.8);
+  }
+
+  /* 图片标记 ![]() */
+  .vditor-ir .cm-atom,
+  .vditor-sv .cm-atom {
+    color: var(--vditor-marker-color);
+    opacity: var(--vditor-marker-opacity);
+  }
+
+  /* 引用标记 > */
+  .vditor-ir .cm-quote,
+  .vditor-sv .cm-quote {
+    color: var(--vditor-marker-color);
+    opacity: var(--vditor-marker-opacity);
+  }
+
+  /* 分割线 --- */
+  .vditor-ir .cm-hr,
+  .vditor-sv .cm-hr {
+    color: var(--vditor-hr-color);
+  }
+
+  /* 列表标记 - * 1. */
+  .vditor-ir .cm-list-1,
+  .vditor-ir .cm-list-2,
+  .vditor-sv .cm-list-1,
+  .vditor-sv .cm-list-2 {
+    color: var(--vditor-marker-color);
+    opacity: var(--vditor-marker-opacity);
+  }
+
+  /* --- IR 模式：渲染后的内容样式 --- */
+
+  .vditor-ir .vditor-reset {
+    color: var(--foreground);
+  }
+
+  /* 标题 */
+  .vditor-ir .vditor-reset h1,
+  .vditor-ir .vditor-reset h2,
+  .vditor-ir .vditor-reset h3,
+  .vditor-ir .vditor-reset h4,
+  .vditor-ir .vditor-reset h5,
+  .vditor-ir .vditor-reset h6 {
+    color: var(--vditor-heading-color);
+  }
+
+  /* 加粗 */
+  .vditor-ir .vditor-reset strong {
+    color: var(--vditor-bold-color);
+  }
+
+  /* 斜体 */
+  .vditor-ir .vditor-reset em {
+    color: var(--vditor-italic-color);
+  }
+
+  /* 删除线 */
+  .vditor-ir .vditor-reset del {
+    color: var(--vditor-strike-color);
+  }
+
+  /* 行内代码 */
+  .vditor-ir .vditor-reset code:not(pre code) {
+    background: var(--vditor-code-bg);
+    color: var(--vditor-code-color);
+    padding: 0.1em 0.35em;
+    border-radius: var(--radius);
+    font-size: 0.9em;
+  }
+
+  /* 链接 */
+  .vditor-ir .vditor-reset a {
+    color: var(--vditor-link-color);
+  }
+
+  /* 引用块 */
+  .vditor-ir .vditor-reset blockquote {
+    border-left-color: var(--vditor-quote-border);
+    color: var(--vditor-quote-color);
+  }
+
+  /* 分割线 */
+  .vditor-ir .vditor-reset hr {
+    border-color: var(--vditor-hr-color);
+  }
+
+  /* 表格 */
+  .vditor-ir .vditor-reset table th {
+    background: var(--vditor-table-header-bg);
+  }
+  .vditor-ir .vditor-reset table th,
+  .vditor-ir .vditor-reset table td {
+    border-color: var(--vditor-table-border);
+  }
+
+  /* --- WYSIWYG 模式：内容样式 --- */
+
+  .vditor-wysiwyg .vditor-reset {
+    color: var(--foreground);
+  }
+
+  .vditor-wysiwyg .vditor-reset h1,
+  .vditor-wysiwyg .vditor-reset h2,
+  .vditor-wysiwyg .vditor-reset h3,
+  .vditor-wysiwyg .vditor-reset h4,
+  .vditor-wysiwyg .vditor-reset h5,
+  .vditor-wysiwyg .vditor-reset h6 {
+    color: var(--vditor-heading-color);
+  }
+
+  .vditor-wysiwyg .vditor-reset strong {
+    color: var(--vditor-bold-color);
+  }
+
+  .vditor-wysiwyg .vditor-reset em {
+    color: var(--vditor-italic-color);
+  }
+
+  .vditor-wysiwyg .vditor-reset del {
+    color: var(--vditor-strike-color);
+  }
+
+  .vditor-wysiwyg .vditor-reset code:not(pre code) {
+    background: var(--vditor-code-bg);
+    color: var(--vditor-code-color);
+    padding: 0.1em 0.35em;
+    border-radius: var(--radius);
+    font-size: 0.9em;
+  }
+
+  .vditor-wysiwyg .vditor-reset a {
+    color: var(--vditor-link-color);
+  }
+
+  .vditor-wysiwyg .vditor-reset blockquote {
+    border-left-color: var(--vditor-quote-border);
+    color: var(--vditor-quote-color);
+  }
+
+  .vditor-wysiwyg .vditor-reset hr {
+    border-color: var(--vditor-hr-color);
+  }
+
+  .vditor-wysiwyg .vditor-reset table th {
+    background: var(--vditor-table-header-bg);
+  }
+  .vditor-wysiwyg .vditor-reset table th,
+  .vditor-wysiwyg .vditor-reset table td {
+    border-color: var(--vditor-table-border);
+  }
+
+  /* --- SV 模式：右侧预览区样式 --- */
+
+  .vditor-preview .vditor-reset {
+    color: var(--foreground);
+  }
+
+  .vditor-preview .vditor-reset h1,
+  .vditor-preview .vditor-reset h2,
+  .vditor-preview .vditor-reset h3,
+  .vditor-preview .vditor-reset h4,
+  .vditor-preview .vditor-reset h5,
+  .vditor-preview .vditor-reset h6 {
+    color: var(--vditor-heading-color);
+  }
+
+  .vditor-preview .vditor-reset strong {
+    color: var(--vditor-bold-color);
+  }
+
+  .vditor-preview .vditor-reset em {
+    color: var(--vditor-italic-color);
+  }
+
+  .vditor-preview .vditor-reset del {
+    color: var(--vditor-strike-color);
+  }
+
+  .vditor-preview .vditor-reset code:not(pre code) {
+    background: var(--vditor-code-bg);
+    color: var(--vditor-code-color);
+    padding: 0.1em 0.35em;
+    border-radius: var(--radius);
+    font-size: 0.9em;
+  }
+
+  .vditor-preview .vditor-reset a {
+    color: var(--vditor-link-color);
+  }
+
+  .vditor-preview .vditor-reset blockquote {
+    border-left-color: var(--vditor-quote-border);
+    color: var(--vditor-quote-color);
+  }
+
+  .vditor-preview .vditor-reset hr {
+    border-color: var(--vditor-hr-color);
+  }
+
+  .vditor-preview .vditor-reset table th {
+    background: var(--vditor-table-header-bg);
+  }
+  .vditor-preview .vditor-reset table th,
+  .vditor-preview .vditor-reset table td {
+    border-color: var(--vditor-table-border);
+  }
+
+  /* --- Vditor 编辑器整体与项目风格对齐 --- */
+
+  /* 编辑器背景与项目背景一致 */
+  .vditor {
+    border: none;
+  }
+
+  .vditor-ir__content,
+  .vditor-wysiwyg__content,
+  .vditor-sv__content {
+    background: var(--card);
+  }
+
+  /* 工具栏与项目风格对齐 */
+  .vditor-toolbar {
+    background: var(--card);
+    border-bottom-color: var(--border);
+  }
+
+  .vditor-toolbar__item {
+    border-radius: var(--radius);
+  }
+
+  .vditor-toolbar__item .vditor-tooltipped:hover {
+    background: var(--accent);
+  }
+
+  /* 预览区背景 */
+  .vditor-preview {
+    background: var(--card);
+    border-left-color: var(--border);
+  }
+
+  /* 代码块样式 */
+  .vditor-ir .vditor-reset pre,
+  .vditor-wysiwyg .vditor-reset pre,
+  .vditor-preview .vditor-reset pre {
+    background: var(--vditor-code-bg);
+    border-radius: var(--radius);
+  }
 }
