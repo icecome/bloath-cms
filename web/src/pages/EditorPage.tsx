@@ -90,8 +90,8 @@ export default function EditorPage() {
     ? currentFilePath.split('/').slice(0, -1).join('/')
     : '';
 
-  // 判断当前文章是否在草稿箱中（否则视为内容库文章）
-  const isDraftArticle = !!(currentFilePath && (config.draftPath || '.draft') && currentFilePath.startsWith(config.draftPath || '.draft'));
+  // 判断当前文章是否在草稿箱中（通过 returnTo 参数判断，比 currentFilePath 更可靠）
+  const isDraftArticle = returnTo === 'drafts';
 
   // 返回处理：根据 returnTo 参数决定返回路径
   const handleBack = () => {
