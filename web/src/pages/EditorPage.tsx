@@ -60,6 +60,8 @@ export default function EditorPage() {
   const repo = searchParams.get('repo') || '';
   const branch = searchParams.get('branch') || 'main';
   const paramBasePath = searchParams.get('basePath');
+  const paramFilePath = searchParams.get('filePath');
+  const returnTo = searchParams.get('returnTo') || '';
 
   const isNew = slug === 'new' && !slug.includes('.');
   const trashPath = config.trashPath || '.trash';
@@ -88,13 +90,25 @@ export default function EditorPage() {
     ? currentFilePath.split('/').slice(0, -1).join('/')
     : '';
 
-  // 加载已有文章
+  // 返回处理：根据 returnTo 参数决定返回路径
+  const handleBack = () => {
+    if (returnTo === 'drafts') {
+      navigate('/drafts');
+    } else {
+      // returnTo 是路径或为空，返回内容库首页
+      navigate('/');
+    }
+  };
+
+  // 加载已有文章：优先使用 filePath 参数（完整保留目录结构），slug 仅用于 URL 展示
   useEffect(() => {
-    if (isNew || !user || !slug || !basePath) return;
+    if (isNew || !user || !basePath) return;
+    const relativePath = paramFilePath || slug;
+    if (!relativePath) return;
 
     setLoading(true);
     setError('');
-    const filePath = `${basePath}/${slug}.md`;
+    const filePath = `${basePath}/${relativePath}.md`;
 
     readFile({ owner, repo, path: filePath, branch })
       .then(({ content: fileContent, sha }) => {
@@ -274,13 +288,13 @@ export default function EditorPage() {
 
       setToast({ message: '发布成功', type: 'success' });
       setPublishTarget('');
-      navigate('/');
+      handleBack();
     } catch (err) {
       console.error('Failed to publish:', err);
       // 如果发布成功但清理草稿失败，提示用户手动清理
       if (publishedPath && (err as Error).message.includes('draft') || (err as Error).message.includes('trash')) {
         setToast({ message: `文章已发布，但草稿清理失败: ${(err as Error).message}。请手动删除草稿。`, type: 'error' });
-        navigate('/');
+        handleBack();
       } else {
         setToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
       }
@@ -315,7 +329,7 @@ export default function EditorPage() {
       });
 
       setToast({ message: '已移至回收站', type: 'success' });
-      navigate('/');
+      handleBack();
     } catch (err) {
       setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
     } finally {
@@ -422,7 +436,7 @@ export default function EditorPage() {
       <div className="flex-1 flex items-center justify-center h-full">
         <div className="text-center">
           <p className="text-sm text-destructive">{error}</p>
-          <button onClick={() => navigate('/')} className="mt-2 text-sm text-primary hover:underline">返回列表</button>
+          <button onClick={handleBack} className="mt-2 text-sm text-primary hover:underline">返回列表</button>
         </div>
       </div>
     );
@@ -437,7 +451,7 @@ export default function EditorPage() {
       {/* 顶部栏 */}
       <header className="px-4 md:px-6 py-3 md:py-4 flex items-center justify-between flex-shrink-0 border-b border-border">
         <div className="flex items-center gap-2 md:gap-3">
-          <button onClick={() => navigate('/')} className="text-muted-foreground hover:text-foreground transition-colors" aria-label="返回">
+          <button onClick={handleBack} className="text-muted-foreground hover:text-foreground transition-colors" aria-label="返回">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <h1 className="text-sm font-medium text-foreground truncate max-w-[120px] md:max-w-none">

@@ -80,7 +80,7 @@ export interface ContentListParams {
 }
 
 // CDN 提供商
-export type CdnProvider = 'jsdelivr' | 'github_raw' | 'custom';
+export type CdnProvider = 'jsdmirror' | 'github_raw' | 'custom';
 
 // 同名文件策略
 export type DuplicateStrategy = 'skip' | 'overwrite';
@@ -89,6 +89,7 @@ export type DuplicateStrategy = 'skip' | 'overwrite';
 export interface MediaConfig {
   imageOwner: string;
   imageRepo: string;
+  imageBranch: string;
   cdnProvider: CdnProvider;
   customCdnTemplate: string;
   quality: number;

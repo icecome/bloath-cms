@@ -4,6 +4,7 @@ import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile, deleteFile } from '../lib/api';
 import { scanMdFiles, type FileItem } from '../hooks/useFileList';
+import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
@@ -38,17 +39,28 @@ export default function TrashPage() {
       return;
     }
 
-    setLoading(true);
+    // 先尝试从缓存加载
+    const cached = getCachedFiles(selectedRepo, trashPath);
+    if (cached) {
+      setFiles(cached);
+    } else {
+      setLoading(true);
+    }
+
+    // 后台刷新
     scanMdFiles(selectedRepo, trashPath)
-      .then(setFiles)
+      .then(files => {
+        setCachedFiles(selectedRepo, trashPath, files);
+        setFiles(files);
+      })
       .catch((err: Error) => {
         // .trash 目录不存在是正常情况（首次使用）
         if (err.message.includes('404')) {
           console.info(`回收站目录 ${trashPath} 尚未创建`);
-          setFiles([]);
+          if (!cached) setFiles([]);
         } else {
           console.error(`扫描路径 ${trashPath} 失败:`, err);
-          setFiles([]);
+          if (!cached) setFiles([]);
         }
       })
       .finally(() => setLoading(false));
@@ -110,6 +122,7 @@ export default function TrashPage() {
         userName: user?.login
       });
       setToast({ message: `已将 ${file.name} 移动到 ${targetDir}`, type: 'success' });
+      clearCache(selectedRepo);
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as FileItem[]);
       setFiles(updatedFiles);
     } catch (err) {

@@ -20,7 +20,7 @@ export default function SettingsPage() {
   };
 
   const cdnProviders: { value: CdnProvider; label: string; template: string }[] = [
-    { value: 'jsdelivr', label: 'jsDelivr', template: 'https://cdn.jsdelivr.net/gh/{owner}/{repo}@main/{path}' },
+    { value: 'jsdmirror', label: 'jsMirror', template: 'https://cdn.jsdmirror.cn/gh/{owner}/{repo}@main/{path}' },
     { value: 'github_raw', label: 'GitHub Raw', template: 'https://raw.githubusercontent.com/{owner}/{repo}/main/{path}' },
     { value: 'custom', label: '自定义', template: '' },
   ];
@@ -159,6 +159,14 @@ export default function SettingsPage() {
                   onChange={(e) => updateMediaConfig({ imageRepo: e.target.value.trim() })}
                   className="flex-1 px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
                   placeholder="仓库名，如 blog-images"
+                />
+                <span className="flex items-center text-[#9CA3AF]">@</span>
+                <input
+                  type="text"
+                  value={mediaConfig.imageBranch}
+                  onChange={(e) => updateMediaConfig({ imageBranch: e.target.value.trim() || 'main' })}
+                  className="w-24 px-2.5 py-1.5 text-xs border border-[#E8E8E8] rounded-sm focus:outline-none focus:border-[#3B82F6] transition-colors bg-white text-[#1F1F1F] placeholder-[#9CA3AF]"
+                  placeholder="分支"
                 />
               </div>
             </section>

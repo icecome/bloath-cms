@@ -6,6 +6,7 @@ import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile } from '../lib/api';
 import { scanMdFiles } from '../hooks/useFileList';
 import type { FileItem } from '../hooks/useFileList';
+import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
@@ -33,12 +34,25 @@ export default function DashboardPage() {
       return;
     }
 
-    setLoading(true);
     const paths = (config.paths || []).filter(p => !p.includes('*') && p.trim() !== '');
 
-    // 并行扫描所有顶层路径
+    // 先尝试从缓存加载
+    const allCached = paths.map(p => getCachedFiles(selectedRepo, p));
+    if (allCached.every(c => c !== null)) {
+      const cachedFiles = (allCached as FileItem[][]).flat().sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+      setFiles(cachedFiles);
+    } else {
+      setLoading(true);
+    }
+
+    // 后台刷新
     Promise.all(paths.map(p => scanMdFiles(selectedRepo, p)))
-      .then(results => setFiles(results.flat()))
+      .then(results => {
+        const allFiles = results.flat();
+        allFiles.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+        paths.forEach(p => setCachedFiles(selectedRepo, p, results[paths.indexOf(p)]));
+        setFiles(allFiles);
+      })
       .finally(() => setLoading(false));
   }, [selectedRepo, user, config]);
 
@@ -73,9 +87,10 @@ export default function DashboardPage() {
         break;
       }
     }
-    // 清理 slug，防止路径穿越
-    const slug = relative.replace('.md', '').replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_');
-    navigate(`/editor/${slug}?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}&basePath=${encodeURIComponent(foundBasePath)}`);
+    // 保留原始相对路径（不含 .md），用于编辑器精确查找文件
+    const originalRelative = relative.replace(/\.md$/, '');
+    const slug = originalRelative.replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_');
+    navigate(`/editor/${slug}?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}&basePath=${encodeURIComponent(foundBasePath)}&filePath=${encodeURIComponent(originalRelative)}&returnTo=${encodeURIComponent(foundBasePath)}`);
   };
 
   const handleNew = () => {
@@ -103,8 +118,9 @@ export default function DashboardPage() {
       // 记录撤销信息
       lastDeletedRef.current = { file, originalPath: file.path };
 
-      // 从列表中移除
+      // 从列表中移除并清除缓存
       setFiles(prev => prev.filter(f => f.path !== file.path));
+      clearCache(selectedRepo);
 
       setToast({
         message: `已将 ${file.name} 移至回收站`,
@@ -121,6 +137,7 @@ export default function DashboardPage() {
               userName: user?.login
             });
             setFiles(prev => [...prev, lastDeletedRef.current!.file]);
+            clearCache(selectedRepo);
             setToast({ message: '已恢复', type: 'success' });
           } catch (err) {
             setToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });

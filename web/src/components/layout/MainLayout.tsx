@@ -285,7 +285,7 @@ export default function MainLayout() {
 
   const handleNewArticle = () => {
     if (selectedRepo) {
-      navigate(`/editor/new?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}`);
+      navigate(`/editor/new?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}&returnTo=drafts`);
     }
   };
 

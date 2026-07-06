@@ -54,17 +54,17 @@ export default function MediaPage() {
   };
 
   const getCdnUrl = useCallback((path: string) => {
-    const { cdnProvider, customCdnTemplate, imageOwner, imageRepo } = mediaConfig;
+    const { cdnProvider, customCdnTemplate, imageOwner, imageRepo, imageBranch } = mediaConfig;
     if (cdnProvider === 'custom') {
       return customCdnTemplate
         .replace('{owner}', imageOwner)
         .replace('{repo}', imageRepo)
         .replace('{path}', path);
     }
-    if (cdnProvider === 'jsdelivr') {
-      return `https://cdn.jsdelivr.net/gh/${imageOwner}/${imageRepo}@main/${path}`;
+    if (cdnProvider === 'jsdmirror') {
+      return `https://cdn.jsdmirror.cn/gh/${imageOwner}/${imageRepo}@${imageBranch}/${path}`;
     }
-    return `https://raw.githubusercontent.com/${imageOwner}/${imageRepo}/main/${path}`;
+    return `https://raw.githubusercontent.com/${imageOwner}/${imageRepo}/${imageBranch}/${path}`;
   }, [mediaConfig]);
 
   // 加载文件列表
@@ -76,7 +76,7 @@ export default function MediaPage() {
       const treeItems = await getTree({
         owner: mediaConfig.imageOwner,
         repo: mediaConfig.imageRepo,
-        branch: 'main'
+        branch: mediaConfig.imageBranch
       });
 
       const mediaFiles: MediaFile[] = treeItems
@@ -106,7 +106,7 @@ export default function MediaPage() {
       const treeItems = await getTree({
         owner: mediaConfig.imageOwner,
         repo: mediaConfig.imageRepo,
-        branch: 'main'
+        branch: mediaConfig.imageBranch
       });
       return treeItems
         .filter((f) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name))
@@ -212,7 +212,7 @@ export default function MediaPage() {
           path: filePath,
           base64Content: base64,
           message: `[skip ci] 上传: ${fileName}`,
-          branch: 'main',
+          branch: mediaConfig.imageBranch,
           userName: user.login,
           sha
         });

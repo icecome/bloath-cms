@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getTree } from '../lib/api';
+import { getCachedFiles, setCachedFiles } from '../lib/fileCache';
 
 export interface FileItem {
   name: string;
@@ -7,6 +8,7 @@ export interface FileItem {
   sha: string;
   type: 'file' | 'dir';
   size?: number;
+  lastModified?: number;
 }
 
 export interface RepoInfo {
@@ -39,7 +41,8 @@ export async function scanMdFiles(
       path: item.path,
       sha: item.sha,
       type: item.type,
-      size: item.size
+      size: item.size,
+      lastModified: item.lastModified
     }));
 }
 
@@ -47,21 +50,30 @@ export function useFileList(basePath: string, selectedRepo: RepoInfo | null, ena
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (silent = false) => {
     if (!selectedRepo || !enabled) {
       setFiles([]);
       return;
     }
 
-    setLoading(true);
+    // 检查缓存
+    const cached = getCachedFiles(selectedRepo, basePath);
+    if (cached && !silent) {
+      setFiles(cached);
+    }
+
+    if (!silent) setLoading(true);
     try {
       const result = await scanMdFiles(selectedRepo, basePath);
+      // 按 Git 提交时间降序排列
+      result.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+      setCachedFiles(selectedRepo, basePath, result);
       setFiles(result);
     } catch (err) {
       console.error(`扫描路径 ${basePath} 失败:`, err);
-      setFiles([]);
+      if (!cached) setFiles([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [basePath, selectedRepo, enabled]);
 

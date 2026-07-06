@@ -18,7 +18,8 @@ const DEFAULT_COLLECTION_CONFIG: CollectionConfig = {
 const DEFAULT_MEDIA_CONFIG: MediaConfig = {
   imageOwner: '',
   imageRepo: '',
-  cdnProvider: 'jsdelivr',
+  imageBranch: 'main',
+  cdnProvider: 'jsdmirror',
   customCdnTemplate: '',
   quality: 80,
   renameTemplate: '{Y}{m}{d}{h}{i}{s}{str-4}',

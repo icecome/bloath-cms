@@ -5,6 +5,7 @@ import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile, readFile, writeFile, deleteFile } from '../lib/api';
 import { scanMdFiles, type FileItem } from '../hooks/useFileList';
+import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
@@ -52,12 +53,25 @@ export default function DraftsPage() {
       return;
     }
 
-    setLoading(true);
+    // 先尝试从缓存加载
+    const cached = getCachedFiles(selectedRepo, draftPath);
+    if (cached) {
+      setFiles(cached);
+    } else {
+      setLoading(true);
+    }
+
+    // 后台刷新
     scanMdFiles(selectedRepo, draftPath)
-      .then(setFiles)
+      .then(files => {
+        // 按 Git 提交时间降序排列（最新的在前）
+        files.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+        setCachedFiles(selectedRepo, draftPath, files);
+        setFiles(files);
+      })
       .catch((err: Error) => {
         console.error(`扫描路径 ${draftPath} 失败:`, err);
-        setFiles([]);
+        if (!cached) setFiles([]);
       })
       .finally(() => setLoading(false));
   }, [selectedRepo, user, draftPath]);
@@ -104,7 +118,7 @@ export default function DraftsPage() {
     const relative = file.path.replace(draftPath + '/', '');
     const slug = relative.replace('.md', '');
     navigate(
-      `/editor/${slug}?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}&basePath=${draftPath}`
+      `/editor/${slug}?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}&basePath=${draftPath}&returnTo=drafts`
     );
   };
 
@@ -137,6 +151,7 @@ export default function DraftsPage() {
       setSelectedFiles(new Set());
       setPublishTarget('');
       setShowPublishDropdown(false);
+      clearCache(selectedRepo);
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
@@ -168,6 +183,7 @@ export default function DraftsPage() {
       setSelectedFiles(new Set());
       setMoveTarget('');
       setShowMoveDropdown(false);
+      clearCache(selectedRepo);
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
@@ -203,8 +219,9 @@ export default function DraftsPage() {
       // 记录撤销信息（批量）
       lastDeletedRef.current = { files: filesToDelete, originalPaths: filesToDelete.map(f => f.path) };
 
-      // 从列表中移除
+      // 从列表中移除并清除缓存
       setFiles(prev => prev.filter(f => !selectedFiles.has(f.path)));
+      clearCache(selectedRepo);
 
       // 批量删除不显示撤销
       setToast({
@@ -240,8 +257,9 @@ export default function DraftsPage() {
       // 记录撤销信息
       lastDeletedRef.current = { files: [file], originalPaths: [file.path] };
 
-      // 从列表中移除
+      // 从列表中移除并清除缓存
       setFiles(prev => prev.filter(f => f.path !== file.path));
+      clearCache(selectedRepo);
 
       setToast({
         message: `已将 ${file.name} 移至回收站`,
