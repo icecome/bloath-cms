@@ -81,7 +81,7 @@ export function useFileList(basePath: string, selectedRepo: RepoInfo | null, ena
       setCachedFiles(selectedRepo, basePath, result);
       setFiles(result);
     } catch (err) {
-      console.error(`扫描路径 ${basePath} 失败:`, err);
+      console.error(`[useFileList] 扫描路径 ${basePath} 失败:`, err);
       if (!cached) setFiles([]);
     } finally {
       if (!silent) setLoading(false);
