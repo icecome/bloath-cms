@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getTree } from '../lib/api';
 import { getCachedFiles, setCachedFiles } from '../lib/fileCache';
-import { sortByLastModified } from '../lib/sortFiles';
+import { sortByFrontMatterDate } from '../lib/sortFiles';
+import { extractFrontMatters, type EnhancedFileItem } from '../lib/extractFrontMatter';
 
 export interface FileItem {
   name: string;
@@ -21,15 +22,16 @@ export interface RepoInfo {
 /**
  * 使用 GitHub Trees API 一次性获取目录树，替代递归扫描
  * 将 N 个递归请求减少为 1 个请求
+ * 然后通过并发读取 Front Matter 元数据进行排序
  */
 export async function scanMdFiles(
   repo: RepoInfo,
   basePath: string
-): Promise<FileItem[]> {
+): Promise<EnhancedFileItem[]> {
   const allFiles = await getTree(repo);
 
   const normalizedBase = basePath.replace(/^\/+|\/+$/g, '');
-  return allFiles
+  const mdFiles: EnhancedFileItem[] = allFiles
     .filter((item) => {
       if (!item.name.endsWith('.md')) return false;
       if (normalizedBase) {
@@ -45,10 +47,19 @@ export async function scanMdFiles(
       size: item.size,
       lastModified: item.lastModified
     }));
+
+  // 并发提取 Front Matter 元数据
+  const enhancedFiles = await extractFrontMatters(mdFiles, repo, {
+    batchSize: 5,
+    timeoutMs: 8000,
+    maxRetries: 2,
+  });
+
+  return enhancedFiles;
 }
 
 export function useFileList(basePath: string, selectedRepo: RepoInfo | null, enabled: boolean) {
-  const [files, setFiles] = useState<FileItem[]>([]);
+  const [files, setFiles] = useState<EnhancedFileItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async (silent = false) => {
@@ -60,13 +71,13 @@ export function useFileList(basePath: string, selectedRepo: RepoInfo | null, ena
     // 检查缓存
     const cached = getCachedFiles(selectedRepo, basePath);
     if (cached && !silent) {
-      setFiles(cached);
+      setFiles(cached as EnhancedFileItem[]);
     }
 
     if (!silent) setLoading(true);
     try {
       const result = await scanMdFiles(selectedRepo, basePath);
-      sortByLastModified(result);
+      sortByFrontMatterDate(result);
       setCachedFiles(selectedRepo, basePath, result);
       setFiles(result);
     } catch (err) {

@@ -288,8 +288,13 @@ export async function getRepoBranches(
   return data.map((branch: any) => branch.name);
 }
 
+// ============================================
+// 废弃：以下函数已废弃，排序逻辑已迁移至前端
+// 保留作为向后兼容的降级兜底，将在下一版本移除
+// ============================================
+
 // 从文件名提取时间戳（支持 8 位日期和 14 位时间戳）
-// 作为 Commits API 失败时的降级方案
+// 【已废弃】不再使用 Commits API，仅保留作为降级兜底
 function extractTimestampFromFilename(name: string): number {
   const match = name.match(/^(\d{8})(\d{6})?/);
   if (!match) return 0;
@@ -300,80 +305,24 @@ function extractTimestampFromFilename(name: string): number {
   return isNaN(ts) ? 0 : ts;
 }
 
-// 获取单个文件的最后修改时间（带重试和超时）
-async function getFileLastModified(
-  token: string,
-  owner: string,
-  repo: string,
-  path: string,
-  branch: string,
-  maxRetries: number = 2
-): Promise<number> {
-  const url = `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(branch)}&per_page=1`;
-  
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 秒超时
-      
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'User-Agent': 'Bloath-CMS'
-        },
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          // 文件不存在，返回 0
-          return 0;
-        }
-        if (response.status === 403 || response.status === 429) {
-          // 速率限制，等待后重试
-          if (attempt < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-            continue;
-          }
-          return 0;
-        }
-        return 0;
-      }
-      
-      const data = await response.json() as any[];
-      if (data.length > 0 && data[0]?.commit?.committer?.date) {
-        return new Date(data[0].commit.committer.date).getTime();
-      }
-      
-      return 0;
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        console.warn(`[getFileLastModified] Timeout for ${path}`);
-      } else {
-        console.warn(`[getFileLastModified] Error for ${path}: ${err.message}`);
-      }
-      
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        continue;
-      }
-      return 0;
-    }
-  }
-  
-  return 0;
-}
+// 【已废弃】不再调用 Commits API 获取文件最后修改时间
+// 排序逻辑已迁移至前端 extractFrontMatter.ts
+// async function getFileLastModified(...) { ... }
+// 保留注释代码以备后续清理参考
 
-// 使用 GitHub Trees API 获取文件列表，并通过 Commits API 获取每个文件的最后修改时间
+// ============================================
+// 废弃：getTree() 中的 Commits API 调用已移除
+// 排序逻辑已迁移至前端 extractFrontMatter.ts
+// 此函数现在只返回文件列表，lastModified 均为 0
+// 前端会通过 extractFrontMatters() 并发提取 Front Matter 进行排序
+// ============================================
 export async function getTree(
   token: string,
   owner: string,
   repo: string,
   branch: string = 'main'
 ): Promise<FileInfo[]> {
-  // 第一步：获取文件列表
+  // 获取文件列表
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
     {
@@ -389,7 +338,7 @@ export async function getTree(
   }
 
   const data = await response.json() as { tree: any[] };
-  const fileItems = data.tree
+  return data.tree
     .filter((item: any) => item.type === 'blob')
     .map((item: any) => {
       const name = item.path.split('/').pop() || item.path;
@@ -399,34 +348,9 @@ export async function getTree(
         sha: item.sha,
         type: 'file' as const,
         size: item.size,
-        lastModified: 0
+        lastModified: 0 // 【已废弃】不再通过 Commits API 获取，由前端提取 Front Matter
       };
     });
-
-  // 第二步：通过 Commits API 获取每个文件的最后修改时间
-  // 分批处理，避免并发过高
-  const batchSize = 3;
-  let successCount = 0;
-  
-  for (let i = 0; i < fileItems.length; i += batchSize) {
-    const batch = fileItems.slice(i, i + batchSize);
-    await Promise.all(batch.map(async (file) => {
-      const commitTime = await getFileLastModified(token, owner, repo, file.path, branch);
-      if (commitTime > 0) {
-        file.lastModified = commitTime;
-        successCount++;
-      }
-    }));
-  }
-
-  // 降级兜底：对所有 lastModified 为 0 的文件使用文件名提取时间
-  for (const file of fileItems) {
-    if (file.lastModified === 0) {
-      file.lastModified = extractTimestampFromFilename(file.name);
-    }
-  }
-
-  return fileItems;
 }
 
 // 获取用户信息

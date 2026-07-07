@@ -5,9 +5,9 @@ import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile } from '../lib/api';
 import { scanMdFiles } from '../hooks/useFileList';
-import type { FileItem } from '../hooks/useFileList';
+import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
-import { sortByLastModified } from '../lib/sortFiles';
+import { sortByFrontMatterDate } from '../lib/sortFiles';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
@@ -20,13 +20,13 @@ export default function DashboardPage() {
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
-  const [files, setFiles] = useState<FileItem[]>([]);
+  const [files, setFiles] = useState<EnhancedFileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; onUndo?: () => void } | null>(null);
   // 撤销记录
-  const lastDeletedRef = useRef<{ file: FileItem; originalPath: string } | null>(null);
+  const lastDeletedRef = useRef<{ file: EnhancedFileItem; originalPath: string } | null>(null);
 
   useEffect(() => {
     if (!selectedRepo || !user) {
@@ -40,7 +40,8 @@ export default function DashboardPage() {
     // 先尝试从缓存加载
     const allCached = paths.map(p => getCachedFiles(selectedRepo, p));
     if (allCached.every(c => c !== null)) {
-      const cachedFiles = (allCached as FileItem[][]).flat().sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+      const cachedFiles = (allCached as EnhancedFileItem[][]).flat();
+      sortByFrontMatterDate(cachedFiles);
       setFiles(cachedFiles);
     } else {
       setLoading(true);
@@ -50,7 +51,7 @@ export default function DashboardPage() {
     Promise.all(paths.map(p => scanMdFiles(selectedRepo, p)))
       .then(results => {
         const allFiles = results.flat();
-        sortByLastModified(allFiles);
+        sortByFrontMatterDate(allFiles);
         paths.forEach((p, i) => setCachedFiles(selectedRepo, p, results[i]));
         setFiles(allFiles);
       })
@@ -76,7 +77,7 @@ export default function DashboardPage() {
     setCurrentPage(1);
   }, [searchQuery]);
 
-  const handleEdit = (file: FileItem) => {
+  const handleEdit = (file: EnhancedFileItem) => {
     if (!selectedRepo) return;
     const paths = config.paths || [];
     let relative = file.path;
@@ -99,7 +100,7 @@ export default function DashboardPage() {
     navigate(`/editor/new?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}`);
   };
 
-  const handleDelete = async (file: FileItem) => {
+  const handleDelete = async (file: EnhancedFileItem) => {
     if (!selectedRepo || !user) return;
 
     const trashPath = `${config.trashPath || '.trash'}/${file.name}`;
@@ -198,7 +199,7 @@ export default function DashboardPage() {
             </div>
 
             {/* 列表 */}
-            {paginatedFiles.map((file: FileItem) => (
+            {paginatedFiles.map((file: EnhancedFileItem) => (
               <div
                 key={file.path}
                 className="flex items-center px-4 py-3.5 cursor-pointer border-b border-border-subtle transition-colors hover:bg-accent"

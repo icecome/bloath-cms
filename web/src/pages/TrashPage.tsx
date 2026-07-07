@@ -3,9 +3,10 @@ import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile, deleteFile } from '../lib/api';
-import { scanMdFiles, type FileItem } from '../hooks/useFileList';
+import { scanMdFiles } from '../hooks/useFileList';
+import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
-import { sortByLastModified } from '../lib/sortFiles';
+import { sortByFrontMatterDate } from '../lib/sortFiles';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
@@ -19,7 +20,7 @@ export default function TrashPage() {
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const trashPath = config.trashPath || '.trash';
-  const [files, setFiles] = useState<FileItem[]>([]);
+  const [files, setFiles] = useState<EnhancedFileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -51,7 +52,7 @@ export default function TrashPage() {
     // 后台刷新
     scanMdFiles(selectedRepo, trashPath)
       .then(files => {
-        sortByLastModified(files);
+        sortByFrontMatterDate(files);
         setCachedFiles(selectedRepo, trashPath, files);
         setFiles(files);
       })
@@ -104,7 +105,7 @@ export default function TrashPage() {
     setSelectedFiles(newSelected);
   };
 
-  const handleRestore = async (file: FileItem, targetDir: string) => {
+  const handleRestore = async (file: EnhancedFileItem, targetDir: string) => {
     if (!selectedRepo || !user || !targetDir.trim()) return;
     if (!file.sha) {
       setToast({ message: '文件缺少 SHA，无法恢复', type: 'error' });
@@ -125,7 +126,7 @@ export default function TrashPage() {
       });
       setToast({ message: `已将 ${file.name} 移动到 ${targetDir}`, type: 'success' });
       clearCache(selectedRepo);
-      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as FileItem[]);
+      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
@@ -134,7 +135,7 @@ export default function TrashPage() {
     }
   };
 
-  const handlePermanentDelete = async (file: FileItem) => {
+  const handlePermanentDelete = async (file: EnhancedFileItem) => {
     if (!selectedRepo || !user) return;
     setActionLoading(true);
     try {
@@ -147,7 +148,7 @@ export default function TrashPage() {
         userName: user?.login
       });
       setToast({ message: `已永久删除 ${file.name}`, type: 'success' });
-      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as FileItem[]);
+      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
@@ -178,7 +179,7 @@ export default function TrashPage() {
       setSelectedFiles(new Set());
       setRestoreTarget('');
       setShowRestoreDropdown(false);
-      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as FileItem[]);
+      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
@@ -217,7 +218,7 @@ export default function TrashPage() {
       }
       setSelectedFiles(new Set());
       setPermanentDeleteConfirm(false);
-      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as FileItem[]);
+      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
       setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });

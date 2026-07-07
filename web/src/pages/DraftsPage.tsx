@@ -4,9 +4,10 @@ import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile, readFile, writeFile, deleteFile } from '../lib/api';
-import { scanMdFiles, type FileItem } from '../hooks/useFileList';
+import { scanMdFiles } from '../hooks/useFileList';
+import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
-import { sortByLastModified } from '../lib/sortFiles';
+import { sortByFrontMatterDate } from '../lib/sortFiles';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
@@ -28,7 +29,7 @@ export default function DraftsPage() {
   const navigate = useNavigate();
   const draftPath = config.draftPath || '.draft';
   const trashPath = config.trashPath || '.trash';
-  const [files, setFiles] = useState<FileItem[]>([]);
+  const [files, setFiles] = useState<EnhancedFileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -36,14 +37,14 @@ export default function DraftsPage() {
   const [showPublishDropdown, setShowPublishDropdown] = useState(false);
   const [showMoveDropdown, setShowMoveDropdown] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
-  const [renameFile, setRenameFile] = useState<FileItem | null>(null);
+  const [renameFile, setRenameFile] = useState<EnhancedFileItem | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [publishTarget, setPublishTarget] = useState('');
   const [moveTarget, setMoveTarget] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; onUndo?: () => void } | null>(null);
   // 撤销记录
-  const lastDeletedRef = useRef<{ files: FileItem[]; originalPaths: string[] } | null>(null);
+  const lastDeletedRef = useRef<{ files: EnhancedFileItem[]; originalPaths: string[] } | null>(null);
 
   const availableDirs = config.paths || [];
 
@@ -65,7 +66,7 @@ export default function DraftsPage() {
     // 后台刷新
     scanMdFiles(selectedRepo, draftPath)
       .then(files => {
-        sortByLastModified(files);
+        sortByFrontMatterDate(files);
         setCachedFiles(selectedRepo, draftPath, files);
         setFiles(files);
       })
@@ -113,7 +114,7 @@ export default function DraftsPage() {
     setSelectedFiles(newSelected);
   };
 
-  const handleEdit = (file: FileItem) => {
+  const handleEdit = (file: EnhancedFileItem) => {
     if (!selectedRepo) return;
     const relative = file.path.replace(draftPath + '/', '');
     const slug = relative.replace('.md', '');
@@ -237,7 +238,7 @@ export default function DraftsPage() {
     }
   };
 
-  const handleSingleDelete = async (file: FileItem) => {
+  const handleSingleDelete = async (file: EnhancedFileItem) => {
     if (!selectedRepo || !user) return;
 
     const trashFile = `${trashPath}/${file.name}`;
@@ -343,7 +344,7 @@ export default function DraftsPage() {
     }
   };
 
-  const openRenameDialog = (file: FileItem) => {
+  const openRenameDialog = (file: EnhancedFileItem) => {
     setRenameFile(file);
     const slug = file.name.replace('.md', '');
     setRenameValue(slug);

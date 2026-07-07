@@ -118,7 +118,7 @@ export async function getFiles(params: RepoInfo & { path?: string }): Promise<Co
   return apiFetch<ContentItem[]>(`${API_BASE}/api/repos/files?${searchParams}`);
 }
 
-export async function readFile(params: RepoInfo & { path: string }): Promise<FileReadResult> {
+export async function readFile(params: RepoInfo & { path: string }, timeoutMs?: number): Promise<FileReadResult> {
   const searchParams = new URLSearchParams({
     owner: params.owner,
     repo: params.repo,
@@ -127,7 +127,8 @@ export async function readFile(params: RepoInfo & { path: string }): Promise<Fil
   });
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const effectiveTimeout = timeoutMs ?? API_TIMEOUT_MS;
+  const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
 
   try {
     return await apiFetch<FileReadResult>(`${API_BASE}/api/repos/file?${searchParams}`, {
