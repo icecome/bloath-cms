@@ -243,6 +243,63 @@ export default function FrontmatterPanel({
         />
       </div>
 
+      {/* 自定义字段 */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Settings2 className="w-3 h-3" />
+            自定义字段
+          </label>
+          <button
+            type="button"
+            onClick={addCustomField}
+            className="text-xs text-primary hover:underline flex items-center gap-1"
+          >
+            <Plus className="w-3 h-3" /> 添加
+          </button>
+        </div>
+        <div className="space-y-2">
+          {customFields.map((cf, index) => (
+            <div key={index} className="flex gap-1.5 items-start">
+              <input
+                type="text"
+                value={cf.key}
+                onChange={(e) => updateCustomField(index, 'key', e.target.value)}
+                placeholder="键名"
+                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+              />
+              <select
+                value={cf.type}
+                onChange={(e) => updateCustomField(index, 'type', e.target.value)}
+                className="px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground"
+              >
+                <option value="string">文本</option>
+                <option value="number">数字</option>
+                <option value="boolean">布尔</option>
+              </select>
+              <input
+                type="text"
+                value={cf.value}
+                onChange={(e) => updateCustomField(index, 'value', e.target.value)}
+                placeholder="值"
+                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+              />
+              <button
+                type="button"
+                onClick={() => removeCustomField(index)}
+                className="text-xs text-muted-foreground hover:text-destructive p-1"
+                aria-label="删除字段"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+          {customFields.length === 0 && (
+            <p className="text-xs text-muted-foreground">暂无自定义字段，点击上方"添加"按钮创建</p>
+          )}
+        </div>
+      </div>
+
       {/* 加密开关 */}
       <div className="flex items-center justify-between py-1">
         <span className="flex items-center gap-1.5 text-xs text-foreground">
@@ -335,65 +392,6 @@ export default function FrontmatterPanel({
             placeholder="视频 URL"
           />
           <button onClick={() => addItem('video')} className="px-2 py-1 text-xs bg-foreground text-background rounded-sm hover:bg-foreground/90 transition-colors">添加</button>
-        </div>
-      </div>
-
-      <div className="border-t border-border" />
-
-      {/* 自定义字段 */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Settings2 className="w-3 h-3" />
-            自定义字段
-          </label>
-          <button
-            type="button"
-            onClick={addCustomField}
-            className="text-xs text-primary hover:underline flex items-center gap-1"
-          >
-            <Plus className="w-3 h-3" /> 添加
-          </button>
-        </div>
-        <div className="space-y-2">
-          {customFields.map((cf, index) => (
-            <div key={index} className="flex gap-1.5 items-start">
-              <input
-                type="text"
-                value={cf.key}
-                onChange={(e) => updateCustomField(index, 'key', e.target.value)}
-                placeholder="键名"
-                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
-              />
-              <select
-                value={cf.type}
-                onChange={(e) => updateCustomField(index, 'type', e.target.value)}
-                className="px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground"
-              >
-                <option value="string">文本</option>
-                <option value="number">数字</option>
-                <option value="boolean">布尔</option>
-              </select>
-              <input
-                type="text"
-                value={cf.value}
-                onChange={(e) => updateCustomField(index, 'value', e.target.value)}
-                placeholder="值"
-                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
-              />
-              <button
-                type="button"
-                onClick={() => removeCustomField(index)}
-                className="text-xs text-muted-foreground hover:text-destructive p-1"
-                aria-label="删除字段"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
-          {customFields.length === 0 && (
-            <p className="text-xs text-muted-foreground">暂无自定义字段，点击上方"添加"按钮创建</p>
-          )}
         </div>
       </div>
 
