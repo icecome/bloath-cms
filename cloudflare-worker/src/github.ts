@@ -294,14 +294,13 @@ function extractTimestampFromFilename(name: string): number {
   if (!match) return 0;
   const dateStr = match[2] ? `${match[1]}${match[2]}` : `${match[1]}000000`;
   const ts = new Date(
-    `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}T${dateStr.slice(8,10)}:${dateStr.slice(10,12)}:${dateStr.slice(12,14)}Z`
+    `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}T${dateStr.slice(8,10)}:${dateStr.slice(10,12)}:${dateStr.slice(12,14)}`
   ).getTime();
   return isNaN(ts) ? 0 : ts;
 }
 
 // 使用 GitHub Trees API 一次性获取整个目录树（替代递归扫描）
-// mode: 'commits' = 通过 commits API 获取时间（内容库/草稿箱/回收站）
-//       'filename' = 优先从文件名提取时间，回退到 commits API（媒体库）
+// 排序策略：统一从文件名提取时间戳
 export async function getTree(
   token: string,
   owner: string,
@@ -338,82 +337,9 @@ export async function getTree(
       };
     });
 
-  // 先获取仓库最新 commit 时间作为兜底
-  let latestCommitDate = 0;
-  try {
-    const headResp = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}?per_page=1`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'User-Agent': 'Bloath-CMS'
-        }
-      }
-    );
-    if (headResp.ok) {
-      const headData = await headResp.json() as any;
-      if (headData?.commit?.committer?.date) {
-        latestCommitDate = new Date(headData.commit.committer.date).getTime();
-      }
-    }
-  } catch (err) {
-    console.warn(`[getTree] Failed to fetch latest commit: ${err instanceof Error ? err.message : 'unknown'}`);
-  }
-
-  // 获取单个文件的最后修改时间（独立 try/catch，一个文件失败不影响其他）
-  const fetchLastModified = async (file: { path: string }): Promise<number> => {
-    try {
-      const resp = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/commits?path=${encodeURIComponent(file.path)}&sha=${encodeURIComponent(branch)}&per_page=1`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'User-Agent': 'Bloath-CMS'
-          }
-        }
-      );
-      if (resp.ok) {
-        const data = await resp.json() as any[];
-        if (data.length > 0 && data[0]?.commit?.committer?.date) {
-          return new Date(data[0].commit.committer.date).getTime();
-        }
-      } else {
-        console.warn(`[getTree] Commits API ${resp.status} for ${file.path}`);
-      }
-    } catch (err) {
-      console.warn(`[getTree] Failed to fetch commit for ${file.path}: ${err instanceof Error ? err.message : 'unknown'}`);
-    }
-    return 0;
-  };
-
-  // 填充 lastModified
-  if (mode === 'filename') {
-    // 媒体库模式：优先从文件名提取时间戳
-    for (const file of fileItems) {
-      file.lastModified = extractTimestampFromFilename(file.name);
-    }
-    // 对文件名无法提取时间的文件，使用 commits API
-    const needCommits = fileItems.filter(f => f.lastModified === 0);
-    if (needCommits.length > 0) {
-      const batchSize = 5;
-      for (let i = 0; i < needCommits.length; i += batchSize) {
-        const batch = needCommits.slice(i, i + batchSize);
-        await Promise.all(batch.map(async (file) => {
-          const commitTime = await fetchLastModified(file);
-          file.lastModified = commitTime || latestCommitDate;
-        }));
-      }
-    }
-  } else {
-    // 内容库模式：全部通过 commits API 获取
-    const batchSize = 5;
-    for (let i = 0; i < fileItems.length; i += batchSize) {
-      const batch = fileItems.slice(i, i + batchSize);
-      await Promise.all(batch.map(async (file) => {
-        const commitTime = await fetchLastModified(file);
-        file.lastModified = commitTime || latestCommitDate;
-      }));
-    }
+  // 统一从文件名提取时间戳（适用于所有模式）
+  for (const file of fileItems) {
+    file.lastModified = extractTimestampFromFilename(file.name);
   }
 
   return fileItems;

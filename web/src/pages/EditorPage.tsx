@@ -81,6 +81,7 @@ export default function EditorPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMetadataPanel, setShowMetadataPanel] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   // 已有文章的 basePath 从 currentFilePath 推导，新建文章用 draftPath
   const basePath = paramBasePath || (isNew ? (config.draftPath || '.draft') : (currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : ''));
@@ -104,8 +105,9 @@ export default function EditorPage() {
   };
 
   // 加载已有文章：优先使用 filePath 参数（完整保留目录结构），slug 仅用于 URL 展示
+  // hasLoadedOnce 确保只加载一次，避免 user 等状态变化导致内容被重置
   useEffect(() => {
-    if (isNew || !user || !basePath) return;
+    if (isNew || !user || !basePath || hasLoadedOnce) return;
     const relativePath = paramFilePath || slug;
     if (!relativePath) return;
 
@@ -120,6 +122,7 @@ export default function EditorPage() {
         setBodyContent(body);
         setCurrentFilePath(filePath);
         setCurrentFileSha(sha || '');
+        setHasLoadedOnce(true);
         // 如果 Vditor 已就绪，更新内容
         if (vditorInstanceRef.current) {
           vditorInstanceRef.current.setValue(body);
@@ -130,7 +133,7 @@ export default function EditorPage() {
         setError(err.message || '加载失败');
       })
       .finally(() => setLoading(false));
-  }, [isNew, slug, user, basePath, owner, repo, branch]);
+  }, [isNew, slug, user, basePath, owner, repo, branch, hasLoadedOnce]);
 
   const handleVditorReady = useCallback((instance: Vditor) => {
     vditorInstanceRef.current = instance;
