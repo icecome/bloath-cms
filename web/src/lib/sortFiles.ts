@@ -5,7 +5,7 @@ export interface SortableFile {
 
 /**
  * 从文件名提取时间戳（支持 8 位日期和 14 位时间戳）
- * 适用于 Hugo 博客文件名格式：YYYYMMDD-title.md 或 YYYYMMDDHHmmss-title.md
+ * 作为后端 Commits API 失败时的降级方案
  */
 function extractTimestampFromFilename(name: string): number {
   const match = name.match(/^(\d{8})(\d{6})?/);
@@ -19,14 +19,11 @@ function extractTimestampFromFilename(name: string): number {
 
 /**
  * 按 lastModified 降序排序（最新在前）
- * 回退策略：
- * 1. 优先使用 lastModified 字段
- * 2. 如果为 0，从文件名提取时间戳
- * 3. 如果都无法提取，保持原始顺序
+ * 后端通过 Commits API 获取文件的最后修改时间
+ * 如果后端返回的 lastModified 为 0，则使用文件名提取时间作为降级方案
  */
 export function sortByLastModified<T extends SortableFile>(files: T[]): T[] {
   return files.sort((a, b) => {
-    // 优先使用 lastModified，回退到文件名提取
     const timeA = a.lastModified || extractTimestampFromFilename(a.name);
     const timeB = b.lastModified || extractTimestampFromFilename(b.name);
 
