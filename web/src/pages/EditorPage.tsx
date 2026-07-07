@@ -67,7 +67,7 @@ export default function EditorPage() {
   const trashPath = config.trashPath || '.trash';
 
   const [publishTarget, setPublishTarget] = useState('');
-  const [showPublishDropdown, setShowPublishDropdown] = useState(false);
+  const [showPublishDialog, setShowPublishDialog] = useState(false);
   const availableDirs = config.paths || [];
 
   const [frontmatter, setFrontmatter] = useState<Frontmatter>({});
@@ -123,6 +123,11 @@ export default function EditorPage() {
         setCurrentFilePath(filePath);
         setCurrentFileSha(sha || '');
         setHasLoadedOnce(true);
+        // 如果 frontmatter 中没有 url，从文件路径提取并自动填充
+        if (!fm.url && relativePath) {
+          const urlFromPath = relativePath.replace(/\.md$/, '');
+          setFrontmatter((prev) => ({ ...prev, url: urlFromPath }));
+        }
         // 如果 Vditor 已就绪，更新内容
         if (vditorInstanceRef.current) {
           vditorInstanceRef.current.setValue(body);
@@ -474,77 +479,16 @@ export default function EditorPage() {
           >
             <Settings2 className="w-4 h-4" />
           </button>
-          {!isNew && (() => {
-            if (isDraftArticle) {
-              // 草稿箱文章：展示目录选择下拉框
-              return (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowPublishDropdown(!showPublishDropdown)}
-                    disabled={saving}
-                    className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-green-500 text-white rounded-sm hover:bg-green-600 disabled:opacity-50 transition-colors"
-                  >
-                    <Send className="w-4 h-4" />
-                    <span className="hidden md:inline">发布</span>
-                  </button>
-                  {showPublishDropdown && (
-                    <div className="absolute right-0 top-full mt-1 bg-white border border-border z-50 min-w-[250px] p-2 shadow-sm" role="menu">
-                      <p className="text-xs text-muted-foreground mb-2 px-1">发布到目标目录：</p>
-                      <div className="space-y-0.5">
-                        {availableDirs.map((dir) => (
-                          <button
-                            key={dir}
-                            onClick={() => { setPublishTarget(dir); setShowPublishDropdown(false); }}
-                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-secondary transition-colors ${
-                              publishTarget === dir ? 'text-foreground font-medium' : 'text-muted-foreground'
-                            }`}
-                            role="menuitem"
-                          >
-                            {publishTarget === dir && <span className="text-green-500">✓</span>}
-                            <span className="truncate">{dir}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <div className="mt-2 pt-2 border-t border-border">
-                        <input
-                          type="text"
-                          value={publishTarget}
-                          onChange={(e) => setPublishTarget(e.target.value)}
-                          placeholder="或输入自定义路径"
-                          className="w-full px-2.5 py-1.5 text-xs border border-border bg-white text-foreground placeholder:text-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
-                        />
-                        <button
-                          onClick={() => { setShowPublishDropdown(false); handlePublish(); }}
-                          disabled={!publishTarget.trim() || saving}
-                          className="w-full px-2.5 py-1.5 text-xs text-white bg-green-500 rounded-sm hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                        >
-                          {saving ? '发布中...' : '确认发布'}
-                        </button>
-                      </div>
-                      <button
-                        onClick={() => setShowPublishDropdown(false)}
-                        className="w-full mt-1 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary rounded-sm transition-colors"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            } else {
-              // 内容库文章：直接触发发布（原地更新）
-              return (
-                <button
-                  onClick={() => handlePublish()}
-                  disabled={saving}
-                  className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-green-500 text-white rounded-sm hover:bg-green-600 disabled:opacity-50 transition-colors"
-                >
-                  <Send className="w-4 h-4" />
-                  <span className="hidden md:inline">{saving ? '发布中...' : '发布'}</span>
-                </button>
-              );
-            }
-          })()}
+          {!isNew && (
+            <button
+              onClick={() => setShowPublishDialog(true)}
+              disabled={saving}
+              className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-green-500 text-white rounded-sm hover:bg-green-600 disabled:opacity-50 transition-colors"
+            >
+              <Send className="w-4 h-4" />
+              <span className="hidden md:inline">{saving ? '发布中...' : '发布'}</span>
+            </button>
+          )}
           <button
             onClick={handleSave}
             disabled={saving}
@@ -582,6 +526,50 @@ export default function EditorPage() {
                         className="px-3 py-1.5 text-sm text-white bg-red-600 hover:bg-red-700 rounded-sm transition-colors disabled:opacity-40"
                       >
                         {saving ? '处理中...' : '确认删除'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {showPublishDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true" onClick={() => setShowPublishDialog(false)}>
+                  <div className="bg-white rounded-md shadow-sm p-4 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-sm font-medium text-foreground mb-3">发布到目标目录</h3>
+                    <div className="space-y-1.5 mb-3">
+                      {availableDirs.map((dir) => (
+                        <button
+                          key={dir}
+                          onClick={() => setPublishTarget(dir)}
+                          className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-secondary transition-colors ${
+                            publishTarget === dir ? 'text-foreground font-medium' : 'text-muted-foreground'
+                          }`}
+                        >
+                          {publishTarget === dir && <span className="text-green-500">✓</span>}
+                          <span className="truncate">{dir}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="text"
+                      value={publishTarget}
+                      onChange={(e) => setPublishTarget(e.target.value)}
+                      placeholder="或输入自定义路径"
+                      className="w-full px-2.5 py-1.5 text-xs border border-border bg-white text-foreground placeholder:text-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-3 transition-colors"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => setShowPublishDialog(false)}
+                        disabled={saving}
+                        className="px-3 py-1.5 text-sm border border-border text-muted-foreground hover:bg-secondary rounded-sm transition-colors disabled:opacity-40"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={() => { setShowPublishDialog(false); handlePublish(); }}
+                        disabled={!publishTarget.trim() || saving}
+                        className="px-3 py-1.5 text-sm text-white bg-green-500 hover:bg-green-600 rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {saving ? '发布中...' : '确认发布'}
                       </button>
                     </div>
                   </div>

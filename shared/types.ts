@@ -105,6 +105,8 @@ export interface ArticleFrontmatter {
   author?: string;
   categories?: string[];
   tags?: string[];
+  cover?: string;
+  weight?: number;
   encrypt?: boolean;
   encryptPasswordKey?: string;
   encryptTitle?: string;
@@ -113,4 +115,5 @@ export interface ArticleFrontmatter {
   video?: string[];
   link?: string;
   link_text?: string;
+  customFields?: Record<string, unknown>;
 }

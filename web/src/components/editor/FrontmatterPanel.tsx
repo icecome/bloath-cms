@@ -1,5 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Calendar, User, Tag, Folder, Image, Video, Lock, Link as LinkIcon, FileText } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Calendar, User, Tag, Folder, Image, Video, Lock, Link as LinkIcon, FileText, Plus, X, ImageIcon, Scale, Settings2 } from 'lucide-react';
 import type { ArticleFrontmatter } from '../../../../shared/types';
 
 interface FrontmatterPanelProps {
@@ -18,6 +19,12 @@ interface FrontmatterPanelProps {
   handleInputKeyDown: (key: 'categories' | 'tags' | 'pictures' | 'video', e: ReactKeyboardEvent) => void;
 }
 
+interface CustomField {
+  key: string;
+  value: string;
+  type: 'string' | 'number' | 'boolean';
+}
+
 function formatDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -33,6 +40,51 @@ export default function FrontmatterPanel({
   newPicture, setNewPicture, newVideo, setNewVideo,
   addItem, handleInputKeyDown
 }: FrontmatterPanelProps) {
+  const [customFields, setCustomFields] = useState<CustomField[]>(
+    Object.entries(frontmatter.customFields ?? {}).map(([key, value]) => ({
+      key,
+      value: String(value ?? ''),
+      type: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'string'
+    }))
+  );
+
+  const addCustomField = () => {
+    setCustomFields([...customFields, { key: '', value: '', type: 'string' }]);
+  };
+
+  const removeCustomField = (index: number) => {
+    setCustomFields(customFields.filter((_, i) => i !== index));
+  };
+
+  const updateCustomField = (index: number, field: keyof CustomField, value: string) => {
+    const updated = [...customFields];
+    updated[index] = { ...updated[index], [field]: value };
+    setCustomFields(updated);
+  };
+
+  const syncCustomFieldsToFm = () => {
+    const parsed: Record<string, unknown> = {};
+    for (const cf of customFields) {
+      if (!cf.key.trim()) continue;
+      if (cf.type === 'number') {
+        parsed[cf.key.trim()] = cf.value ? parseFloat(cf.value) : undefined;
+      } else if (cf.type === 'boolean') {
+        parsed[cf.key.trim()] = cf.value === 'true';
+      } else {
+        parsed[cf.key.trim()] = cf.value;
+      }
+    }
+    setFm('customFields', Object.keys(parsed).length > 0 ? parsed : undefined);
+  };
+
+  // Sync on mount and when customFields change
+  const prevFieldsRef = useRef(JSON.stringify(customFields));
+  useEffect(() => {
+    if (prevFieldsRef.current !== JSON.stringify(customFields)) {
+      syncCustomFieldsToFm();
+      prevFieldsRef.current = JSON.stringify(customFields);
+    }
+  }, [customFields]);
   return (
     <div className="p-4 space-y-4">
       {/* URL / 文件名 */}
@@ -161,6 +213,36 @@ export default function FrontmatterPanel({
         </div>
       </div>
 
+      {/* 封面图 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
+          <ImageIcon className="w-3 h-3" />
+          封面图
+        </label>
+        <input
+          type="text"
+          value={frontmatter.cover || ''}
+          onChange={(e) => setFm('cover', e.target.value)}
+          className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-white text-foreground placeholder:text-muted-foreground"
+          placeholder="封面图 URL"
+        />
+      </div>
+
+      {/* 排序权重 */}
+      <div>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
+          <Scale className="w-3 h-3" />
+          权重
+        </label>
+        <input
+          type="number"
+          value={frontmatter.weight ?? ''}
+          onChange={(e) => setFm('weight', e.target.value ? Number(e.target.value) : undefined)}
+          className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-white text-foreground placeholder:text-muted-foreground"
+          placeholder="数值越大越靠前"
+        />
+      </div>
+
       {/* 加密开关 */}
       <div className="flex items-center justify-between py-1">
         <span className="flex items-center gap-1.5 text-xs text-foreground">
@@ -253,6 +335,65 @@ export default function FrontmatterPanel({
             placeholder="视频 URL"
           />
           <button onClick={() => addItem('video')} className="px-2 py-1 text-xs bg-foreground text-background rounded-sm hover:bg-foreground/90 transition-colors">添加</button>
+        </div>
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* 自定义字段 */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Settings2 className="w-3 h-3" />
+            自定义字段
+          </label>
+          <button
+            type="button"
+            onClick={addCustomField}
+            className="text-xs text-primary hover:underline flex items-center gap-1"
+          >
+            <Plus className="w-3 h-3" /> 添加
+          </button>
+        </div>
+        <div className="space-y-2">
+          {customFields.map((cf, index) => (
+            <div key={index} className="flex gap-1.5 items-start">
+              <input
+                type="text"
+                value={cf.key}
+                onChange={(e) => updateCustomField(index, 'key', e.target.value)}
+                placeholder="键名"
+                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+              />
+              <select
+                value={cf.type}
+                onChange={(e) => updateCustomField(index, 'type', e.target.value)}
+                className="px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground"
+              >
+                <option value="string">文本</option>
+                <option value="number">数字</option>
+                <option value="boolean">布尔</option>
+              </select>
+              <input
+                type="text"
+                value={cf.value}
+                onChange={(e) => updateCustomField(index, 'value', e.target.value)}
+                placeholder="值"
+                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+              />
+              <button
+                type="button"
+                onClick={() => removeCustomField(index)}
+                className="text-xs text-muted-foreground hover:text-destructive p-1"
+                aria-label="删除字段"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+          {customFields.length === 0 && (
+            <p className="text-xs text-muted-foreground">暂无自定义字段，点击上方"添加"按钮创建</p>
+          )}
         </div>
       </div>
 
