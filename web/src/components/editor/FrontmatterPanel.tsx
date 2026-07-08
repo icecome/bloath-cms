@@ -260,38 +260,42 @@ export default function FrontmatterPanel({
         </div>
         <div className="space-y-2">
           {customFields.map((cf, index) => (
-            <div key={index} className="grid grid-cols-[100px_64px_1fr_24px] gap-1.5 items-start">
-              <input
-                type="text"
-                value={cf.key}
-                onChange={(e) => updateCustomField(index, 'key', e.target.value)}
-                placeholder="键名"
-                className="px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
-              />
-              <select
-                value={cf.type}
-                onChange={(e) => updateCustomField(index, 'type', e.target.value)}
-                className="px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground"
-              >
-                <option value="string">文本</option>
-                <option value="number">数字</option>
-                <option value="boolean">布尔</option>
-              </select>
+            <div key={index} className="space-y-1.5">
+              {/* 第一行：键名 + 类型 + 删除 */}
+              <div className="flex gap-1.5 items-center">
+                <input
+                  type="text"
+                  value={cf.key}
+                  onChange={(e) => updateCustomField(index, 'key', e.target.value)}
+                  placeholder="键名"
+                  className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+                />
+                <select
+                  value={cf.type}
+                  onChange={(e) => updateCustomField(index, 'type', e.target.value)}
+                  className="w-18 px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground"
+                >
+                  <option value="string">文本</option>
+                  <option value="number">数字</option>
+                  <option value="boolean">布尔</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => removeCustomField(index)}
+                  className="text-xs text-muted-foreground hover:text-destructive p-1"
+                  aria-label="删除字段"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+              {/* 第二行：值输入（全宽） */}
               <input
                 type="text"
                 value={cf.value}
                 onChange={(e) => updateCustomField(index, 'value', e.target.value)}
                 placeholder="值"
-                className="px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
               />
-              <button
-                type="button"
-                onClick={() => removeCustomField(index)}
-                className="text-xs text-muted-foreground hover:text-destructive p-1"
-                aria-label="删除字段"
-              >
-                <X className="w-3 h-3" />
-              </button>
             </div>
           ))}
           {customFields.length === 0 && (
