@@ -273,7 +273,7 @@ export default function FrontmatterPanel({
                 <select
                   value={cf.type}
                   onChange={(e) => updateCustomField(index, 'type', e.target.value)}
-                  className="w-18 px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground"
+                  className="w-[72px] px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground"
                 >
                   <option value="string">文本</option>
                   <option value="number">数字</option>
