@@ -260,13 +260,13 @@ export default function FrontmatterPanel({
         </div>
         <div className="space-y-2">
           {customFields.map((cf, index) => (
-            <div key={index} className="flex gap-1.5 items-start">
+            <div key={index} className="grid grid-cols-[100px_64px_1fr_24px] gap-1.5 items-start">
               <input
                 type="text"
                 value={cf.key}
                 onChange={(e) => updateCustomField(index, 'key', e.target.value)}
                 placeholder="键名"
-                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+                className="px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
               />
               <select
                 value={cf.type}
@@ -282,7 +282,7 @@ export default function FrontmatterPanel({
                 value={cf.value}
                 onChange={(e) => updateCustomField(index, 'value', e.target.value)}
                 placeholder="值"
-                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+                className="px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
               />
               <button
                 type="button"
