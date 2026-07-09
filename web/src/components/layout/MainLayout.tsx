@@ -2,8 +2,9 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useRepo } from '../../contexts/RepoContext';
 import { getRepos } from '../../lib/api';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Repo } from '../../../../shared/types';
+import { detectFrameworks, type DetectedRepo } from '../../lib/detectFramework';
 import {
   Home,
   FilePlus2,
@@ -17,7 +18,9 @@ import {
   Plus,
   Trash2,
   Menu,
-  X
+  X,
+  Search,
+  Loader2
 } from 'lucide-react';
 
 // 侧边栏内容组件（桌面端和移动端共用）
@@ -25,9 +28,10 @@ function SidebarContent({
   repos, selectedRepo, branches, user,
   showRepoDropdown, showBranchDropdown, showAccountDropdown,
   setShowRepoDropdown, setShowBranchDropdown, setShowAccountDropdown,
-  onRepoChange, onBranchChange, onSwitchAccount, onLogout, onNewArticle, onNavClick
+  onRepoChange, onBranchChange, onSwitchAccount, onLogout, onNewArticle, onNavClick,
+  detectingFrameworks
 }: {
-  repos: Repo[];
+  repos: DetectedRepo[];
   selectedRepo: { owner: string; repo: string; branch: string } | null;
   branches: string[];
   user: { login: string; name?: string; avatar_url: string } | null;
@@ -43,8 +47,20 @@ function SidebarContent({
   onLogout: () => void;
   onNewArticle: () => void;
   onNavClick: () => void;
+  detectingFrameworks: boolean;
 }) {
   const location = useLocation();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // 过滤仓库
+  const filteredRepos = useMemo(() => {
+    if (!searchQuery.trim()) return repos;
+    const query = searchQuery.toLowerCase();
+    return repos.filter((repo: DetectedRepo) =>
+      repo.full_name.toLowerCase().includes(query) ||
+      repo.name.toLowerCase().includes(query)
+    );
+  }, [repos, searchQuery]);
 
   const navItems = [
     { path: '/', label: '内容库', icon: <Home className="w-4 h-4" /> },
@@ -89,34 +105,65 @@ function SidebarContent({
             className="w-full h-9 px-3 text-sm border border-border rounded-sm text-foreground hover:bg-accent transition-colors flex items-center gap-2 truncate"
           >
             <Folder className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            <span className="truncate">
-              {selectedRepo ? `${selectedRepo.owner}/${selectedRepo.repo}` : '选择仓库'}
-            </span>
+            {detectingFrameworks ? (
+              <Loader2 className="w-4 h-4 text-muted-foreground animate-spin flex-shrink-0" />
+            ) : (
+              <span className="truncate">
+                {selectedRepo ? `${selectedRepo.owner}/${selectedRepo.repo}` : '选择仓库'}
+              </span>
+            )}
             <ChevronDown className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform ${showRepoDropdown ? 'rotate-180' : ''}`} />
           </button>
 
           {showRepoDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border z-50 max-h-48 overflow-auto">
-              {repos.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">加载中...</div>
-              ) : (
-                repos.map((repo: any) => (
-                  <button
-                    key={repo.full_name}
-                    onClick={() => { onRepoChange(repo.full_name); onNavClick(); }}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent transition-colors border-b border-border-subtle last:border-b-0 ${
-                      selectedRepo?.owner === repo.owner && selectedRepo?.repo === repo.repo
-                        ? 'text-foreground font-medium'
-                        : 'text-foreground'
-                    }`}
-                  >
-                    {selectedRepo?.owner === repo.owner && selectedRepo?.repo === repo.repo && (
-                      <Check className="w-4 h-4 flex-shrink-0" />
-                    )}
-                    <span className="truncate">{repo.full_name}</span>
-                  </button>
-                ))
-              )}
+            <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border z-50 max-h-64 overflow-auto">
+              {/* 搜索框 */}
+              <div className="sticky top-0 bg-card border-b border-border-subtle px-2 py-1.5">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="搜索仓库..."
+                    className="w-full pl-7 pr-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+                    autoFocus
+                  />
+                </div>
+              </div>
+              {/* 仓库列表 */}
+              <div>
+                {filteredRepos.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                    {repos.length === 0 ? '加载中...' : '没有匹配的仓库'}
+                  </div>
+                ) : (
+                  filteredRepos.map((repo: any) => (
+                    <button
+                      key={repo.full_name}
+                      onClick={() => { onRepoChange(repo.full_name); setSearchQuery(''); onNavClick(); }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent transition-colors border-b border-border-subtle last:border-b-0 ${
+                        selectedRepo?.owner === repo.owner && selectedRepo?.repo === repo.repo
+                          ? 'text-foreground font-medium'
+                          : 'text-foreground'
+                      }`}
+                    >
+                      {selectedRepo?.owner === repo.owner && selectedRepo?.repo === repo.repo && (
+                        <Check className="w-4 h-4 flex-shrink-0" />
+                      )}
+                      <span className="truncate flex-1">{repo.full_name}</span>
+                      {repo.framework && (
+                        <span
+                          className="px-1.5 py-0.5 text-[10px] rounded-sm font-medium flex-shrink-0"
+                          style={{ backgroundColor: repo.framework.color, color: '#fff' }}
+                        >
+                          {repo.framework.name}
+                        </span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -239,17 +286,33 @@ export default function MainLayout() {
   const { selectedRepo, setSelectedRepo, branches, loadBranches } = useRepo();
   const location = useLocation();
   const navigate = useNavigate();
-  const [repos, setRepos] = useState<Repo[]>([]);
+  const [repos, setRepos] = useState<DetectedRepo[]>([]);
+  const [detectingFrameworks, setDetectingFrameworks] = useState(false);
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const detectedFrameworksRef = useRef(false);
 
   useEffect(() => {
     if (user) {
-      getRepos().then(setRepos).catch(console.error);
+      getRepos()
+        .then(repos => setRepos(repos))
+        .catch(console.error);
     }
   }, [user]);
+
+  // 异步检测博客框架（只在初始加载后执行一次）
+  useEffect(() => {
+    if (repos.length > 0 && !detectedFrameworksRef.current) {
+      detectedFrameworksRef.current = true;
+      setDetectingFrameworks(true);
+      detectFrameworks(repos)
+        .then(detectedRepos => setRepos(detectedRepos))
+        .catch(console.error)
+        .finally(() => setDetectingFrameworks(false));
+    }
+  }, [repos]);
 
   useEffect(() => {
     if (selectedRepo && user) {
@@ -317,6 +380,7 @@ export default function MainLayout() {
           onLogout={handleLogout}
           onNewArticle={handleNewArticle}
           onNavClick={() => {}}
+          detectingFrameworks={detectingFrameworks}
         />
       </aside>
 
@@ -347,6 +411,7 @@ export default function MainLayout() {
           onLogout={handleLogout}
           onNewArticle={handleNewArticle}
           onNavClick={closeSidebar}
+          detectingFrameworks={detectingFrameworks}
         />
       </aside>
 
