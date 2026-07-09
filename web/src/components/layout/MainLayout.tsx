@@ -3,7 +3,6 @@ import { useAuth } from '../../hooks/useAuth';
 import { useRepo } from '../../contexts/RepoContext';
 import { getRepos } from '../../lib/api';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import type { Repo } from '../../../../shared/types';
 import { detectFrameworks, type DetectedRepo } from '../../lib/detectFramework';
 import {
   Home,
