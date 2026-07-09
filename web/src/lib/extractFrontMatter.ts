@@ -110,7 +110,9 @@ async function readSingleFrontmatter(
     const result = fm<ArticleFrontmatter>(header);
     const attributes = result.attributes || {};
 
-    console.log(`[extractFrontMatter] ${file.name}: date=${attributes.date}, sortDate=${parseDateToTimestamp(attributes.date)}`);
+    if (import.meta.env.DEV) {
+      console.log(`[extractFrontMatter] ${file.name}: date=${attributes.date}, sortDate=${parseDateToTimestamp(attributes.date)}`);
+    }
 
     return {
       ...file,

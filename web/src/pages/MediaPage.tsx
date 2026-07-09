@@ -358,14 +358,14 @@ export default function MediaPage() {
           {/* 每行个数滑块 */}
           <div className="flex items-center gap-3">
             <SlidersHorizontal className="w-4 h-4 text-[#9CA3AF]" />
-            <span className="text-xs text-[#6B7280] w-16">每行 {gridCols} 个</span>
+            <span className="text-xs text-[#6B7280] w-16 hidden sm:inline">每行 {gridCols} 个</span>
             <input
               type="range"
               min={5}
               max={10}
               value={gridCols}
               onChange={(e) => handleGridColsChange(parseInt(e.target.value, 10))}
-              className="w-24 h-1 accent-[#3B82F6] cursor-pointer"
+              className="w-24 h-1 accent-[#3B82F6] cursor-pointer hidden sm:block"
             />
           </div>
         </div>
@@ -432,12 +432,12 @@ export default function MediaPage() {
           </div>
         ) : (
           <>
-            <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
-              {files.slice(0, currentPage * PAGE_SIZE).map((file) => (
-              <div
-                key={file.path}
-                className="group border border-[#E8E8E8] rounded-sm overflow-hidden hover:border-[#D1D5DB] transition-colors bg-white"
-              >
+            <div className="sm:grid sm:gap-3 columns-3 column-gap-3" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
+            {files.slice(0, currentPage * PAGE_SIZE).map((file) => (
+            <div
+              key={file.path}
+              className="group border border-[#E8E8E8] rounded-sm overflow-hidden hover:border-[#D1D5DB] transition-colors bg-white mb-3 sm:mb-0 break-inside-avoid"
+            >
                 {/* 缩略图 */}
                 <div
                   className="aspect-square bg-[#F9FAFA] flex items-center justify-center cursor-pointer overflow-hidden"
