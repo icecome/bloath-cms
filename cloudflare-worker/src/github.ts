@@ -102,7 +102,15 @@ export async function getUserRepos(token: string): Promise<Repo[]> {
     throw new Error('GitHub API error');
   }
 
-  return response.json() as Promise<Repo[]>;
+  return (await response.json() as any[]).map(r => ({
+    name: r.name,
+    full_name: r.full_name,
+    owner: r.owner?.login ?? '',
+    repo: r.name,
+    private: r.private,
+    html_url: r.html_url,
+    default_branch: r.default_branch
+  }));
 }
 
 // 读取文件内容
