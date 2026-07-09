@@ -432,7 +432,12 @@ export default function MediaPage() {
           </div>
         ) : (
           <>
-            <div className="sm:grid sm:gap-3 columns-3 column-gap-3" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
+            <div
+              className="columns-3 column-gap-3 sm:grid sm:gap-3"
+              style={{
+                gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+              }}
+            >
             {files.slice(0, currentPage * PAGE_SIZE).map((file) => (
             <div
               key={file.path}
