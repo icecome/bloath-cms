@@ -52,6 +52,11 @@ function SidebarContent({
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
 
+  // 下拉框关闭时重置搜索
+  useEffect(() => {
+    if (!showRepoDropdown) setSearchQuery('');
+  }, [showRepoDropdown]);
+
   // 过滤仓库
   const filteredRepos = useMemo(() => {
     if (!searchQuery.trim()) return repos;
