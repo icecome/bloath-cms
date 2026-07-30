@@ -1,17 +1,19 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile, readFile, writeFile, deleteFile } from '../lib/api';
 import { scanMdFiles } from '../hooks/useFileList';
+import { useFileListPage } from '../hooks/useFileListPage';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
-import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
-import { sortByFrontMatterDate } from '../lib/sortFiles';
+import { clearCache } from '../lib/fileCache';
+import { sanitizePath, filterValidDirs } from '../lib/path';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
 import Pagination from '../components/ui/Pagination';
+import FileTable from '../components/FileTable';
 
 import { PAGE_SIZE } from '../lib/constants';
 import {
@@ -29,11 +31,24 @@ export default function DraftsPage() {
   const navigate = useNavigate();
   const draftPath = config.draftPath || '.draft';
   const trashPath = config.trashPath || '.trash';
-  const [files, setFiles] = useState<EnhancedFileItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+
+  const {
+    files,
+    setFiles,
+    loading,
+    searchQuery,
+    setSearchQuery,
+    currentPage,
+    setCurrentPage,
+    filteredFiles,
+    paginatedFiles,
+    totalPages,
+    selectedFiles,
+    setSelectedFiles,
+    handleSelectAll,
+    handleSelectFile,
+  } = useFileListPage({ basePath: draftPath, selectedRepo, user });
+
   const [showPublishDropdown, setShowPublishDropdown] = useState(false);
   const [showMoveDropdown, setShowMoveDropdown] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
@@ -46,73 +61,7 @@ export default function DraftsPage() {
   // 撤销记录
   const lastDeletedRef = useRef<{ files: EnhancedFileItem[]; originalPaths: string[] } | null>(null);
 
-  const availableDirs = config.paths || [];
-
-  useEffect(() => {
-    if (!selectedRepo || !user) {
-      setFiles([]);
-      setCurrentPage(1);
-      return;
-    }
-
-    // 先尝试从缓存加载
-    const cached = getCachedFiles(selectedRepo, draftPath);
-    if (cached) {
-      setFiles(cached);
-    } else {
-      setLoading(true);
-    }
-
-    // 后台刷新
-    scanMdFiles(selectedRepo, draftPath)
-      .then(files => {
-        sortByFrontMatterDate(files);
-        setCachedFiles(selectedRepo, draftPath, files);
-        setFiles(files);
-      })
-      .catch((err: Error) => {
-        console.error(`扫描路径 ${draftPath} 失败:`, err);
-        if (!cached) setFiles([]);
-      })
-      .finally(() => setLoading(false));
-  }, [selectedRepo, user, draftPath]);
-
-  const filteredFiles = useMemo(() =>
-    files.filter((f) =>
-      f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      f.path.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    [files, searchQuery]
-  );
-
-  const totalPages = Math.ceil(filteredFiles.length / PAGE_SIZE);
-  const paginatedFiles = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredFiles.slice(start, start + PAGE_SIZE);
-  }, [filteredFiles, currentPage]);
-
-  // 当搜索变化时，重置到第一页
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery]);
-
-  const handleSelectAll = () => {
-    if (selectedFiles.size === filteredFiles.length) {
-      setSelectedFiles(new Set());
-    } else {
-      setSelectedFiles(new Set(filteredFiles.map((f) => f.path)));
-    }
-  };
-
-  const handleSelectFile = (path: string) => {
-    const newSelected = new Set(selectedFiles);
-    if (newSelected.has(path)) {
-      newSelected.delete(path);
-    } else {
-      newSelected.add(path);
-    }
-    setSelectedFiles(newSelected);
-  };
+  const availableDirs = filterValidDirs(config.paths || []);
 
   const handleEdit = (file: EnhancedFileItem) => {
     if (!selectedRepo) return;
@@ -132,11 +81,18 @@ export default function DraftsPage() {
 
   const handlePublish = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0 || !publishTarget.trim()) return;
+    let safeTarget: string;
+    try {
+      safeTarget = sanitizePath(publishTarget);
+    } catch (err) {
+      setToast({ message: (err as Error).message, type: 'error' });
+      return;
+    }
     setActionLoading(true);
     try {
       const filesToMove = files.filter((f) => selectedFiles.has(f.path));
       for (const file of filesToMove) {
-        const newPath = `${publishTarget.trim()}/${file.name}`;
+        const newPath = `${safeTarget}/${file.name}`;
         await moveFile({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
@@ -164,11 +120,18 @@ export default function DraftsPage() {
 
   const handleMove = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0 || !moveTarget.trim()) return;
+    let safeTarget: string;
+    try {
+      safeTarget = sanitizePath(moveTarget);
+    } catch (err) {
+      setToast({ message: (err as Error).message, type: 'error' });
+      return;
+    }
     setActionLoading(true);
     try {
       const filesToMove = files.filter((f) => selectedFiles.has(f.path));
       for (const file of filesToMove) {
-        const newPath = `${moveTarget.trim()}/${file.name}`;
+        const newPath = `${safeTarget}/${file.name}`;
         await moveFile({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
@@ -205,11 +168,13 @@ export default function DraftsPage() {
       // 批量移动到回收站
       for (let i = 0; i < filesToDelete.length; i++) {
         const file = filesToDelete[i];
+        const targetPath = trashPaths[i];
+        if (!file || !targetPath) continue;
         await moveFile({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           fromPath: file.path,
-          toPath: trashPaths[i],
+          toPath: targetPath,
           sha: file.sha,
           branch: selectedRepo.branch,
           message: `[skip ci] 移至回收站: ${file.name}`,
@@ -240,6 +205,7 @@ export default function DraftsPage() {
 
   const handleSingleDelete = async (file: EnhancedFileItem) => {
     if (!selectedRepo || !user) return;
+    setActionLoading(true);
 
     const trashFile = `${trashPath}/${file.name}`;
 
@@ -270,6 +236,7 @@ export default function DraftsPage() {
             if (!selectedRepo) return;
             const restoredFile = lastDeletedRef.current!.files[0];
             const originalPath = lastDeletedRef.current!.originalPaths[0];
+            if (!restoredFile || !originalPath) return;
             await moveFile({
               owner: selectedRepo.owner,
               repo: selectedRepo.repo,
@@ -289,6 +256,8 @@ export default function DraftsPage() {
       });
     } catch (err) {
       setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -459,7 +428,8 @@ export default function DraftsPage() {
                 onClick={() => {
                   const selected = files.filter(f => selectedFiles.has(f.path));
                   if (selected.length === 1) {
-                    openRenameDialog(selected[0]);
+                    const file = selected[0];
+                    if (file) openRenameDialog(file);
                   }
                 }}
                 disabled={selectedFiles.size !== 1 || actionLoading}
@@ -484,106 +454,52 @@ export default function DraftsPage() {
         ) : loading ? (
           <LoadingState />
         ) : filteredFiles.length > 0 ? (
-          <div>
-            {/* 桌面端表头 */}
-            <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-muted-foreground bg-accent border-b border-border">
-              <div className="w-8 flex items-center justify-center">
-                <input
-                  type="checkbox"
-                  checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0}
-                  onChange={handleSelectAll}
-                  className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
-                />
-              </div>
-              <div className="w-[40%]">文件名</div>
-              <div className="w-[40%]">路径</div>
-              <div className="w-[20%] text-right">操作</div>
-            </div>
-
-            {/* 列表 */}
-            {paginatedFiles.map((file) => (
-              <div
-                key={file.path}
-                className={`flex items-center px-4 py-3.5 border-b border-border-subtle transition-colors hover:bg-accent ${
-                  selectedFiles.has(file.path) ? 'bg-accent' : ''
-                }`}
-                onClick={(e) => {
-                  if ((e.target as HTMLElement).closest('input[type="checkbox"]') ||
-                      (e.target as HTMLElement).closest('button')) return;
-                  handleEdit(file);
-                }}
-              >
-                {/* 桌面端：表格行 */}
-                <div className="hidden md:flex items-center w-8 justify-center" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedFiles.has(file.path)}
-                    onChange={() => handleSelectFile(file.path)}
-                    className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
-                  />
-                </div>
-                <div className="hidden md:flex items-center w-[40%] gap-2.5 px-3">
-                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                  <span className="text-sm text-foreground truncate">
-                    {file.name.replace('.md', '')}
-                  </span>
-                </div>
-                <div className="hidden md:block w-[40%] px-3">
-                  <span className="text-sm text-muted-foreground truncate block">{file.path}</span>
-                </div>
-                <div className="hidden md:flex w-[20%] items-center justify-end gap-2 px-3">
-                  <button
-                    onClick={() => handleEdit(file)}
-                    className="text-sm text-primary hover:underline cursor-pointer"
-                  >
-                    编辑
-                  </button>
-                  <button
-                    onClick={() => handleSingleDelete(file)}
-                    className="text-muted-foreground hover:text-destructive transition-colors"
-                    title="移至回收站"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* 移动端：卡片布局 */}
-                <div className="flex md:hidden flex-1 min-w-0 items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedFiles.has(file.path)}
-                    onChange={() => handleSelectFile(file.path)}
-                    className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary flex-shrink-0"
-                  />
-                  <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-foreground truncate">
-                      {file.name.replace('.md', '')}
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate mt-0.5">
-                      {file.path}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button
-                      onClick={() => handleEdit(file)}
-                      className="p-1.5 text-primary hover:bg-accent rounded transition-colors"
-                      title="编辑"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleSingleDelete(file)}
-                      className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-accent rounded transition-colors"
-                      title="移至回收站"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <FileTable
+            files={paginatedFiles}
+            selectedFiles={selectedFiles}
+            filteredCount={filteredFiles.length}
+            onSelectAll={handleSelectAll}
+            onSelectFile={handleSelectFile}
+            onRowClick={handleEdit}
+            rowIcon={<FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
+            nameColumnWidth="w-[40%]"
+            pathColumnWidth="w-[40%]"
+            renderDesktopActions={(file) => (
+              <>
+                <button
+                  onClick={() => handleEdit(file)}
+                  className="text-sm text-primary hover:underline cursor-pointer"
+                >
+                  编辑
+                </button>
+                <button
+                  onClick={() => handleSingleDelete(file)}
+                  className="text-muted-foreground hover:text-destructive transition-colors"
+                  title="移至回收站"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>
+            )}
+            renderMobileActions={(file) => (
+              <>
+                <button
+                  onClick={() => handleEdit(file)}
+                  className="p-1.5 text-primary hover:bg-accent rounded transition-colors"
+                  title="编辑"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleSingleDelete(file)}
+                  className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-accent rounded transition-colors"
+                  title="移至回收站"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>
+            )}
+          />
         ) : (
           <EmptyState
             icon={<FileText className="w-12 h-12" />}

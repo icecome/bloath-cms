@@ -1,0 +1,23 @@
+{
+  "root": {
+    "nodeId": "gen-project-shell",
+    "kind": "project-shell",
+    "pageIds": ["page-dashboard", "page-content-list", "page-editor", "page-new-content", "page-media", "page-settings"],
+    "output": "partials/project-shell.html",
+    "sharedRegions": ["sidebar", "top-bar", "brand-logo", "nav-menu", "repo-selector", "branch-selector"],
+    "privateRegions": [],
+    "mutableSlots": ["activeNavItem", "pageTitle", "pageContent"],
+    "status": "generated",
+    "children": [
+      {"nodeId": "page-dashboard", "kind": "page-leaf", "pageIds": ["page-dashboard"], "output": "pages/dashboard.html", "sharedRegions": ["sidebar", "top-bar"], "privateRegions": ["stats-grid", "quick-actions", "recent-posts"], "mutableSlots": ["activeNavItem=dashboard", "pageTitle=仪表盘"], "status": "planned", "children": []},
+      {"nodeId": "page-content-list", "kind": "page-leaf", "pageIds": ["page-content-list"], "output": "pages/content-list.html", "sharedRegions": ["sidebar", "top-bar"], "privateRegions": ["content-table", "search-bar", "filter-bar"], "mutableSlots": ["activeNavItem=content", "pageTitle=内容库"], "status": "planned", "children": []},
+      {"nodeId": "page-editor", "kind": "page-leaf", "pageIds": ["page-editor"], "output": "pages/editor.html", "sharedRegions": ["sidebar", "top-bar"], "privateRegions": ["editor-toolbar", "editor-content", "frontmatter-form", "preview-panel"], "mutableSlots": ["activeNavItem=content", "pageTitle=编辑器"], "status": "planned", "children": []},
+      {"nodeId": "page-new-content", "kind": "page-leaf", "pageIds": ["page-new-content"], "output": "pages/new-content.html", "sharedRegions": ["sidebar", "top-bar"], "privateRegions": ["title-input", "editor-content", "frontmatter-form"], "mutableSlots": ["activeNavItem=content", "pageTitle=新建文章"], "status": "planned", "children": []},
+      {"nodeId": "page-media", "kind": "page-leaf", "pageIds": ["page-media"], "output": "pages/media.html", "sharedRegions": ["sidebar", "top-bar"], "privateRegions": ["media-grid", "upload-area", "media-toolbar"], "mutableSlots": ["activeNavItem=media", "pageTitle=媒体库"], "status": "planned", "children": []},
+      {"nodeId": "page-settings", "kind": "page-leaf", "pageIds": ["page-settings"], "output": "pages/settings.html", "sharedRegions": ["sidebar", "top-bar"], "privateRegions": ["settings-form", "repo-config", "collection-list"], "mutableSlots": ["activeNavItem=settings", "pageTitle=设置"], "status": "planned", "children": []}
+    ]
+  },
+  "standalone": [
+    {"nodeId": "page-login", "kind": "page-leaf", "pageIds": ["page-login"], "output": "pages/login.html", "sharedRegions": [], "privateRegions": ["login-card", "oauth-button", "brand-logo"], "mutableSlots": [], "status": "planned", "children": []}
+  ]
+}

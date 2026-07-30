@@ -1,7 +1,7 @@
 // Cloudflare Workers 后端 - GitHub API 封装
 // 用于在 Cloudflare Workers 中运行
 
-import type { FileInfo } from '../../shared/types';
+import type { FileInfo, Repo, User } from '../../shared/types';
 
 export interface Env {
   GITHUB_CLIENT_ID: string;
@@ -19,6 +19,28 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+// 统一 GitHub API 错误处理：解析响应体并抛出 ApiError
+async function throwGithubError(response: Response, context: string): Promise<never> {
+  let message = `${context}: ${response.status}`;
+  try {
+    const body = await response.json() as { message?: string };
+    if (body.message) message = `${context}: ${body.message}`;
+  } catch {
+    // 响应体非 JSON，仅使用状态码
+  }
+  throw new ApiError(message, response.status);
+}
+
+// UTF-8 字符串转 base64（替代已废弃的 unescape/encodeURIComponent 组合）
+function utf8ToBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 // 交换 code 获取 access_token
@@ -48,12 +70,11 @@ export async function exchangeCode(code: string, clientSecret: string, clientId:
     throw new Error('GitHub returned empty access_token');
   }
 
-  const tokenData = data as { access_token?: string };
-  return tokenData.access_token!;
+  return data.access_token;
 }
 
 // 获取用户信息
-export async function getUserInfo(token: string): Promise<UserInfo> {
+export async function getUserInfo(token: string): Promise<User> {
   if (!token) {
     throw new Error('Empty access token');
   }
@@ -65,52 +86,62 @@ export async function getUserInfo(token: string): Promise<UserInfo> {
   });
 
   if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.status}`);
+    await throwGithubError(response, 'Failed to get user info');
   }
 
-  return response.json() as Promise<UserInfo>;
+  return response.json() as Promise<User>;
 }
 
-// 获取用户邮箱
-export async function getUserEmail(token: string): Promise<string | null> {
-  const response = await fetch('https://api.github.com/user/emails', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'User-Agent': 'Bloath-CMS'
-    }
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const emails = await response.json() as any[];
-  const primaryEmail = emails.find((e: any) => e.primary === true);
-  return primaryEmail?.email || null;
+// GitHub API 返回的仓库原始结构
+interface GHRepoResponse {
+  name: string;
+  full_name: string;
+  owner: { login: string };
+  private: boolean;
+  html_url: string;
+  default_branch: string;
 }
 
-// 获取用户仓库列表
+// 从 Link header 中解析下一页 URL
+function parseNextPageUrl(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+  return match ? match[1] : null;
+}
+
+// 获取用户仓库列表（自动分页，最多 5 页 = 500 仓库）
 export async function getUserRepos(token: string): Promise<Repo[]> {
-  const response = await fetch('https://api.github.com/user/repos?per_page=100', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'User-Agent': 'Bloath-CMS'
-    }
-  });
+  const MAX_PAGES = 5;
+  const allRepos: Repo[] = [];
+  let url: string | null = 'https://api.github.com/user/repos?per_page=100';
 
-  if (!response.ok) {
-    throw new Error('GitHub API error');
+  for (let page = 0; page < MAX_PAGES && url; page++) {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'User-Agent': 'Bloath-CMS'
+      }
+    });
+
+    if (!response.ok) {
+      await throwGithubError(response, 'Failed to get user repos');
+    }
+
+    const repos = await response.json() as GHRepoResponse[];
+    allRepos.push(...repos.map(r => ({
+      name: r.name,
+      full_name: r.full_name,
+      owner: r.owner?.login ?? '',
+      repo: r.name,
+      private: r.private,
+      html_url: r.html_url,
+      default_branch: r.default_branch
+    })));
+
+    url = parseNextPageUrl(response.headers.get('Link'));
   }
 
-  return (await response.json() as any[]).map(r => ({
-    name: r.name,
-    full_name: r.full_name,
-    owner: r.owner?.login ?? '',
-    repo: r.name,
-    private: r.private,
-    html_url: r.html_url,
-    default_branch: r.default_branch
-  }));
+  return allRepos;
 }
 
 // 读取文件内容
@@ -133,7 +164,8 @@ export async function readFile(
   );
 
   if (!response.ok) {
-    throw new ApiError(response.status === 404 ? 'File not found' : `GitHub API error: ${response.status}`, response.status);
+    if (response.status === 404) throw new ApiError('File not found', 404);
+    await throwGithubError(response, 'Failed to read file');
   }
 
   const data = await response.json() as { content: string; sha: string };
@@ -165,9 +197,15 @@ export async function writeFile(
   isBase64 = false
 ): Promise<void> {
   // 如果内容已经是 base64 编码（如图片），直接使用；否则进行编码
-  const base64Content = isBase64 ? content : btoa(unescape(encodeURIComponent(content)));
+  const base64Content = isBase64 ? content : utf8ToBase64(content);
 
-  const payload: any = {
+  const payload: {
+    message: string;
+    content: string;
+    branch: string;
+    sha?: string;
+    author?: { name: string; email: string };
+  } = {
     message,
     content: base64Content,
     branch
@@ -182,7 +220,7 @@ export async function writeFile(
   }
 
   const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+    `https://api.github.com/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
     {
       method: 'PUT',
       headers: {
@@ -195,7 +233,7 @@ export async function writeFile(
   );
 
   if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.status}`);
+    await throwGithubError(response, 'Failed to write file');
   }
 }
 
@@ -210,7 +248,12 @@ export async function deleteFile(
   branch: string = 'main',
   author?: { name: string; email: string }
 ): Promise<void> {
-  const payload: any = {
+  const payload: {
+    message: string;
+    sha: string;
+    branch?: string;
+    author?: { name: string; email: string };
+  } = {
     message,
     sha
   };
@@ -220,7 +263,7 @@ export async function deleteFile(
   }
 
   const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+    `https://api.github.com/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
     {
       method: 'DELETE',
       headers: {
@@ -233,7 +276,7 @@ export async function deleteFile(
   );
 
   if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.status}`);
+    await throwGithubError(response, 'Failed to delete file');
   }
 }
 
@@ -258,11 +301,11 @@ export async function listDir(
   });
 
   if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.status}`);
+    await throwGithubError(response, 'Failed to list directory');
   }
 
-  const data = await response.json() as any[];
-  return data.map((item: any) => ({
+  const data = await response.json() as Array<{ name: string; path: string; sha: string; type: 'file' | 'dir'; size?: number }>;
+  return data.map((item) => ({
     name: item.name,
     path: item.path,
     sha: item.sha,
@@ -271,58 +314,94 @@ export async function listDir(
   }));
 }
 
-// 获取仓库分支列表
+// 获取仓库分支列表（自动分页，最多 5 页 = 500 分支）
 export async function getRepoBranches(
   token: string,
   owner: string,
   repo: string
 ): Promise<string[]> {
-  const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/branches?per_page=100`,
-    {
+  const MAX_PAGES = 5;
+  const allBranches: string[] = [];
+  let url: string | null = `https://api.github.com/repos/${owner}/${repo}/branches?per_page=100`;
+
+  for (let page = 0; page < MAX_PAGES && url; page++) {
+    const response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`,
         'User-Agent': 'Bloath-CMS'
       }
-    }
-  );
+    });
 
-  if (!response.ok) {
-    // 如果获取失败，返回默认分支
-    return ['main'];
+    if (!response.ok) {
+      console.error(`[getRepoBranches] Failed to fetch branches: ${response.status}`);
+      return ['main'];
+    }
+
+    const data = await response.json() as Array<{ name: string }>;
+    allBranches.push(...data.map((branch) => branch.name));
+
+    url = parseNextPageUrl(response.headers.get('Link'));
   }
 
-  const data = await response.json() as any[];
-  return data.map((branch: any) => branch.name);
+  return allBranches;
+}
+
+// Git ref 名称合法字符校验（字母、数字、/、-、_、.）
+function isValidGitRefName(name: string): boolean {
+  if (!name || name.length > 200) return false;
+  // 禁止以 . 或 / 开头，禁止连续点，禁止以 .lock 结尾
+  if (/^[./]/.test(name) || /\.\./.test(name) || /\.lock$/.test(name)) return false;
+  return /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(name);
+}
+
+// 创建分支（基于源分支最新 commit）
+export async function createBranch(
+  token: string,
+  owner: string,
+  repo: string,
+  branchName: string,
+  sourceBranch: string = 'main'
+): Promise<void> {
+  if (!isValidGitRefName(branchName)) {
+    throw new ApiError('分支名包含非法字符', 400);
+  }
+
+  // 获取源分支最新 commit SHA
+  const refResponse = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(sourceBranch)}`,
+    { headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'Bloath-CMS' } }
+  );
+  if (!refResponse.ok) {
+    await throwGithubError(refResponse, 'Failed to get source branch ref');
+  }
+  const refData = await refResponse.json() as { object: { sha: string } };
+  const sha = refData.object.sha;
+
+  // 创建新分支引用
+  const createResponse = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/refs`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'User-Agent': 'Bloath-CMS',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha })
+    }
+  );
+  if (!createResponse.ok) {
+    if (createResponse.status === 422) {
+      throw new ApiError(`分支 ${branchName} 已存在`, 422);
+    }
+    await throwGithubError(createResponse, 'Failed to create branch');
+  }
 }
 
 // ============================================
-// 废弃：以下函数已废弃，排序逻辑已迁移至前端
-// 保留作为向后兼容的降级兜底，将在下一版本移除
-// ============================================
-
-// 从文件名提取时间戳（支持 8 位日期和 14 位时间戳）
-// 【已废弃】不再使用 Commits API，仅保留作为降级兜底
-function extractTimestampFromFilename(name: string): number {
-  const match = name.match(/^(\d{8})(\d{6})?/);
-  if (!match) return 0;
-  const dateStr = match[2] ? `${match[1]}${match[2]}` : `${match[1]}000000`;
-  const ts = new Date(
-    `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}T${dateStr.slice(8,10)}:${dateStr.slice(10,12)}:${dateStr.slice(12,14)}`
-  ).getTime();
-  return isNaN(ts) ? 0 : ts;
-}
-
-// 【已废弃】不再调用 Commits API 获取文件最后修改时间
+// getTree() 中的 Commits API 调用已移除
 // 排序逻辑已迁移至前端 extractFrontMatter.ts
-// async function getFileLastModified(...) { ... }
-// 保留注释代码以备后续清理参考
-
-// ============================================
-// 废弃：getTree() 中的 Commits API 调用已移除
-// 排序逻辑已迁移至前端 extractFrontMatter.ts
-// 此函数现在只返回文件列表，lastModified 均为 0
-// 前端会通过 extractFrontMatters() 并发提取 Front Matter 进行排序
+// 此函数只返回文件列表，lastModified 均为 0
 // ============================================
 export async function getTree(
   token: string,
@@ -342,13 +421,13 @@ export async function getTree(
   );
 
   if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.status}`);
+    await throwGithubError(response, 'Failed to get tree');
   }
 
-  const data = await response.json() as { tree: any[] };
+  const data = await response.json() as { tree: Array<{ path: string; sha: string; type: string; size?: number }> };
   return data.tree
-    .filter((item: any) => item.type === 'blob')
-    .map((item: any) => {
+    .filter((item) => item.type === 'blob')
+    .map((item) => {
       const name = item.path.split('/').pop() || item.path;
       return {
         name,
@@ -356,27 +435,7 @@ export async function getTree(
         sha: item.sha,
         type: 'file' as const,
         size: item.size,
-        lastModified: 0 // 【已废弃】不再通过 Commits API 获取，由前端提取 Front Matter
+        lastModified: 0
       };
     });
 }
-
-// 获取用户信息
-export interface UserInfo {
-  login: string;
-  avatar_url: string;
-  name?: string;
-  email?: string;
-}
-
-// 仓库信息
-export interface Repo {
-  name: string;
-  full_name: string;
-  owner: string;
-  private: boolean;
-  html_url: string;
-  default_branch: string;
-}
-
-// 获取用户信息

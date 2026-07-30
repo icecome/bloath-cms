@@ -13,6 +13,11 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
   const vditorRef = useRef<Vditor | null>(null);
   const contentRef = useRef(initialContent);
   contentRef.current = initialContent;
+  // 使用 ref 持有最新回调，避免 Vditor 初始化时绑定的闭包捕获过期引用
+  const onInputRef = useRef(onInput);
+  onInputRef.current = onInput;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
   const initializeVditor = useCallback(() => {
     if (!editorRef.current || vditorRef.current) return;
@@ -36,17 +41,17 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
           if (content) {
             instance.setValue(content);
           }
-          onReady?.(instance);
+          onReadyRef.current?.(instance);
         },
         input: (val: string) => {
-          onInput?.(val);
+          onInputRef.current?.(val);
         }
       });
       vditorRef.current = instance;
     } catch (err) {
       console.error('Vditor 初始化失败:', err);
     }
-  }, [onInput, onReady]);
+  }, []);
 
   useEffect(() => {
     return () => {

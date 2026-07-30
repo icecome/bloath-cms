@@ -1,17 +1,19 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile, deleteFile } from '../lib/api';
 import { scanMdFiles } from '../hooks/useFileList';
+import { useFileListPage } from '../hooks/useFileListPage';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
-import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
-import { sortByFrontMatterDate } from '../lib/sortFiles';
+import { clearCache } from '../lib/fileCache';
+import { filterValidDirs } from '../lib/path';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
 import Pagination from '../components/ui/Pagination';
 import DirectorySelectorDropdown from '../components/ui/DirectorySelectorDropdown';
+import FileTable from '../components/FileTable';
 import { PAGE_SIZE } from '../lib/constants';
 import { FileText, Search, Trash2, RotateCcw, X } from 'lucide-react';
 
@@ -20,90 +22,45 @@ export default function TrashPage() {
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const trashPath = config.trashPath || '.trash';
-  const [files, setFiles] = useState<EnhancedFileItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+
+  const {
+    files,
+    setFiles,
+    loading,
+    searchQuery,
+    setSearchQuery,
+    currentPage,
+    setCurrentPage,
+    filteredFiles,
+    paginatedFiles,
+    totalPages,
+    selectedFiles,
+    setSelectedFiles,
+    handleSelectAll,
+    handleSelectFile,
+  } = useFileListPage({
+    basePath: trashPath,
+    selectedRepo,
+    user,
+    onError: (err) => {
+      // .trash 目录不存在是正常情况（首次使用）
+      if (err.message.includes('404')) {
+        console.info(`回收站目录 ${trashPath} 尚未创建`);
+      } else {
+        console.error(`扫描路径 ${trashPath} 失败:`, err);
+      }
+    },
+  });
+
   const [restoreTarget, setRestoreTarget] = useState('');
   const [showRestoreDropdown, setShowRestoreDropdown] = useState(false);
   const [showFileRestoreDropdown, setShowFileRestoreDropdown] = useState('');
   const [permanentDeleteConfirm, setPermanentDeleteConfirm] = useState(false);
+  const [singleDeleteFile, setSingleDeleteFile] = useState<EnhancedFileItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  const availableDirs = config.paths || [];
-
-  useEffect(() => {
-    if (!selectedRepo || !user) {
-      setFiles([]);
-      setCurrentPage(1);
-      return;
-    }
-
-    // 先尝试从缓存加载
-    const cached = getCachedFiles(selectedRepo, trashPath);
-    if (cached) {
-      setFiles(cached);
-    } else {
-      setLoading(true);
-    }
-
-    // 后台刷新
-    scanMdFiles(selectedRepo, trashPath)
-      .then(files => {
-        sortByFrontMatterDate(files);
-        setCachedFiles(selectedRepo, trashPath, files);
-        setFiles(files);
-      })
-      .catch((err: Error) => {
-        // .trash 目录不存在是正常情况（首次使用）
-        if (err.message.includes('404')) {
-          console.info(`回收站目录 ${trashPath} 尚未创建`);
-          if (!cached) setFiles([]);
-        } else {
-          console.error(`扫描路径 ${trashPath} 失败:`, err);
-          if (!cached) setFiles([]);
-        }
-      })
-      .finally(() => setLoading(false));
-  }, [selectedRepo, user, trashPath]);
-
-  const filteredFiles = useMemo(() =>
-    files.filter((f) =>
-      f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      f.path.toLowerCase().includes(searchQuery.toLowerCase())
-    ),
-    [files, searchQuery]
-  );
-
-  const totalPages = Math.ceil(filteredFiles.length / PAGE_SIZE);
-  const paginatedFiles = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredFiles.slice(start, start + PAGE_SIZE);
-  }, [filteredFiles, currentPage]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery]);
-
-  const handleSelectAll = () => {
-    if (selectedFiles.size === filteredFiles.length) {
-      setSelectedFiles(new Set());
-    } else {
-      setSelectedFiles(new Set(filteredFiles.map((f) => f.path)));
-    }
-  };
-
-  const handleSelectFile = (path: string) => {
-    const newSelected = new Set(selectedFiles);
-    if (newSelected.has(path)) {
-      newSelected.delete(path);
-    } else {
-      newSelected.add(path);
-    }
-    setSelectedFiles(newSelected);
-  };
+  const availableDirs = filterValidDirs(config.paths || []);
 
   const handleRestore = async (file: EnhancedFileItem, targetDir: string) => {
     if (!selectedRepo || !user || !targetDir.trim()) return;
@@ -262,6 +219,38 @@ export default function TrashPage() {
         </div>
       )}
 
+      {/* 单个文件永久删除确认弹窗 */}
+      {singleDeleteFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-destructive">
+            <p className="text-sm text-foreground mb-4">
+              确定要永久删除 {singleDeleteFile.name} 吗？<br />
+              <span className="text-destructive">此操作不可恢复。</span>
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setSingleDeleteFile(null)}
+                disabled={actionLoading}
+                className="px-3 py-1.5 text-sm border border-border text-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
+              >
+                取消
+              </button>
+              <button
+                onClick={async () => {
+                  const file = singleDeleteFile;
+                  setSingleDeleteFile(null);
+                  await handlePermanentDelete(file);
+                }}
+                disabled={actionLoading}
+                className="px-3 py-1.5 text-sm text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
+              >
+                {actionLoading ? '删除中...' : '永久删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 搜索栏 + 操作工具栏 */}
       {selectedRepo && (
         <div className="px-4 md:px-8 py-4 border-b border-border-subtle">
@@ -341,163 +330,115 @@ export default function TrashPage() {
         ) : loading ? (
           <LoadingState />
         ) : filteredFiles.length > 0 ? (
-          <div>
-            {/* 桌面端表头 */}
-            <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-muted-foreground bg-accent border-b border-border">
-              <div className="w-8 flex items-center justify-center">
-                <input
-                  type="checkbox"
-                  checked={selectedFiles.size === filteredFiles.length && filteredFiles.length > 0}
-                  onChange={handleSelectAll}
-                  className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
-                />
-              </div>
-              <div className="w-[50%]">文件名</div>
-              <div className="w-[30%]">路径</div>
-              <div className="w-[20%] text-right">操作</div>
-            </div>
-
-            {/* 列表 */}
-            {paginatedFiles.map((file) => (
-              <div
-                key={file.path}
-                className={`flex items-center px-4 py-3.5 border-b border-border-subtle transition-colors hover:bg-accent ${
-                  selectedFiles.has(file.path) ? 'bg-accent' : ''
-                }`}
-              >
-                {/* 桌面端：表格行 */}
-                <div className="hidden md:flex items-center w-8 justify-center" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedFiles.has(file.path)}
-                    onChange={() => handleSelectFile(file.path)}
-                    className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
-                  />
-                </div>
-                <div className="hidden md:flex items-center w-[50%] gap-2.5 px-3">
-                  <Trash2 className="w-4 h-4 text-destructive flex-shrink-0" />
-                  <span className="text-sm text-foreground truncate">{file.name.replace('.md', '')}</span>
-                </div>
-                <div className="hidden md:block w-[30%] px-3">
-                  <span className="text-sm text-muted-foreground truncate block">{file.path}</span>
-                </div>
-                <div className="hidden md:flex w-[20%] items-center justify-end gap-2 px-3">
-                  <div className="relative inline-block">
-                    <button
-                      onClick={() => {
-                        if (showFileRestoreDropdown === file.path) {
-                          setShowFileRestoreDropdown('');
-                        } else {
-                          setShowFileRestoreDropdown(file.path);
-                        }
-                      }}
-                      className="text-sm text-primary hover:underline cursor-pointer"
-                      title="恢复到指定目录"
-                    >
-                      恢复
-                    </button>
-                    {showFileRestoreDropdown === file.path && (
-                      <div
-                        className="absolute right-0 top-full mt-1 bg-card border border-border z-50 max-h-[200px] overflow-y-auto p-2"
-                        style={{ maxWidth: 'calc(100vw - 320px)' }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {availableDirs.length === 0 ? (
-                          <p className="text-xs text-muted-foreground px-2 py-1">暂无可用目录</p>
-                        ) : (
-                          availableDirs.map((dir) => (
-                            <button
-                              key={dir}
-                              onClick={() => {
-                                handleRestore(file, dir);
-                                setShowFileRestoreDropdown('');
-                              }}
-                              className="w-full text-left text-sm px-2.5 py-1.5 hover:bg-accent transition-colors text-foreground truncate"
-                            >
-                              {dir}
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
+          <FileTable
+            files={paginatedFiles}
+            selectedFiles={selectedFiles}
+            filteredCount={filteredFiles.length}
+            onSelectAll={handleSelectAll}
+            onSelectFile={handleSelectFile}
+            rowIcon={<Trash2 className="w-4 h-4 text-destructive flex-shrink-0" />}
+            nameColumnWidth="w-[50%]"
+            pathColumnWidth="w-[30%]"
+            renderDesktopActions={(file) => (
+              <>
+                <div className="relative inline-block">
                   <button
-                    onClick={() => handlePermanentDelete(file)}
-                    disabled={actionLoading}
-                    className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
-                    title="永久删除"
+                    onClick={() => {
+                      if (showFileRestoreDropdown === file.path) {
+                        setShowFileRestoreDropdown('');
+                      } else {
+                        setShowFileRestoreDropdown(file.path);
+                      }
+                    }}
+                    className="text-sm text-primary hover:underline cursor-pointer"
+                    title="恢复到指定目录"
                   >
-                    <X className="w-4 h-4" />
+                    恢复
                   </button>
-                </div>
-
-                {/* 移动端：卡片布局 */}
-                <div className="flex md:hidden flex-1 min-w-0 items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedFiles.has(file.path)}
-                    onChange={() => handleSelectFile(file.path)}
-                    className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary flex-shrink-0"
-                  />
-                  <Trash2 className="w-4 h-4 text-destructive flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-foreground truncate">
-                      {file.name.replace('.md', '')}
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate mt-0.5">
-                      {file.path}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <div className="relative inline-block">
-                      <button
-                        onClick={() => {
-                          if (showFileRestoreDropdown === file.path) {
-                            setShowFileRestoreDropdown('');
-                          } else {
-                            setShowFileRestoreDropdown(file.path);
-                          }
-                        }}
-                        className="p-1.5 text-primary hover:bg-accent rounded transition-colors"
-                        title="恢复"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                      </button>
-                      {showFileRestoreDropdown === file.path && (
-                        <div
-                          className="absolute right-0 top-full mt-1 bg-card border border-border z-50 max-h-[200px] overflow-y-auto p-2 w-48"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {availableDirs.length === 0 ? (
-                            <p className="text-xs text-muted-foreground px-2 py-1">暂无可用目录</p>
-                          ) : (
-                            availableDirs.map((dir) => (
-                              <button
-                                key={dir}
-                                onClick={() => {
-                                  handleRestore(file, dir);
-                                  setShowFileRestoreDropdown('');
-                                }}
-                                className="w-full text-left text-sm px-2.5 py-1.5 hover:bg-accent transition-colors text-foreground truncate"
-                              >
-                                {dir}
-                              </button>
-                            ))
-                          )}
-                        </div>
+                  {showFileRestoreDropdown === file.path && (
+                    <div
+                      className="absolute right-0 top-full mt-1 bg-card border border-border z-50 max-h-[200px] overflow-y-auto p-2"
+                      style={{ maxWidth: 'calc(100vw - 320px)' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {availableDirs.length === 0 ? (
+                        <p className="text-xs text-muted-foreground px-2 py-1">暂无可用目录</p>
+                      ) : (
+                        availableDirs.map((dir) => (
+                          <button
+                            key={dir}
+                            onClick={() => {
+                              handleRestore(file, dir);
+                              setShowFileRestoreDropdown('');
+                            }}
+                            className="w-full text-left text-sm px-2.5 py-1.5 hover:bg-accent transition-colors text-foreground truncate"
+                          >
+                            {dir}
+                          </button>
+                        ))
                       )}
                     </div>
-                    <button
-                      onClick={() => handlePermanentDelete(file)}
-                      disabled={actionLoading}
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
+                  )}
                 </div>
-              </div>
-            ))}
-          </div>
+                <button
+                  onClick={() => setSingleDeleteFile(file)}
+                  disabled={actionLoading}
+                  className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+                  title="永久删除"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </>
+            )}
+            renderMobileActions={(file) => (
+              <>
+                <div className="relative inline-block">
+                  <button
+                    onClick={() => {
+                      if (showFileRestoreDropdown === file.path) {
+                        setShowFileRestoreDropdown('');
+                      } else {
+                        setShowFileRestoreDropdown(file.path);
+                      }
+                    }}
+                    className="p-1.5 text-primary hover:bg-accent rounded transition-colors"
+                    title="恢复"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                  {showFileRestoreDropdown === file.path && (
+                    <div
+                      className="absolute right-0 top-full mt-1 bg-card border border-border z-50 max-h-[200px] overflow-y-auto p-2 w-48"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {availableDirs.length === 0 ? (
+                        <p className="text-xs text-muted-foreground px-2 py-1">暂无可用目录</p>
+                      ) : (
+                        availableDirs.map((dir) => (
+                          <button
+                            key={dir}
+                            onClick={() => {
+                              handleRestore(file, dir);
+                              setShowFileRestoreDropdown('');
+                            }}
+                            className="w-full text-left text-sm px-2.5 py-1.5 hover:bg-accent transition-colors text-foreground truncate"
+                          >
+                            {dir}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSingleDeleteFile(file)}
+                  disabled={actionLoading}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </>
+            )}
+          />
         ) : (
           <EmptyState
             icon={<FileText className="w-12 h-12" />}

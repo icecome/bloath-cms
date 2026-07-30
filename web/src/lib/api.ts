@@ -1,4 +1,5 @@
-import type { Repo } from '../../../shared/types';
+import type { Repo, RepoInfo } from '../../../shared/types';
+import { API_BASE } from './constants';
 
 export interface ContentItem {
   name: string;
@@ -12,14 +13,6 @@ export interface ContentItem {
     tags?: string[];
   };
 }
-
-export interface RepoInfo {
-  owner: string;
-  repo: string;
-  branch?: string;
-}
-
-import { API_BASE } from './constants';
 
 const API_TIMEOUT_MS = 10000;
 
@@ -142,22 +135,30 @@ export async function readFile(params: RepoInfo & { path: string }, timeoutMs?: 
 export async function writeFile(
   params: RepoInfo & { path: string; content: string; message?: string; branch?: string; sha?: string; userName?: string }
 ): Promise<WriteResult> {
-  return apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      owner: params.owner,
-      repo: params.repo,
-      path: params.path,
-      content: params.content,
-      message: params.message || formatTimestamp(),
-      branch: params.branch || 'main',
-      sha: params.sha,
-      userName: params.userName
-    })
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    return await apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        owner: params.owner,
+        repo: params.repo,
+        path: params.path,
+        content: params.content,
+        message: params.message || formatTimestamp(),
+        branch: params.branch || 'main',
+        sha: params.sha,
+        userName: params.userName
+      }),
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function deleteFile(
@@ -224,7 +225,8 @@ export async function moveFile(
       userName: params.userName
     });
   } catch (err) {
-    console.warn(`移动文件后删除源文件失败: ${params.fromPath}`, err);
+    // 写入成功但删除失败：向上传播错误，让调用者提示用户手动清理
+    throw new Error(`文件已写入 ${params.toPath}，但删除源文件 ${params.fromPath} 失败，仓库可能存在重复文件。原因: ${err instanceof Error ? err.message : '未知错误'}`);
   }
 }
 
@@ -257,10 +259,11 @@ export async function renameFile(
         userName: params.userName
       });
     } else {
-      console.warn(`renameFile: sha 为空，跳过删除旧文件 ${params.oldPath}`);
+      throw new Error('缺少 sha，无法删除旧文件');
     }
   } catch (err) {
-    console.warn(`重命名后删除旧文件失败: ${params.oldPath}`, err);
+    // 写入成功但删除失败：向上传播错误，让调用者提示用户手动清理
+    throw new Error(`文件已写入 ${params.newPath}，但删除旧文件 ${params.oldPath} 失败，仓库可能存在重复文件。原因: ${err instanceof Error ? err.message : '未知错误'}`);
   }
 }
 
@@ -270,6 +273,30 @@ export async function getBranches(
 ): Promise<string[]> {
   const searchParams = new URLSearchParams({ owner, repo });
   return apiFetch<string[]>(`${API_BASE}/api/repos/branches?${searchParams}`);
+}
+
+/**
+ * 创建分支（基于源分支最新 commit）
+ */
+export async function createBranch(params: {
+  owner: string;
+  repo: string;
+  branchName: string;
+  sourceBranch?: string;
+}): Promise<void> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    await apiFetch<void>(`${API_BASE}/api/repos/branch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+      signal: controller.signal
+    }, true);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -294,22 +321,30 @@ export async function getTree(params: RepoInfo & { mode?: 'commits' | 'filename'
 export async function uploadImage(
   params: RepoInfo & { path: string; base64Content: string; message?: string; branch?: string; userName?: string; sha?: string }
 ): Promise<WriteResult> {
-  return apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      owner: params.owner,
-      repo: params.repo,
-      path: params.path,
-      base64Content: params.base64Content,
-      message: params.message || formatTimestamp(),
-      branch: params.branch || 'main',
-      userName: params.userName,
-      sha: params.sha
-    })
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    return await apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        owner: params.owner,
+        repo: params.repo,
+        path: params.path,
+        base64Content: params.base64Content,
+        message: params.message || formatTimestamp(),
+        branch: params.branch || 'main',
+        userName: params.userName,
+        sha: params.sha
+      }),
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function logout(): Promise<void> {

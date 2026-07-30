@@ -1,0 +1,115 @@
+{
+  "success": true,
+  "outcome": "passed",
+  "repairable": true,
+  "terminalViolations": [],
+  "terminalBlockingSummary": null,
+  "skillProvenance": {
+    "name": "solo-design",
+    "version": "2026.07.06.8",
+    "version_source": "skill-release-manifest.json",
+    "runtime_skill_dir": null,
+    "recorded_at": null,
+    "expected_version": "2026.07.22.00.00.00",
+    "status": "mismatch",
+    "read_status": "ok"
+  },
+  "operatingMode": "free-explore",
+  "renderBlockingErrorCount": 0,
+  "softWarningCount": 8,
+  "renderBlockingErrors": [],
+  "errorSignatures": [],
+  "softWarnings": [
+    "[html-head-style] new-content.html: found 1 custom <style> block(s) in <head>. The <head> is owned by apply-html-head-contract.mjs; move custom styles before </body> or re-run apply-html-head-contract.mjs <css-path> <html-file> --replace-head to relocate them.",
+    "[repair-ledger] validationRepairLedger[0].repairActions[0].preEditFileHashes[] is missing (legacy optional evidence)",
+    "[repair-ledger] validationRepairLedger[0].repairActions[0].postEditFileHashes[] is missing (legacy optional evidence)",
+    "[repair-ledger] validationRepairLedger[0].repairActions[1].preEditFileHashes[] is missing (legacy optional evidence)",
+    "[repair-ledger] validationRepairLedger[0].repairActions[1].postEditFileHashes[] is missing (legacy optional evidence)",
+    "[repair-ledger] validationRepairLedger[0].revalidationReportPath is missing",
+    "[repair-ledger] validationRepairLedger[0].revalidationReportHash is missing",
+    "[repair-ledger] validationRepairLedger[0].revalidationSuccess should be a boolean"
+  ],
+  "repairPlanHints": [],
+  "repairActionTable": [],
+  "errorCount": 0,
+  "warningCount": 8,
+  "errors": [],
+  "warnings": [
+    "[html-head-style] new-content.html: found 1 custom <style> block(s) in <head>. The <head> is owned by apply-html-head-contract.mjs; move custom styles before </body> or re-run apply-html-head-contract.mjs <css-path> <html-file> --replace-head to relocate them.",
+    "[repair-ledger] validationRepairLedger[0].repairActions[0].preEditFileHashes[] is missing (legacy optional evidence)",
+    "[repair-ledger] validationRepairLedger[0].repairActions[0].postEditFileHashes[] is missing (legacy optional evidence)",
+    "[repair-ledger] validationRepairLedger[0].repairActions[1].preEditFileHashes[] is missing (legacy optional evidence)",
+    "[repair-ledger] validationRepairLedger[0].repairActions[1].postEditFileHashes[] is missing (legacy optional evidence)",
+    "[repair-ledger] validationRepairLedger[0].revalidationReportPath is missing",
+    "[repair-ledger] validationRepairLedger[0].revalidationReportHash is missing",
+    "[repair-ledger] validationRepairLedger[0].revalidationSuccess should be a boolean"
+  ],
+  "validationRunDisciplineStatus": {
+    "declared": true,
+    "restoreMode": false,
+    "maxFullValidationRuns": 2,
+    "validationHistoryCount": 1,
+    "repairLedgerCount": 1,
+    "softWarningsTriggerRepair": false,
+    "terminalState": null,
+    "nextAction": null,
+    "violations": [],
+    "success": true
+  },
+  "terminalState": null,
+  "nextCheck": {
+    "type": "finish-readiness",
+    "command": "node \"c:\\Users\\bing\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs\" \"c:\\opt\\workstations\\project\\Bloath\\.design\" --check=all",
+    "fullValidationAllowed": false,
+    "reason": "workspace validation passed; run complete finish readiness before final delivery"
+  },
+  "repairBatch": [],
+  "repairContextPacket": {
+    "schema_version": "1.0",
+    "purpose": "small-context repair packet; read this before full validation-report.json",
+    "success": true,
+    "terminalState": null,
+    "skillProvenance": {
+      "name": "solo-design",
+      "version": "2026.07.06.8",
+      "version_source": "skill-release-manifest.json",
+      "runtime_skill_dir": null,
+      "recorded_at": null,
+      "expected_version": "2026.07.22.00.00.00",
+      "status": "mismatch",
+      "read_status": "ok"
+    },
+    "renderBlockingErrorCount": 0,
+    "softWarningCount": 8,
+    "renderBlockingErrors": [],
+    "repairActionTable": [],
+    "nextCheck": {
+      "type": "finish-readiness",
+      "command": "node \"c:\\Users\\bing\\.trae-cn\\builtin\\design\\default\\skills\\solo-design\\shared-runtime\\deterministic-tooling\\validate-finish-readiness.mjs\" \"c:\\opt\\workstations\\project\\Bloath\\.design\" --check=all",
+      "fullValidationAllowed": false,
+      "reason": "workspace validation passed; run complete finish readiness before final delivery"
+    },
+    "forbidden": [
+      "do not read validator source",
+      "do not rerun full validation when nextCheck.fullValidationAllowed=false",
+      "do not start preview/browser unless user explicitly asks",
+      "do not hand-edit repair ledger fields"
+    ]
+  },
+  "projectFileHashes": {
+    "project.design": "6aa807494dbdd67c681b52c14ab12e6c192bd5cfe9e69976089beb568f0fd3f5",
+    "colors_and_type.css": "6e9f3962ebd4be6e316cd41f3ffd43492d1266a66471c7101412f293ab3ce33c",
+    "runtime-orchestration-summary.json": "ce68d33b899a94131eb2a1574b697718fdcf3cbb1078e2cc504b408b7af6cdc2",
+    "pages/content-list.html": "bcfe9063aae834bda1c215b1932eecfc976c9eb7a1f711e257be365d8ef3bf99",
+    "pages/dashboard.html": "57e460d6b44727bb3fdb8057c087c7005209fbc9f65f792973fa40fac525e631",
+    "pages/editor.html": "2d49d66c402e955e1163d172877bf94418155fa662605f630448aff0b4d29978",
+    "pages/login.html": "99c4779cf9b13b58a7b29f06d670022d34c5f755b930e39442a2d3463830ae8c",
+    "pages/media.html": "b4976aa2de27fa73f656d16008563f87d9321067ed6401e9d7f50b6a950c893c",
+    "pages/new-content.html": "f5a0eedc8c14cc430cdb5884c7ce5be07415d20bfa00f54c83758f606e5040f2",
+    "pages/settings.html": "01a35ad05106eae8ab3819a321d1688838210509c17773b2ff480b7f050ebf66"
+  },
+  "designDir": "c:\\opt\\workstations\\project\\Bloath\\.design",
+  "expectedPages": null,
+  "requireInteractions": null,
+  "checkedAt": "2026-07-30T11:03:52.848Z"
+}

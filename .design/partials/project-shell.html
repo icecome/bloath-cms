@@ -1,0 +1,441 @@
+<style>
+  :root {
+    --blth-background: hsl(34, 20%, 97%);
+    --blth-foreground: hsl(0, 0%, 12%);
+    --blth-card: hsl(0, 0%, 100%);
+    --blth-primary: hsl(0, 0%, 12%);
+    --blth-primary-foreground: hsl(0, 0%, 100%);
+    --blth-muted: hsl(34, 10%, 92%);
+    --blth-muted-foreground: hsl(0, 0%, 45%);
+    --blth-border: hsl(34, 10%, 88%);
+    --blth-radius-md: 0.5rem;
+    --blth-radius-lg: 0.75rem;
+    --blth-ring: hsl(0, 0%, 12%);
+  }
+
+  .blth-shell {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--blth-background);
+    color: var(--blth-foreground);
+  }
+
+  .blth-sidebar {
+    width: 260px;
+    height: 100vh;
+    position: fixed;
+    left: 0;
+    top: 0;
+    background: var(--blth-card);
+    border-right: 1px solid var(--blth-border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    z-index: 40;
+  }
+
+  .blth-main {
+    margin-left: 260px;
+    min-height: 100vh;
+  }
+
+  .blth-topbar {
+    height: 56px;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    background: var(--blth-card);
+    border-bottom: 1px solid var(--blth-border);
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+
+  .blth-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 20px 16px;
+  }
+
+  .blth-logo-mark {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--blth-radius-md);
+    background: var(--blth-primary);
+    color: var(--blth-primary-foreground);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .blth-logo-text {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--blth-foreground);
+  }
+
+  .blth-btn-new {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 0 16px 12px;
+    padding: 9px 0;
+    border-radius: var(--blth-radius-md);
+    background: var(--blth-primary);
+    color: var(--blth-primary-foreground);
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: background-color 150ms;
+  }
+
+  .blth-btn-new:hover {
+    background: hsl(0, 0%, 20%);
+  }
+
+  .blth-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 12px 6px;
+    padding: 8px 10px;
+    border-radius: var(--blth-radius-md);
+    font-size: 13px;
+    color: var(--blth-foreground);
+    cursor: pointer;
+    transition: background-color 150ms;
+    border: 1px solid var(--blth-border);
+    background: var(--blth-background);
+  }
+
+  .blth-selector:hover {
+    background: var(--blth-muted);
+  }
+
+  .blth-selector-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .blth-selector svg {
+    flex-shrink: 0;
+  }
+
+  .blth-selector .chevron {
+    margin-left: auto;
+  }
+
+  .blth-divider {
+    height: 1px;
+    background: var(--blth-border);
+    margin: 10px 16px;
+  }
+
+  .blth-nav-section {
+    padding: 0 8px;
+    flex: 1;
+  }
+
+  .blth-nav-heading {
+    padding: 8px 12px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--blth-muted-foreground);
+  }
+
+  .blth-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    margin: 1px 0;
+    border-radius: var(--blth-radius-md);
+    font-size: 14px;
+    color: var(--blth-foreground);
+    cursor: pointer;
+    transition: background-color 150ms, color 150ms;
+    text-decoration: none;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+  }
+
+  .blth-nav-item:hover {
+    background: var(--blth-muted);
+  }
+
+  .blth-nav-item[data-active="true"] {
+    background: var(--blth-muted);
+    font-weight: 600;
+  }
+
+  .blth-nav-item svg {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+  }
+
+  .blth-nav-item .nav-label {
+    flex: 1;
+  }
+
+  .blth-nav-item .nav-badge {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 9999px;
+    background: var(--blth-muted);
+    color: var(--blth-muted-foreground);
+    font-weight: 500;
+  }
+
+  .blth-user-area {
+    padding: 12px 8px;
+    border-top: 1px solid var(--blth-border);
+    margin-top: auto;
+  }
+
+  .blth-user-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: var(--blth-radius-md);
+    cursor: pointer;
+    transition: background-color 150ms;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    font-size: 13px;
+    color: var(--blth-foreground);
+  }
+
+  .blth-user-btn:hover {
+    background: var(--blth-muted);
+  }
+
+  .blth-user-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--blth-primary);
+    color: var(--blth-primary-foreground);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  .blth-user-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .blth-topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+  }
+
+  .blth-topbar-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--blth-foreground);
+  }
+
+  .blth-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .blth-topbar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--blth-radius-md);
+    border: 1px solid var(--blth-border);
+    background: var(--blth-card);
+    color: var(--blth-muted-foreground);
+    cursor: pointer;
+    transition: background-color 150ms, color 150ms;
+  }
+
+  .blth-topbar-btn:hover {
+    background: var(--blth-muted);
+    color: var(--blth-foreground);
+  }
+
+  .blth-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--blth-muted-foreground);
+  }
+
+  .blth-breadcrumb a {
+    color: var(--blth-muted-foreground);
+    text-decoration: none;
+    transition: color 150ms;
+  }
+
+  .blth-breadcrumb a:hover {
+    color: var(--blth-foreground);
+  }
+
+  .blth-breadcrumb .separator {
+    color: var(--blth-border);
+  }
+
+  .blth-breadcrumb .current {
+    color: var(--blth-foreground);
+    font-weight: 500;
+  }
+
+  .blth-content {
+    padding: 24px;
+  }
+</style>
+
+<div class="blth-shell flex h-screen">
+  <!-- ===== 左侧导航栏 ===== -->
+  <aside class="blth-sidebar">
+    <!-- Logo -->
+    <div class="blth-logo">
+      <div class="blth-logo-mark">B</div>
+      <span class="blth-logo-text">Bloath CMS</span>
+    </div>
+
+    <!-- 新建文章按钮 -->
+    <button class="blth-btn-new">
+      <i data-lucide="plus" style="width:16px;height:16px"></i>
+      新建文章
+    </button>
+
+    <!-- 仓库选择器 -->
+    <div class="blth-selector"
+         onmouseover="this.style.background='var(--blth-muted)'"
+         onmouseout="this.style.background='var(--blth-background)'">
+      <i data-lucide="folder" style="width:15px;height:15px"></i>
+      <span class="blth-selector-label">username/hugo-blog</span>
+      <i data-lucide="chevron-down" class="chevron" style="width:14px;height:14px"></i>
+    </div>
+
+    <!-- 分支选择器 -->
+    <div class="blth-selector"
+         onmouseover="this.style.background='var(--blth-muted)'"
+         onmouseout="this.style.background='var(--blth-background)'">
+      <span class="blth-selector-label">分支: main</span>
+      <i data-lucide="chevron-down" class="chevron" style="width:14px;height:14px"></i>
+    </div>
+
+    <!-- 分隔线 -->
+    <div class="blth-divider"></div>
+
+    <!-- 导航菜单 -->
+    <nav class="blth-nav-section">
+      <div class="blth-nav-heading">内容</div>
+
+      <a class="blth-nav-item" data-nav-key="dashboard"
+         onmouseover="if(this.getAttribute('data-active')!=='true')this.style.background='var(--blth-muted)'"
+         onmouseout="if(this.getAttribute('data-active')!=='true')this.style.background=''">
+        <i data-lucide="layout-dashboard" style="width:18px;height:18px"></i>
+        <span class="nav-label">仪表盘</span>
+      </a>
+
+      <a class="blth-nav-item" data-nav-key="content" data-active="true">
+        <i data-lucide="home" style="width:18px;height:18px"></i>
+        <span class="nav-label">内容库</span>
+      </a>
+
+      <a class="blth-nav-item" data-nav-key="drafts"
+         onmouseover="if(this.getAttribute('data-active')!=='true')this.style.background='var(--blth-muted)'"
+         onmouseout="if(this.getAttribute('data-active')!=='true')this.style.background=''">
+        <i data-lucide="file-plus-2" style="width:18px;height:18px"></i>
+        <span class="nav-label">草稿箱</span>
+        <span class="nav-badge">3</span>
+      </a>
+
+      <a class="blth-nav-item" data-nav-key="media"
+         onmouseover="if(this.getAttribute('data-active')!=='true')this.style.background='var(--blth-muted)'"
+         onmouseout="if(this.getAttribute('data-active')!=='true')this.style.background=''">
+        <i data-lucide="image" style="width:18px;height:18px"></i>
+        <span class="nav-label">媒体库</span>
+      </a>
+
+      <a class="blth-nav-item" data-nav-key="settings"
+         onmouseover="if(this.getAttribute('data-active')!=='true')this.style.background='var(--blth-muted)'"
+         onmouseout="if(this.getAttribute('data-active')!=='true')this.style.background=''">
+        <i data-lucide="settings" style="width:18px;height:18px"></i>
+        <span class="nav-label">设置</span>
+      </a>
+    </nav>
+
+    <!-- 底部用户信息 -->
+    <div class="blth-user-area">
+      <button class="blth-user-btn"
+              onmouseover="this.style.background='var(--blth-muted)'"
+              onmouseout="this.style.background=''">
+        <div class="blth-user-avatar">U</div>
+        <span class="blth-user-name">username</span>
+        <i data-lucide="chevron-down" style="width:14px;height:14px"></i>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== 主内容区 ===== -->
+  <div class="blth-main">
+    <!-- 顶部栏 -->
+    <header class="blth-topbar">
+      <div class="blth-topbar-left">
+        <div class="blth-breadcrumb">
+          <a href="#">内容库</a>
+          <span class="separator">/</span>
+          <span class="current">所有文章</span>
+        </div>
+      </div>
+      <div class="blth-topbar-actions">
+        <button class="blth-topbar-btn"
+                onmouseover="this.style.background='var(--blth-muted)';this.style.color='var(--blth-foreground)'"
+                onmouseout="this.style.background='var(--blth-card)';this.style.color='var(--blth-muted-foreground)'">
+          <i data-lucide="search" style="width:18px;height:18px"></i>
+        </button>
+        <button class="blth-topbar-btn"
+                onmouseover="this.style.background='var(--blth-muted)';this.style.color='var(--blth-foreground)'"
+                onmouseout="this.style.background='var(--blth-card)';this.style.color='var(--blth-muted-foreground)'">
+          <i data-lucide="bell" style="width:18px;height:18px"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- 内容区域占位 -->
+    <main class="blth-content">
+      <!-- 页面内容在此处插入 -->
+    </main>
+  </div>
+</div>
+
+<!-- Tailwind CSS v4 CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+<script>lucide.createIcons();</script>

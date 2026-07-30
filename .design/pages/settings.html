@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设置 - Bloath CMS</title>
+    <style id="theme-vars">
+/* ============================================
+   Bloath CMS — Design Tokens
+   黑色强调色 · 暖色极简底板
+   ============================================ */
+
+/* --- Light Mode --- */
+:root {
+  /* 底板：微暖米白 */
+  --blth-background: 34 20% 97%;
+  --blth-foreground: 24 6% 17%;
+
+  /* 卡片：纯白保持 */
+  --blth-card: 0 0% 100%;
+  --blth-card-foreground: 24 6% 17%;
+
+  /* 浮层 */
+  --blth-popover: 0 0% 100%;
+  --blth-popover-foreground: 24 6% 17%;
+
+  /* 主色：近黑色强调色 */
+  --blth-primary: 0 0% 12%;
+  --blth-primary-foreground: 0 0% 100%;
+
+  /* 弱化色 */
+  --blth-muted: 36 14% 94%;
+  --blth-muted-foreground: 30 6% 45%;
+
+  /* 边框：保持极细 */
+  --blth-border: 30 10% 90%;
+  --blth-input: 30 10% 90%;
+  --blth-ring: 0 0% 12%;
+
+  /* 圆角 */
+  --blth-radius-sm: 0.25rem;  /* 4px */
+  --blth-radius-md: 0.375rem; /* 6px */
+  --blth-radius-lg: 0.5rem;   /* 8px */
+
+  /* 语义色 */
+  --blth-success: 142 55% 48%;
+  --blth-warning: 36 70% 52%;
+  --blth-destructive: 0 72% 56%;
+}
+
+/* --- Dark Mode --- */
+.dark {
+  --blth-background: 30 8% 8%;
+  --blth-foreground: 34 15% 92%;
+
+  --blth-card: 30 6% 11%;
+  --blth-card-foreground: 34 15% 92%;
+
+  --blth-popover: 30 6% 11%;
+  --blth-popover-foreground: 34 15% 92%;
+
+  --blth-primary: 0 0% 85%;
+  --blth-primary-foreground: 0 0% 10%;
+
+  --blth-muted: 30 6% 16%;
+  --blth-muted-foreground: 30 8% 55%;
+
+  --blth-border: 30 6% 20%;
+  --blth-input: 30 6% 20%;
+  --blth-ring: 0 0% 85%;
+
+  --blth-success: 142 50% 42%;
+  --blth-warning: 36 65% 48%;
+  --blth-destructive: 0 62% 52%;
+}
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--blth-background);
+    --color-foreground: var(--blth-foreground);
+    --color-card: var(--blth-card);
+    --color-card-foreground: var(--blth-card-foreground);
+    --color-popover: var(--blth-popover);
+    --color-popover-foreground: var(--blth-popover-foreground);
+    --color-primary: var(--blth-primary);
+    --color-primary-foreground: var(--blth-primary-foreground);
+    --color-muted: var(--blth-muted);
+    --color-muted-foreground: var(--blth-muted-foreground);
+    --color-destructive: var(--blth-destructive);
+    --color-border: var(--blth-border);
+    --color-input: var(--blth-input);
+    --color-ring: var(--blth-ring);
+    --radius-sm: var(--blth-radius-sm);
+    --radius-md: var(--blth-radius-md);
+    --radius-lg: var(--blth-radius-lg);
+  }
+  @layer base {
+    body { background: var(--blth-background); color: var(--blth-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--blth-background); }
+      .text-background { color: var(--blth-background); }
+      .border-background { border-color: var(--blth-background); }
+      .ring-background { --tw-ring-color: var(--blth-background); }
+      .bg-foreground { background-color: var(--blth-foreground); }
+      .text-foreground { color: var(--blth-foreground); }
+      .border-foreground { border-color: var(--blth-foreground); }
+      .ring-foreground { --tw-ring-color: var(--blth-foreground); }
+      .bg-card { background-color: var(--blth-card); }
+      .text-card { color: var(--blth-card); }
+      .border-card { border-color: var(--blth-card); }
+      .ring-card { --tw-ring-color: var(--blth-card); }
+      .bg-card-foreground { background-color: var(--blth-card-foreground); }
+      .text-card-foreground { color: var(--blth-card-foreground); }
+      .border-card-foreground { border-color: var(--blth-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--blth-card-foreground); }
+      .bg-popover { background-color: var(--blth-popover); }
+      .text-popover { color: var(--blth-popover); }
+      .border-popover { border-color: var(--blth-popover); }
+      .ring-popover { --tw-ring-color: var(--blth-popover); }
+      .bg-popover-foreground { background-color: var(--blth-popover-foreground); }
+      .text-popover-foreground { color: var(--blth-popover-foreground); }
+      .border-popover-foreground { border-color: var(--blth-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--blth-popover-foreground); }
+      .bg-primary { background-color: var(--blth-primary); }
+      .text-primary { color: var(--blth-primary); }
+      .border-primary { border-color: var(--blth-primary); }
+      .ring-primary { --tw-ring-color: var(--blth-primary); }
+      .bg-primary-foreground { background-color: var(--blth-primary-foreground); }
+      .text-primary-foreground { color: var(--blth-primary-foreground); }
+      .border-primary-foreground { border-color: var(--blth-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--blth-primary-foreground); }
+      .bg-muted { background-color: var(--blth-muted); }
+      .text-muted { color: var(--blth-muted); }
+      .border-muted { border-color: var(--blth-muted); }
+      .ring-muted { --tw-ring-color: var(--blth-muted); }
+      .bg-muted-foreground { background-color: var(--blth-muted-foreground); }
+      .text-muted-foreground { color: var(--blth-muted-foreground); }
+      .border-muted-foreground { border-color: var(--blth-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--blth-muted-foreground); }
+      .bg-destructive { background-color: var(--blth-destructive); }
+      .text-destructive { color: var(--blth-destructive); }
+      .border-destructive { border-color: var(--blth-destructive); }
+      .ring-destructive { --tw-ring-color: var(--blth-destructive); }
+      .bg-border { background-color: var(--blth-border); }
+      .text-border { color: var(--blth-border); }
+      .border-border { border-color: var(--blth-border); }
+      .ring-border { --tw-ring-color: var(--blth-border); }
+      .bg-input { background-color: var(--blth-input); }
+      .text-input { color: var(--blth-input); }
+      .border-input { border-color: var(--blth-input); }
+      .ring-input { --tw-ring-color: var(--blth-input); }
+      .bg-ring { background-color: var(--blth-ring); }
+      .text-ring { color: var(--blth-ring); }
+      .border-ring { border-color: var(--blth-ring); }
+      .ring-ring { --tw-ring-color: var(--blth-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+
+<body style="background-color: hsl(var(--blth-background)); color: hsl(var(--blth-foreground)); font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;">
+
+  <!-- App Shell -->
+  <div class="flex h-screen overflow-hidden" data-viewport-mode="app-shell">
+
+    <!-- ========== 左侧导航栏 ========== -->
+    <aside class="flex w-[260px] shrink-0 flex-col" style="background-color: hsl(var(--blth-card)); border-right: 1px solid hsl(var(--blth-border));">
+
+      <!-- Logo -->
+      <div class="flex items-center gap-2.5 px-5 py-4" style="border-bottom: 1px solid hsl(var(--blth-border));">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold" style="background-color: hsl(var(--blth-primary)); color: hsl(var(--blth-primary-foreground));">B</div>
+        <span class="text-base font-semibold" style="color: hsl(var(--blth-foreground));">Bloath CMS</span>
+      </div>
+
+      <!-- 新建文章按钮 -->
+      <div class="px-4 py-3">
+        <button
+          class="flex w-full items-center justify-center gap-2 px-4 py-2 text-sm font-medium transition-opacity"
+          style="background-color: hsl(var(--blth-primary)); color: hsl(var(--blth-primary-foreground)); border-radius: var(--blth-radius-md);"
+          onmouseover="this.style.opacity='0.88'"
+          onmouseout="this.style.opacity='1'">
+          <i data-lucide="file-plus" class="h-4 w-4"></i>
+          新建文章
+        </button>
+      </div>
+
+      <!-- 仓库选择器 + 分支选择器 -->
+      <div class="px-4 pb-3 space-y-2">
+        <div class="flex items-center gap-2 px-3 py-2 text-sm" style="background-color: hsl(var(--blth-muted)); border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md);">
+          <i data-lucide="git-fork" class="h-4 w-4 shrink-0" style="color: hsl(var(--blth-muted-foreground));"></i>
+          <span class="font-medium truncate" style="color: hsl(var(--blth-foreground));">username/hugo-blog</span>
+        </div>
+        <div class="flex items-center gap-1.5 text-xs" style="color: hsl(var(--blth-muted-foreground));">
+          <i data-lucide="git-branch" class="h-3.5 w-3.5"></i>
+          <span>分支: main</span>
+        </div>
+      </div>
+
+      <!-- 分隔线 -->
+      <div class="mx-4" style="border-top: 1px solid hsl(var(--blth-border));"></div>
+
+      <!-- 导航菜单 -->
+      <nav class="flex-1 px-3 py-3 space-y-1">
+        <a href="#" class="flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors"
+           style="color: hsl(var(--blth-muted-foreground));"
+           onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+           onmouseout="this.style.backgroundColor='transparent'">
+          <i data-lucide="layout-dashboard" class="h-4 w-4"></i>
+          仪表盘
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors"
+           style="color: hsl(var(--blth-muted-foreground));"
+           onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+           onmouseout="this.style.backgroundColor='transparent'">
+          <i data-lucide="files" class="h-4 w-4"></i>
+          内容库
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors"
+           style="color: hsl(var(--blth-muted-foreground));"
+           onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+           onmouseout="this.style.backgroundColor='transparent'">
+          <i data-lucide="file-clock" class="h-4 w-4"></i>
+          草稿箱
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors"
+           style="color: hsl(var(--blth-muted-foreground));"
+           onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+           onmouseout="this.style.backgroundColor='transparent'">
+          <i data-lucide="image" class="h-4 w-4"></i>
+          媒体库
+        </a>
+        <a href="#" data-nav-key="settings"
+           class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md"
+           style="background-color: hsl(var(--blth-primary)); color: hsl(var(--blth-primary-foreground));">
+          <i data-lucide="settings" class="h-4 w-4"></i>
+          设置
+        </a>
+      </nav>
+
+      <!-- 底部用户信息 -->
+      <div class="px-4 py-3" style="border-top: 1px solid hsl(var(--blth-border));">
+        <div class="flex items-center gap-2.5">
+          <div class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold shrink-0"
+               style="background-color: hsl(var(--blth-muted)); color: hsl(var(--blth-foreground));">U</div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium truncate" style="color: hsl(var(--blth-foreground));">username</p>
+            <p class="text-xs truncate" style="color: hsl(var(--blth-muted-foreground));">user@example.com</p>
+          </div>
+          <i data-lucide="log-out" class="h-4 w-4 shrink-0" style="color: hsl(var(--blth-muted-foreground));"></i>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ========== 右侧主内容区 ========== -->
+    <div class="flex flex-1 flex-col min-w-0">
+
+      <!-- 顶部栏 -->
+      <header class="flex items-center justify-between px-8 py-4 shrink-0"
+              style="background-color: hsl(var(--blth-card)); border-bottom: 1px solid hsl(var(--blth-border));">
+        <h1 class="text-2xl font-bold" style="color: hsl(var(--blth-foreground));">设置</h1>
+        <button
+          class="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-opacity"
+          style="background-color: hsl(var(--blth-primary)); color: hsl(var(--blth-primary-foreground)); border-radius: var(--blth-radius-md);"
+          onmouseover="this.style.opacity='0.88'"
+          onmouseout="this.style.opacity='1'">
+          <i data-lucide="save" class="h-4 w-4"></i>
+          保存更改
+        </button>
+      </header>
+
+      <!-- 设置内容 -->
+      <div class="flex-1 overflow-y-auto px-8 py-6" data-scroll-region="primary">
+        <div class="mx-auto flex max-w-[800px] flex-col gap-4">
+
+          <!-- 卡片1: 仓库配置 -->
+          <section class="p-6" style="background-color: hsl(var(--blth-card)); border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-lg);">
+            <div class="flex items-center gap-2 mb-5">
+              <i data-lucide="folder" class="h-5 w-5" style="color: hsl(var(--blth-foreground));"></i>
+              <h2 class="text-base font-bold" style="color: hsl(var(--blth-foreground));">仓库配置</h2>
+            </div>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium mb-1.5" style="color: hsl(var(--blth-foreground));">GitHub 仓库</label>
+                <input type="text" value="username/hugo-blog"
+                  class="w-full px-3 py-2 text-sm outline-none"
+                  style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); background-color: hsl(var(--blth-card)); color: hsl(var(--blth-foreground));"
+                  onfocus="this.style.borderColor='hsl(var(--blth-ring))'; this.style.boxShadow='0 0 0 3px hsl(var(--blth-ring) / 0.12)'"
+                  onblur="this.style.borderColor='hsl(var(--blth-border))'; this.style.boxShadow='none'">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1.5" style="color: hsl(var(--blth-foreground));">默认分支</label>
+                <input type="text" value="main"
+                  class="w-full px-3 py-2 text-sm outline-none"
+                  style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); background-color: hsl(var(--blth-card)); color: hsl(var(--blth-foreground));"
+                  onfocus="this.style.borderColor='hsl(var(--blth-ring))'; this.style.boxShadow='0 0 0 3px hsl(var(--blth-ring) / 0.12)'"
+                  onblur="this.style.borderColor='hsl(var(--blth-border))'; this.style.boxShadow='none'">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1.5" style="color: hsl(var(--blth-foreground));">内容目录</label>
+                <input type="text" value="content/posts"
+                  class="w-full px-3 py-2 text-sm outline-none"
+                  style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); background-color: hsl(var(--blth-card)); color: hsl(var(--blth-foreground));"
+                  onfocus="this.style.borderColor='hsl(var(--blth-ring))'; this.style.boxShadow='0 0 0 3px hsl(var(--blth-ring) / 0.12)'"
+                  onblur="this.style.borderColor='hsl(var(--blth-border))'; this.style.boxShadow='none'">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1.5" style="color: hsl(var(--blth-foreground));">媒体目录</label>
+                <input type="text" value="static/images"
+                  class="w-full px-3 py-2 text-sm outline-none"
+                  style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); background-color: hsl(var(--blth-card)); color: hsl(var(--blth-foreground));"
+                  onfocus="this.style.borderColor='hsl(var(--blth-ring))'; this.style.boxShadow='0 0 0 3px hsl(var(--blth-ring) / 0.12)'"
+                  onblur="this.style.borderColor='hsl(var(--blth-border))'; this.style.boxShadow='none'">
+              </div>
+            </div>
+          </section>
+
+          <!-- 卡片2: 内容集合 -->
+          <section class="p-6" style="background-color: hsl(var(--blth-card)); border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-lg);">
+            <div class="flex items-center justify-between mb-5">
+              <div class="flex items-center gap-2">
+                <i data-lucide="collection" class="h-5 w-5" style="color: hsl(var(--blth-foreground));"></i>
+                <h2 class="text-base font-bold" style="color: hsl(var(--blth-foreground));">内容集合</h2>
+              </div>
+              <button
+                class="flex items-center gap-1 px-3 py-1.5 text-xs font-medium transition-colors"
+                style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); color: hsl(var(--blth-foreground));"
+                onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+                onmouseout="this.style.backgroundColor='transparent'">
+                <i data-lucide="plus" class="h-3.5 w-3.5"></i>
+                添加集合
+              </button>
+            </div>
+            <div>
+              <!-- 集合行 1 -->
+              <div class="flex items-center justify-between py-3">
+                <div class="flex items-center gap-4">
+                  <span class="text-sm font-medium" style="color: hsl(var(--blth-foreground));">文章</span>
+                  <span class="text-sm" style="color: hsl(var(--blth-muted-foreground));">content/posts</span>
+                  <span class="px-2 py-0.5 text-xs rounded" style="background-color: hsl(var(--blth-muted)); color: hsl(var(--blth-muted-foreground));">.md</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <button class="p-1.5 rounded-md transition-colors"
+                    style="color: hsl(var(--blth-muted-foreground));"
+                    onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'; this.style.color='hsl(var(--blth-foreground))'"
+                    onmouseout="this.style.backgroundColor='transparent'; this.style.color='hsl(var(--blth-muted-foreground))'">
+                    <i data-lucide="pencil" class="h-4 w-4"></i>
+                  </button>
+                  <button class="p-1.5 rounded-md transition-colors"
+                    style="color: hsl(var(--blth-muted-foreground));"
+                    onmouseover="this.style.backgroundColor='hsl(0 72% 51% / 0.1)'; this.style.color='hsl(0 72% 51%)'"
+                    onmouseout="this.style.backgroundColor='transparent'; this.style.color='hsl(var(--blth-muted-foreground))'">
+                    <i data-lucide="trash-2" class="h-4 w-4"></i>
+                  </button>
+                </div>
+              </div>
+              <div style="border-top: 1px solid hsl(var(--blth-border));"></div>
+              <!-- 集合行 2 -->
+              <div class="flex items-center justify-between py-3">
+                <div class="flex items-center gap-4">
+                  <span class="text-sm font-medium" style="color: hsl(var(--blth-foreground));">页面</span>
+                  <span class="text-sm" style="color: hsl(var(--blth-muted-foreground));">content/pages</span>
+                  <span class="px-2 py-0.5 text-xs rounded" style="background-color: hsl(var(--blth-muted)); color: hsl(var(--blth-muted-foreground));">.md</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <button class="p-1.5 rounded-md transition-colors"
+                    style="color: hsl(var(--blth-muted-foreground));"
+                    onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'; this.style.color='hsl(var(--blth-foreground))'"
+                    onmouseout="this.style.backgroundColor='transparent'; this.style.color='hsl(var(--blth-muted-foreground))'">
+                    <i data-lucide="pencil" class="h-4 w-4"></i>
+                  </button>
+                  <button class="p-1.5 rounded-md transition-colors"
+                    style="color: hsl(var(--blth-muted-foreground));"
+                    onmouseover="this.style.backgroundColor='hsl(0 72% 51% / 0.1)'; this.style.color='hsl(0 72% 51%)'"
+                    onmouseout="this.style.backgroundColor='transparent'; this.style.color='hsl(var(--blth-muted-foreground))'">
+                    <i data-lucide="trash-2" class="h-4 w-4"></i>
+                  </button>
+                </div>
+              </div>
+              <div style="border-top: 1px solid hsl(var(--blth-border));"></div>
+              <!-- 集合行 3 -->
+              <div class="flex items-center justify-between py-3">
+                <div class="flex items-center gap-4">
+                  <span class="text-sm font-medium" style="color: hsl(var(--blth-foreground));">作品集</span>
+                  <span class="text-sm" style="color: hsl(var(--blth-muted-foreground));">content/portfolio</span>
+                  <span class="px-2 py-0.5 text-xs rounded" style="background-color: hsl(var(--blth-muted)); color: hsl(var(--blth-muted-foreground));">.md</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <button class="p-1.5 rounded-md transition-colors"
+                    style="color: hsl(var(--blth-muted-foreground));"
+                    onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'; this.style.color='hsl(var(--blth-foreground))'"
+                    onmouseout="this.style.backgroundColor='transparent'; this.style.color='hsl(var(--blth-muted-foreground))'">
+                    <i data-lucide="pencil" class="h-4 w-4"></i>
+                  </button>
+                  <button class="p-1.5 rounded-md transition-colors"
+                    style="color: hsl(var(--blth-muted-foreground));"
+                    onmouseover="this.style.backgroundColor='hsl(0 72% 51% / 0.1)'; this.style.color='hsl(0 72% 51%)'"
+                    onmouseout="this.style.backgroundColor='transparent'; this.style.color='hsl(var(--blth-muted-foreground))'">
+                    <i data-lucide="trash-2" class="h-4 w-4"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 卡片3: 主题配置 -->
+          <section class="p-6" style="background-color: hsl(var(--blth-card)); border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-lg);">
+            <div class="flex items-center gap-2 mb-5">
+              <i data-lucide="palette" class="h-5 w-5" style="color: hsl(var(--blth-foreground));"></i>
+              <h2 class="text-base font-bold" style="color: hsl(var(--blth-foreground));">主题配置</h2>
+            </div>
+            <div class="space-y-5">
+              <!-- 主题模式 -->
+              <div>
+                <label class="block text-sm font-medium mb-2" style="color: hsl(var(--blth-foreground));">主题模式</label>
+                <div class="flex gap-2">
+                  <button
+                    class="px-4 py-2 text-sm font-medium"
+                    style="background-color: hsl(var(--blth-primary)); color: hsl(var(--blth-primary-foreground)); border: 1px solid hsl(var(--blth-primary)); border-radius: var(--blth-radius-md);"
+                    onmouseover="this.style.opacity='0.88'"
+                    onmouseout="this.style.opacity='1'">浅色</button>
+                  <button
+                    class="px-4 py-2 text-sm"
+                    style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); color: hsl(var(--blth-foreground));"
+                    onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+                    onmouseout="this.style.backgroundColor='transparent'">深色</button>
+                  <button
+                    class="px-4 py-2 text-sm"
+                    style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); color: hsl(var(--blth-foreground));"
+                    onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+                    onmouseout="this.style.backgroundColor='transparent'">跟随系统</button>
+                </div>
+              </div>
+              <!-- 主色调 -->
+              <div>
+                <label class="block text-sm font-medium mb-2" style="color: hsl(var(--blth-foreground));">主色调</label>
+                <div class="flex items-center gap-3">
+                  <button class="h-8 w-8 rounded-full transition-transform"
+                    style="background-color: hsl(0 0% 12%); box-shadow: 0 0 0 2px hsl(var(--blth-card)), 0 0 0 4px hsl(0 0% 12%);"
+                    onmouseover="this.style.transform='scale(1.1)'"
+                    onmouseout="this.style.transform='scale(1)'"
+                    aria-label="黑色"></button>
+                  <button class="h-8 w-8 rounded-full transition-transform"
+                    style="background-color: hsl(0 0% 55%);"
+                    onmouseover="this.style.transform='scale(1.1)'"
+                    onmouseout="this.style.transform='scale(1)'"
+                    aria-label="灰色"></button>
+                  <button class="h-8 w-8 rounded-full transition-transform"
+                    style="background-color: hsl(221 83% 53%);"
+                    onmouseover="this.style.transform='scale(1.1)'"
+                    onmouseout="this.style.transform='scale(1)'"
+                    aria-label="蓝色"></button>
+                  <button class="h-8 w-8 rounded-full transition-transform"
+                    style="background-color: hsl(24 35% 38%);"
+                    onmouseover="this.style.transform='scale(1.1)'"
+                    onmouseout="this.style.transform='scale(1)'"
+                    aria-label="棕色"></button>
+                </div>
+              </div>
+              <!-- 圆角大小 -->
+              <div>
+                <label class="block text-sm font-medium mb-2" style="color: hsl(var(--blth-foreground));">圆角大小</label>
+                <select
+                  class="px-3 py-2 text-sm outline-none"
+                  style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); background-color: hsl(var(--blth-card)); color: hsl(var(--blth-foreground));"
+                  onfocus="this.style.borderColor='hsl(var(--blth-ring))'; this.style.boxShadow='0 0 0 3px hsl(var(--blth-ring) / 0.12)'"
+                  onblur="this.style.borderColor='hsl(var(--blth-border))'; this.style.boxShadow='none'">
+                  <option>小</option>
+                  <option selected>中</option>
+                  <option>大</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <!-- 卡片4: OAuth 配置 -->
+          <section class="p-6" style="background-color: hsl(var(--blth-card)); border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-lg);">
+            <div class="flex items-center justify-between mb-5">
+              <div class="flex items-center gap-2">
+                <i data-lucide="key" class="h-5 w-5" style="color: hsl(var(--blth-foreground));"></i>
+                <h2 class="text-base font-bold" style="color: hsl(var(--blth-foreground));">GitHub OAuth</h2>
+              </div>
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full"
+                style="background-color: hsl(142 71% 45% / 0.1); color: hsl(142 71% 35%);">
+                <span class="h-1.5 w-1.5 rounded-full" style="background-color: hsl(142 71% 45%);"></span>
+                已连接
+              </span>
+            </div>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium mb-1.5" style="color: hsl(var(--blth-foreground));">Client ID</label>
+                <input type="text" value="Iv1.abc123..."
+                  class="w-full px-3 py-2 text-sm outline-none"
+                  style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); background-color: hsl(var(--blth-card)); color: hsl(var(--blth-foreground));"
+                  onfocus="this.style.borderColor='hsl(var(--blth-ring))'; this.style.boxShadow='0 0 0 3px hsl(var(--blth-ring) / 0.12)'"
+                  onblur="this.style.borderColor='hsl(var(--blth-border))'; this.style.boxShadow='none'">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1.5" style="color: hsl(var(--blth-foreground));">Client Secret</label>
+                <input type="password" value="secret-value-123"
+                  class="w-full px-3 py-2 text-sm outline-none"
+                  style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); background-color: hsl(var(--blth-card)); color: hsl(var(--blth-foreground));"
+                  onfocus="this.style.borderColor='hsl(var(--blth-ring))'; this.style.boxShadow='0 0 0 3px hsl(var(--blth-ring) / 0.12)'"
+                  onblur="this.style.borderColor='hsl(var(--blth-border))'; this.style.boxShadow='none'">
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1.5" style="color: hsl(var(--blth-foreground));">回调地址</label>
+                <input type="text" value="https://bloath.cms/api/auth/callback"
+                  class="w-full px-3 py-2 text-sm outline-none"
+                  style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); background-color: hsl(var(--blth-card)); color: hsl(var(--blth-foreground));"
+                  onfocus="this.style.borderColor='hsl(var(--blth-ring))'; this.style.boxShadow='0 0 0 3px hsl(var(--blth-ring) / 0.12)'"
+                  onblur="this.style.borderColor='hsl(var(--blth-border))'; this.style.boxShadow='none'">
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+
+      <!-- 底部保存栏 -->
+      <footer class="sticky bottom-0 flex items-center justify-end gap-3 px-8 py-4 shrink-0"
+              style="background-color: hsl(var(--blth-card)); border-top: 1px solid hsl(var(--blth-border));">
+        <button
+          class="px-4 py-2 text-sm font-medium transition-colors"
+          style="border: 1px solid hsl(var(--blth-border)); border-radius: var(--blth-radius-md); color: hsl(var(--blth-foreground));"
+          onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+          onmouseout="this.style.backgroundColor='transparent'">
+          取消
+        </button>
+        <button
+          class="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-opacity"
+          style="background-color: hsl(var(--blth-primary)); color: hsl(var(--blth-primary-foreground)); border-radius: var(--blth-radius-md);"
+          onmouseover="this.style.opacity='0.88'"
+          onmouseout="this.style.opacity='1'">
+          <i data-lucide="save" class="h-4 w-4"></i>
+          保存更改
+        </button>
+      </footer>
+
+    </div>
+  </div>
+
+  <script>lucide.createIcons();</script>
+
+    <style>
+    :root {
+      --blth-background: 34 20% 97%;
+      --blth-foreground: 24 6% 17%;
+      --blth-card: 0 0% 100%;
+      --blth-primary: 0 0% 12%;
+      --blth-primary-foreground: 0 0% 100%;
+      --blth-muted: 36 14% 94%;
+      --blth-muted-foreground: 30 6% 45%;
+      --blth-border: 30 10% 90%;
+      --blth-input: 30 10% 90%;
+      --blth-ring: 0 0% 12%;
+      --blth-radius-sm: 0.25rem;
+      --blth-radius-md: 0.375rem;
+      --blth-radius-lg: 0.5rem;
+    }
+
+    .dark {
+      --blth-background: 24 6% 10%;
+      --blth-foreground: 34 20% 95%;
+      --blth-card: 24 6% 13%;
+      --blth-primary: 0 0% 95%;
+      --blth-primary-foreground: 0 0% 12%;
+      --blth-muted: 24 6% 16%;
+      --blth-muted-foreground: 30 6% 60%;
+      --blth-border: 24 6% 20%;
+      --blth-input: 24 6% 20%;
+      --blth-ring: 0 0% 95%;
+    }
+  </style>
+    <style>
+    body {
+      background-color: hsl(34 20% 97%);
+      color: hsl(24 6% 17%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    }
+  </style>
+</body>
+</html>

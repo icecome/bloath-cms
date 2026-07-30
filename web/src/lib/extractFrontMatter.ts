@@ -1,6 +1,6 @@
 import fm from 'front-matter';
 import { readFile } from './api';
-import type { ArticleFrontmatter } from '../../../shared/types';
+import type { ArticleFrontmatter, RepoInfo } from '../../../shared/types';
 
 /**
  * 从 Front Matter 提取的增强文件项
@@ -16,12 +16,6 @@ export interface EnhancedFileItem {
   frontmatter?: ArticleFrontmatter;
   /** 解析后的排序日期时间戳 */
   sortDate?: number;
-}
-
-export interface RepoInfo {
-  owner: string;
-  repo: string;
-  branch?: string;
 }
 
 export interface ExtractOptions {
@@ -62,10 +56,11 @@ export function parseDateToTimestamp(dateValue?: string | number | Date): number
     if (!isNaN(ts)) return ts;
 
     // 尝试提取 YYYY-MM-DD 或 YYYYMMDD 格式
-    const dateMatch = dateValue.match(/(\d{4})[-\/年](\d{1,2})[-\/月]?(\d{1,2})?[\s日]?/);
+    const dateMatch = dateValue.match(/(\d{4})[-/年](\d{1,2})[-/月]?(\d{1,2})?[\s日]?/);
     if (dateMatch) {
-      const year = parseInt(dateMatch[1], 10);
-      const month = parseInt(dateMatch[2], 10) - 1;
+      const year = parseInt(dateMatch[1] ?? '', 10);
+      const month = parseInt(dateMatch[2] ?? '', 10) - 1;
+      if (isNaN(year) || isNaN(month)) return 0;
       const day = dateMatch[3] ? parseInt(dateMatch[3], 10) : 1;
       const fallbackTs = new Date(year, month, day).getTime();
       if (!isNaN(fallbackTs)) return fallbackTs;
@@ -74,7 +69,8 @@ export function parseDateToTimestamp(dateValue?: string | number | Date): number
     // 尝试提取 YYYYMMDD 格式（如 20260707）
     const compactMatch = dateValue.match(/(\d{8})/);
     if (compactMatch) {
-      const num = parseInt(compactMatch[1], 10);
+      const num = parseInt(compactMatch[1] ?? '', 10);
+      if (isNaN(num)) return 0;
       const year = Math.floor(num / 10000);
       const month = Math.floor((num % 10000) / 100) - 1;
       const day = num % 100;
@@ -138,16 +134,16 @@ async function batchFetch(
   repoInfo: RepoInfo,
   options: Required<ExtractOptions>
 ): Promise<EnhancedFileItem[]> {
-  const results: EnhancedFileItem[] = [...files];
+  const results = [...files];
 
   for (let i = 0; i < results.length; i += options.batchSize) {
     const batch = results.slice(i, i + options.batchSize);
-    await Promise.all(
-      batch.map(async (file, idx) => {
-        const result = await readSingleFrontmatter(file, repoInfo, options);
-        results[i + idx] = result;
-      })
+    const batchResults = await Promise.all(
+      batch.map((file) => readSingleFrontmatter(file, repoInfo, options))
     );
+    batchResults.forEach((result, idx) => {
+      results[i + idx] = result;
+    });
   }
 
   return results;

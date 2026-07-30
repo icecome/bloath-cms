@@ -1,16 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { getBranches } from '../lib/api';
-
-interface RepoState {
-  owner: string;
-  repo: string;
-  branch: string;
-}
+import type { SelectedRepo } from '../../../shared/types';
 
 interface RepoContextType {
-  selectedRepo: RepoState | null;
-  setSelectedRepo: (repo: RepoState | null) => void;
+  selectedRepo: SelectedRepo | null;
+  setSelectedRepo: (repo: SelectedRepo | null) => void;
   branches: string[];
   loadingBranches: boolean;
   loadBranches: (owner: string, repo: string) => void;
@@ -20,7 +15,7 @@ const STORAGE_KEY = 'bloath_selected_repo';
 
 const RepoContext = createContext<RepoContextType | undefined>(undefined);
 
-function loadSavedRepo(): RepoState | null {
+function loadSavedRepo(): SelectedRepo | null {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored ? JSON.parse(stored) : null;
@@ -31,16 +26,20 @@ function loadSavedRepo(): RepoState | null {
 
 export function RepoProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const [selectedRepo, setSelectedRepoState] = useState<RepoState | null>(loadSavedRepo);
+  const [selectedRepo, setSelectedRepoState] = useState<SelectedRepo | null>(loadSavedRepo);
   const [branches, setBranches] = useState<string[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
 
-  const setSelectedRepo = useCallback((repo: RepoState | null) => {
+  const setSelectedRepo = useCallback((repo: SelectedRepo | null) => {
     setSelectedRepoState(repo);
-    if (repo) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(repo));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
+    try {
+      if (repo) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(repo));
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    } catch {
+      // 隐私模式或存储已满，忽略持久化错误
     }
   }, []);
 

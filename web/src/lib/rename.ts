@@ -17,13 +17,19 @@ function padZero(n: number, len = 2): string {
 
 function randomString(length: number): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
   let result = '';
-  for (let i = 0; i < length; i++) {
-    // 拒绝采样消除模偏差：252 = floor(255/36)*36
-    if (bytes[i] >= 252) i--;
-    result += chars[bytes[i] % chars.length];
+  while (result.length < length) {
+    const bytes = new Uint8Array(length - result.length);
+    crypto.getRandomValues(bytes);
+    for (let i = 0; i < bytes.length && result.length < length; i++) {
+      const byte = bytes[i];
+      if (byte === undefined) break;
+      // 拒绝采样消除模偏差：252 = floor(255/36)*36
+      if (byte < 252) {
+        result += chars[byte % chars.length] ?? '';
+      }
+      // byte >= 252 的字节直接丢弃，下一轮重新生成
+    }
   }
   return result;
 }

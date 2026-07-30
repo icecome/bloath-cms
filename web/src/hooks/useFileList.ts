@@ -1,23 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getTree } from '../lib/api';
 import { getCachedFiles, setCachedFiles } from '../lib/fileCache';
 import { sortByFrontMatterDate } from '../lib/sortFiles';
 import { extractFrontMatters, type EnhancedFileItem } from '../lib/extractFrontMatter';
-
-export interface FileItem {
-  name: string;
-  path: string;
-  sha: string;
-  type: 'file' | 'dir';
-  size?: number;
-  lastModified?: number;
-}
-
-export interface RepoInfo {
-  owner: string;
-  repo: string;
-  branch: string;
-}
+import type { RepoInfo } from '../../../shared/types';
 
 /**
  * 使用 GitHub Trees API 一次性获取目录树，替代递归扫描
@@ -61,6 +47,8 @@ export async function scanMdFiles(
 export function useFileList(basePath: string, selectedRepo: RepoInfo | null, enabled: boolean) {
   const [files, setFiles] = useState<EnhancedFileItem[]>([]);
   const [loading, setLoading] = useState(false);
+  // 请求 ID 计数器，用于丢弃快速切换 basePath 时的过期响应
+  const requestIdRef = useRef(0);
 
   const refresh = useCallback(async (silent = false) => {
     if (!selectedRepo || !enabled) {
@@ -75,16 +63,20 @@ export function useFileList(basePath: string, selectedRepo: RepoInfo | null, ena
     }
 
     if (!silent) setLoading(true);
+    const currentRequestId = ++requestIdRef.current;
     try {
       const result = await scanMdFiles(selectedRepo, basePath);
+      // 快速切换时丢弃过期响应，防止旧结果覆盖新结果
+      if (requestIdRef.current !== currentRequestId) return;
       sortByFrontMatterDate(result);
       setCachedFiles(selectedRepo, basePath, result);
       setFiles(result);
     } catch (err) {
+      if (requestIdRef.current !== currentRequestId) return;
       console.error(`[useFileList] 扫描路径 ${basePath} 失败:`, err);
       if (!cached) setFiles([]);
     } finally {
-      if (!silent) setLoading(false);
+      if (requestIdRef.current === currentRequestId && !silent) setLoading(false);
     }
   }, [basePath, selectedRepo, enabled]);
 

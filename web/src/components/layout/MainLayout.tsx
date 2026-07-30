@@ -142,7 +142,7 @@ function SidebarContent({
                     {repos.length === 0 ? '加载中...' : '没有匹配的仓库'}
                   </div>
                 ) : (
-                  filteredRepos.map((repo: any) => (
+                  filteredRepos.map((repo) => (
                     <button
                       key={repo.full_name}
                       onClick={() => { onRepoChange(repo.full_name); setSearchQuery(''); onNavClick(); }}
@@ -333,7 +333,7 @@ export default function MainLayout() {
   }, [location.pathname]);
 
   const handleRepoChange = useCallback((full_name: string) => {
-    const [owner, repo] = full_name.split('/');
+    const [owner = '', repo = ''] = full_name.split('/');
     const repoInfo = repos.find((r) => r.full_name === full_name);
     setSelectedRepo({ owner, repo, branch: repoInfo?.default_branch || 'main' });
     setShowRepoDropdown(false);
@@ -352,7 +352,13 @@ export default function MainLayout() {
 
   const handleNewArticle = () => {
     if (selectedRepo) {
-      navigate(`/editor/new?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}&returnTo=drafts`);
+      const params = new URLSearchParams({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.repo,
+        branch: selectedRepo.branch,
+        returnTo: 'drafts'
+      });
+      navigate(`/editor/new?${params}`);
     }
   };
 

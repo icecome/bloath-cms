@@ -48,6 +48,24 @@ export default function FrontmatterPanel({
     }))
   );
 
+  // 追踪已同步到父组件的 prop 序列化值，防止 prop 变更回环触发重复同步
+  const syncedPropJsonRef = useRef(JSON.stringify(frontmatter.customFields ?? {}));
+
+  // 当父组件 prop 外部变更（如切换文章）时，重新初始化本地状态
+  useEffect(() => {
+    const propJson = JSON.stringify(frontmatter.customFields ?? {});
+    if (syncedPropJsonRef.current !== propJson) {
+      syncedPropJsonRef.current = propJson;
+      setCustomFields(
+        Object.entries(frontmatter.customFields ?? {}).map(([key, value]) => ({
+          key,
+          value: String(value ?? ''),
+          type: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'string'
+        }))
+      );
+    }
+  }, [frontmatter.customFields]);
+
   const addCustomField = () => {
     setCustomFields([...customFields, { key: '', value: '', type: 'string' }]);
   };
@@ -58,23 +76,32 @@ export default function FrontmatterPanel({
 
   const updateCustomField = (index: number, field: keyof CustomField, value: string) => {
     const updated = [...customFields];
-    updated[index] = { ...updated[index], [field]: value };
+    const target = updated[index];
+    if (target) {
+      updated[index] = { ...target, [field]: value };
+    }
     setCustomFields(updated);
   };
+
+  // 禁止作为自定义字段键名的危险属性，防止原型链污染
+  const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
   const syncCustomFieldsToFm = () => {
     const parsed: Record<string, unknown> = {};
     for (const cf of customFields) {
-      if (!cf.key.trim()) continue;
+      const key = cf.key.trim();
+      if (!key || FORBIDDEN_KEYS.has(key)) continue;
       if (cf.type === 'number') {
-        parsed[cf.key.trim()] = cf.value ? parseFloat(cf.value) : undefined;
+        parsed[key] = cf.value ? parseFloat(cf.value) : undefined;
       } else if (cf.type === 'boolean') {
-        parsed[cf.key.trim()] = cf.value === 'true';
+        parsed[key] = cf.value === 'true';
       } else {
-        parsed[cf.key.trim()] = cf.value;
+        parsed[key] = cf.value;
       }
     }
     setFm('customFields', Object.keys(parsed).length > 0 ? parsed : undefined);
+    // 标记已同步的 prop 值，防止父组件 prop 变更回环触发重复同步
+    syncedPropJsonRef.current = JSON.stringify(Object.keys(parsed).length > 0 ? parsed : {});
   };
 
   // Sync on mount and when customFields change

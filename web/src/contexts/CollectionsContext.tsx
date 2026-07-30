@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import type { MediaConfig } from '../../../shared/types';
+import { DEFAULT_MEDIA_PATH, DEFAULT_BRANCH_NAME } from '../lib/constants';
 
 interface CollectionConfig {
   paths: string[];
@@ -16,9 +17,12 @@ const DEFAULT_COLLECTION_CONFIG: CollectionConfig = {
 };
 
 const DEFAULT_MEDIA_CONFIG: MediaConfig = {
+  sourceType: 'standalone',
   imageOwner: '',
   imageRepo: '',
   imageBranch: 'main',
+  mediaPath: DEFAULT_MEDIA_PATH,
+  imageBranchName: DEFAULT_BRANCH_NAME,
   cdnProvider: 'jsdmirror',
   customCdnTemplate: '',
   quality: 80,
@@ -28,6 +32,12 @@ const DEFAULT_MEDIA_CONFIG: MediaConfig = {
 
 const COLLECTION_STORAGE_KEY = 'bloath_collections_config';
 const MEDIA_STORAGE_KEY = 'bloath_media_config';
+
+const MEDIA_CONFIG_KEYS: ReadonlyArray<keyof MediaConfig> = [
+  'sourceType', 'imageOwner', 'imageRepo', 'imageBranch',
+  'mediaPath', 'imageBranchName', 'cdnProvider', 'customCdnTemplate',
+  'quality', 'renameTemplate', 'duplicateStrategy'
+];
 
 function loadCollectionConfig(): CollectionConfig {
   try {
@@ -42,8 +52,8 @@ function loadCollectionConfig(): CollectionConfig {
       }
       return { ...DEFAULT_COLLECTION_CONFIG, ...parsed };
     }
-  } catch {
-    console.error('Failed to load collections config');
+  } catch (err) {
+    console.error('Failed to load collections config', err);
   }
   return DEFAULT_COLLECTION_CONFIG;
 }
@@ -52,10 +62,18 @@ function loadMediaConfig(): MediaConfig {
   try {
     const stored = localStorage.getItem(MEDIA_STORAGE_KEY);
     if (stored) {
-      return { ...DEFAULT_MEDIA_CONFIG, ...JSON.parse(stored) };
+      const parsed = JSON.parse(stored) as Record<string, unknown>;
+      // 仅保留已知字段，过滤已废弃或残留字段
+      const filtered: Record<string, unknown> = {};
+      for (const key of MEDIA_CONFIG_KEYS) {
+        if (key in parsed) {
+          filtered[key] = parsed[key];
+        }
+      }
+      return { ...DEFAULT_MEDIA_CONFIG, ...filtered } as MediaConfig;
     }
-  } catch {
-    console.error('Failed to load media config');
+  } catch (err) {
+    console.error('Failed to load media config', err);
   }
   return DEFAULT_MEDIA_CONFIG;
 }
@@ -63,16 +81,16 @@ function loadMediaConfig(): MediaConfig {
 function saveCollectionConfig(config: CollectionConfig): void {
   try {
     localStorage.setItem(COLLECTION_STORAGE_KEY, JSON.stringify(config));
-  } catch {
-    console.error('Failed to save collections config');
+  } catch (err) {
+    console.error('Failed to save collections config', err);
   }
 }
 
 function saveMediaConfig(config: MediaConfig): void {
   try {
     localStorage.setItem(MEDIA_STORAGE_KEY, JSON.stringify(config));
-  } catch {
-    console.error('Failed to save media config');
+  } catch (err) {
+    console.error('Failed to save media config', err);
   }
 }
 

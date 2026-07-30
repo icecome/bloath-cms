@@ -1,0 +1,586 @@
+{
+  "schemaVersion": "2026.07.06.8",
+  "skillProvenance": {
+    "name": "solo-design",
+    "version": "2026.07.06.8",
+    "version_source": "skill-release-manifest.json",
+    "read_status": "ok"
+  },
+  "project": {
+    "resolvedLane": "complex_html_page",
+    "selectedIntentWorkflowRead": true,
+    "sourceProjectLaneHeritage": "free_exploration",
+    "contextRequirementsLoaded": [
+      {
+        "path": "shared-runtime/runtime-boundaries/lane-runtime-contracts.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "shared-runtime/agent-dispatch-runtime/lane-dispatch-index.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/page-rendering-quality-gate.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/design-artifact-validation.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "delivery-quality/delivery-evidence-contract.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "visual-experience/visual-experience-guidelines.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      },
+      {
+        "path": "visual-experience/visual-checkpoint-protocol.md",
+        "readStatus": "loaded",
+        "bodyRead": true
+      }
+    ],
+    "contextReadScope": {
+      "mainAgent": {
+        "forbiddenReads": [
+          "other intent-workflows/**",
+          "Sub-Agent implementation files before dispatch"
+        ]
+      },
+      "pageSubAgent": {
+        "allowedReads": [
+          "current lane page runtime guide",
+          "current lane dispatch contract excerpt",
+          "current Page Packet",
+          "supplementaryReads[] only"
+        ],
+        "forbiddenReads": [
+          "SKILL.md full re-read",
+          "other intent-workflows/**",
+          "full runtime-orchestration-summary.json unless explicitly sliced"
+        ]
+      }
+    },
+    "deviceType": "desktop",
+    "validationRunDiscipline": {
+      "maxFullValidationRuns": 2,
+      "softWarningsTriggerRepair": false,
+      "blockingRepairMode": "targeted-once",
+      "forbiddenRepairTriggers": [
+        "soft-warning-only",
+        "provenance-warning-only",
+        "style-warning-only"
+      ]
+    },
+    "lowValueCallWatchdog": {
+      "applies": true,
+      "noProgressSignals": [
+        "no_tool_call",
+        "no_artifact_diff",
+        "no_structured_decision"
+      ],
+      "noProgressNextAction": "enter_readiness_or_blocked_summary"
+    },
+    "intentProfile": {
+      "routingReason": "Bloath CMS 完整设计实现 — 7页面CMS管理后台",
+      "caseFamily": "complex_html_page",
+      "deviceType": "desktop",
+      "surfaceType": "project"
+    },
+    "creativeRecipe": {
+      "businessTone": "SaaS/工具类 — CMS管理后台",
+      "layoutArchetype": "App Shell — 左侧导航 + 右侧内容区",
+      "visualSignature": "黑色强调色极简风格 — 暖色底板，克制美学",
+      "densityTarget": "balanced",
+      "avoidOneThing": "避免过度装饰、保持克制与留白"
+    },
+    "styleDefinitionBrief": "CMS管理后台，黑色强调色 + 暖色底板，极简克制，Heptabase风格",
+    "designRead": "CMS管理后台 / 开发者 / 工具类克制 / balanced / 避免过度装饰",
+    "designDials": {
+      "layoutVariance": 2,
+      "motionIntensity": 2,
+      "visualDensity": 3
+    },
+    "cssPreflightEvidence": {
+      "applies": true,
+      "status": "passed",
+      "command": "node apply-html-head-contract.mjs colors_and_type.css .preflight/preflight.html --title='Bloath CMS Preview' --lang=zh-CN --prefix=blth --replace-head",
+      "brandPrefix": "blth",
+      "checks": {
+        "themeVars": "present",
+        "semanticTokenFallback": "present",
+        "themeInline": "present",
+        "tailwindCdn": "present",
+        "htmlClass": "present",
+        "semanticMappings": "resolved"
+      },
+      "retryCount": 0,
+      "blockingReason": null
+    },
+    "generationTree": {
+      "root": {
+        "nodeId": "gen-project-shell",
+        "kind": "project-shell",
+        "status": "planned",
+        "output": "partials/project-shell.html"
+      },
+      "standalone": [
+        {
+          "nodeId": "page-login",
+          "kind": "page-leaf",
+          "status": "planned",
+          "output": "pages/login.html"
+        }
+      ]
+    },
+    "dispatchPreflightManifest": [],
+    "expectedDispatches": [],
+    "validationHistory": [
+      {
+        "reportPath": "validation-report.json",
+        "reportHash": "8d9c71365076da0e41f64ad3d63fa56683de8e4a4fa82c69c86ea071102d1e85",
+        "checkedAt": "2026-07-30T10:58:54.482Z",
+        "success": false,
+        "exitCode": 1,
+        "renderBlockingErrorCount": 18,
+        "repairPlanHints": [
+          "head-infrastructure-missing",
+          "head-infrastructure-missing",
+          "head-infrastructure-missing"
+        ],
+        "errorSignatures": [
+          {
+            "errorClass": "head-infrastructure",
+            "normalized": "[html-infrastructure] [MAIN-AGENT] dashboard.html missing <style id=\"theme-vars\"> theme CSS variable block. Impact: all semantic token colors degrade to transparent/default values. Fix: run apply-html-head-contract.mjs <css-path> dashboard.html --replace-head",
+            "signature": "a349db6692e7f8f507ef24c56fda80f907f3f191f24753000ae66ac9691c9a98"
+          },
+          {
+            "errorClass": "head-infrastructure",
+            "normalized": "[html-infrastructure] [MAIN-AGENT] media.html missing <style id=\"theme-vars\"> theme CSS variable block. Impact: all semantic token colors degrade to transparent/default values. Fix: run apply-html-head-contract.mjs <css-path> media.html --replace-head",
+            "signature": "7f60ba4d612c6f66305e750bc083b97a23c18469ccb568968345c782b9247e31"
+          },
+          {
+            "errorClass": "head-infrastructure",
+            "normalized": "[html-infrastructure] [MAIN-AGENT] settings.html missing <style id=\"theme-vars\"> theme CSS variable block. Impact: all semantic token colors degrade to transparent/default values. Fix: run apply-html-head-contract.mjs <css-path> settings.html --replace-head",
+            "signature": "c7b542882ffe82bfec46a0ee5b5c66516d435714f818d98d0b7bcc03ca5a1ff0"
+          },
+          {
+            "errorClass": "head-infrastructure",
+            "normalized": "[semantic-token-fallback] media.html: uses Tailwind semantic token classes such as bg-card/text-foreground/border-border, but <style id=\"semantic-token-fallback\"> is missing. If Tailwind browser runtime fails to compile @theme inline in the canvas iframe, the page can degrade to default black/white styling. Fix: regenerate the page head with apply-html-head-contract.mjs.",
+            "signature": "82df109b9f41a8976bf4f98205bda2d5c79fdfd788de8b3bcb88c68f451c36de"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/dashboard.html: viewportMode is app-shell but data-viewport-mode=\"app-shell\" is missing on the shell container.",
+            "signature": "0d40231a6056263b51c03e4914cf7629b9675a2a55c131c6234c5c54903ffc92"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/dashboard.html: app-shell pages must declare data-scroll-region=\"primary\" on a class list containing overflow-y-auto.",
+            "signature": "bbbe905824ab5701b9cdadd6e152286d3f4de12850551ca5f0fe11361501b24e"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/dashboard.html: app-shell page still looks like natural document flow (min-h-screen) without a complete internal scroll shell.",
+            "signature": "a348b919e9f78d4dc8beec864b7747f69fa7e013ea548726a92e10a51c371556"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/content-list.html: viewportMode is app-shell but data-viewport-mode=\"app-shell\" is missing on the shell container.",
+            "signature": "fb732fecf5028d5d4624e8c867a0280d8c47e010ff6e0d1d1fc209c01fd5dc96"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/content-list.html: app-shell pages must declare data-scroll-region=\"primary\" on a class list containing overflow-y-auto.",
+            "signature": "a8b9fe86c19d9b35534c775a5939452ec29165d198db1445762c4eaa0ccbed5c"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/editor.html: viewportMode is app-shell but data-viewport-mode=\"app-shell\" is missing on the shell container.",
+            "signature": "9e0c714de2cf434432925fc6661935157a863b67dc788773a3b74e4feb4bc7f6"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/editor.html: app-shell pages must declare data-scroll-region=\"primary\" on a class list containing overflow-y-auto.",
+            "signature": "821b04008013ff3377b1c4c31f7ea61e01b97544cc97fffb7f7bcb0f0dc48298"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/new-content.html: viewportMode is app-shell but data-viewport-mode=\"app-shell\" is missing on the shell container.",
+            "signature": "602471195ee2331c4e2387f99984238dbd25372c0f2e47fe3035d64425981609"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/new-content.html: app-shell pages must declare data-scroll-region=\"primary\" on a class list containing overflow-y-auto.",
+            "signature": "98cabf18326649bd4431e19c179699eba0a5a476d6b07db284f86b72e54f0065"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/media.html: viewportMode is app-shell but data-viewport-mode=\"app-shell\" is missing on the shell container.",
+            "signature": "41a57111ab0fff9843a0f0f981598da6048d93671bb77b3c7b04c5840e5c34ea"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/media.html: app-shell pages must declare data-scroll-region=\"primary\" on a class list containing overflow-y-auto.",
+            "signature": "37160a071b678784507a3b36183eb58fdfde9577cca2abc7df83e166d56cece9"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/settings.html: viewportMode is app-shell but data-viewport-mode=\"app-shell\" is missing on the shell container.",
+            "signature": "a8f4977e6ccb8ac0ce8c2faced7849050bb702d582123540ad1b4650102c401f"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/settings.html: app-shell pages must declare data-scroll-region=\"primary\" on a class list containing overflow-y-auto.",
+            "signature": "cc74c7e0c0c72f83cf1d3db2f7e9d500c6af6fad97803fb6fdef9b03592ecdbf"
+          },
+          {
+            "errorClass": "app-shell-viewport",
+            "normalized": "[app-shell-viewport] pages/settings.html: app-shell page still looks like natural document flow (min-h-screen) without a complete internal scroll shell.",
+            "signature": "382b9c3b33f666561eac75ebcfa433af50411207e57c2db24b7f03815f5446ac"
+          }
+        ],
+        "terminalState": null
+      },
+      {
+        "reportPath": "validation-report.json",
+        "reportHash": "562ce27789ca77196added208299116f2178f0746db033da7fc59c408f549f45",
+        "checkedAt": "2026-07-30T11:03:52.848Z",
+        "success": true,
+        "exitCode": 0,
+        "renderBlockingErrorCount": 0,
+        "repairPlanHints": [],
+        "errorSignatures": [],
+        "terminalState": null
+      }
+    ],
+    "readScopeLedger": [],
+    "mainAgentPostDispatchMutations": [],
+    "validationRepairLedger": [
+      {
+        "failedReportPath": "validation-report.json",
+        "failedReportHash": "8d9c71365076da0e41f64ad3d63fa56683de8e4a4fa82c69c86ea071102d1e85",
+        "repairWorkflowReadPath": "intent-workflows/intent-project-mutation/main-agent-repair-workflow.md",
+        "repairStartedAt": "2026-07-30T10:59:10.340Z",
+        "repairEntryStatus": "revalidated-success",
+        "ownerTriage": [
+          {
+            "owner": "main-agent",
+            "errorClass": "head-infrastructure-missing",
+            "affectedFiles": [
+              "dashboard.html"
+            ],
+            "repairScope": "affected-page-head",
+            "strategy": "run_apply_html_head_replace"
+          },
+          {
+            "owner": "main-agent",
+            "errorClass": "head-infrastructure-missing",
+            "affectedFiles": [
+              "media.html"
+            ],
+            "repairScope": "affected-page-head",
+            "strategy": "run_apply_html_head_replace"
+          },
+          {
+            "owner": "main-agent",
+            "errorClass": "head-infrastructure-missing",
+            "affectedFiles": [
+              "settings.html"
+            ],
+            "repairScope": "affected-page-head",
+            "strategy": "run_apply_html_head_replace"
+          }
+        ],
+        "repairPlanHints": [
+          {
+            "errorClass": "head-infrastructure-missing",
+            "owner": "main-agent",
+            "repairScope": "affected-page-head",
+            "strategy": "run_apply_html_head_replace",
+            "affectedFiles": [
+              "dashboard.html"
+            ],
+            "repairReportPath": null,
+            "repairAlreadyAttempted": false,
+            "allowSourceRead": "no-full-html-read",
+            "maxValidationRuns": 2
+          },
+          {
+            "errorClass": "head-infrastructure-missing",
+            "owner": "main-agent",
+            "repairScope": "affected-page-head",
+            "strategy": "run_apply_html_head_replace",
+            "affectedFiles": [
+              "media.html"
+            ],
+            "repairReportPath": null,
+            "repairAlreadyAttempted": false,
+            "allowSourceRead": "no-full-html-read",
+            "maxValidationRuns": 2
+          },
+          {
+            "errorClass": "head-infrastructure-missing",
+            "owner": "main-agent",
+            "repairScope": "affected-page-head",
+            "strategy": "run_apply_html_head_replace",
+            "affectedFiles": [
+              "settings.html"
+            ],
+            "repairReportPath": null,
+            "repairAlreadyAttempted": false,
+            "allowSourceRead": "no-full-html-read",
+            "maxValidationRuns": 2
+          }
+        ],
+        "repairActions": [
+          {
+            "owner": "main-agent",
+            "errorClass": "head-infrastructure",
+            "affectedFiles": [
+              "pages/dashboard.html",
+              "pages/media.html",
+              "pages/settings.html"
+            ],
+            "action": "run apply-html-head-contract --replace-head",
+            "observedFileHashes": [
+              {
+                "path": "pages/dashboard.html",
+                "hash": "975d62fe4e0b29b684bdc71693a57a7553714621def690c7bb1f860aa8241513"
+              },
+              {
+                "path": "pages/media.html",
+                "hash": "b67c6900a3287af4ed7228eb5abae4965a0570f587fce9bc39eb35d0655ec168"
+              },
+              {
+                "path": "pages/settings.html",
+                "hash": "ec5e1af99bd8cc1f50c96478baa638cd412d08af6fac6358c006a5397a25cb26"
+              }
+            ],
+            "preEditFileHashes": [],
+            "postEditFileHashes": [],
+            "repairOwnedFields": [
+              "head-infrastructure"
+            ],
+            "recordedAt": "2026-07-30T10:59:18.387Z",
+            "repairActionTableRequired": true
+          },
+          {
+            "owner": "main-agent",
+            "errorClass": "unknown-blocking",
+            "affectedFiles": [
+              "pages/dashboard.html",
+              "pages/content-list.html",
+              "pages/editor.html",
+              "pages/new-content.html",
+              "pages/media.html",
+              "pages/settings.html"
+            ],
+            "action": "targeted_data_attribute_repair",
+            "observedFileHashes": [
+              {
+                "path": "pages/dashboard.html",
+                "hash": "57e460d6b44727bb3fdb8057c087c7005209fbc9f65f792973fa40fac525e631"
+              },
+              {
+                "path": "pages/content-list.html",
+                "hash": "bcfe9063aae834bda1c215b1932eecfc976c9eb7a1f711e257be365d8ef3bf99"
+              },
+              {
+                "path": "pages/editor.html",
+                "hash": "2d49d66c402e955e1163d172877bf94418155fa662605f630448aff0b4d29978"
+              },
+              {
+                "path": "pages/new-content.html",
+                "hash": "f5a0eedc8c14cc430cdb5884c7ce5be07415d20bfa00f54c83758f606e5040f2"
+              },
+              {
+                "path": "pages/media.html",
+                "hash": "b4976aa2de27fa73f656d16008563f87d9321067ed6401e9d7f50b6a950c893c"
+              },
+              {
+                "path": "pages/settings.html",
+                "hash": "01a35ad05106eae8ab3819a321d1688838210509c17773b2ff480b7f050ebf66"
+              }
+            ],
+            "preEditFileHashes": [],
+            "postEditFileHashes": [],
+            "repairOwnedFields": [
+              "unknown-blocking"
+            ],
+            "recordedAt": "2026-07-30T11:03:45.210Z",
+            "repairActionTableRequired": true
+          }
+        ],
+        "revalidationReportPath": "validation-report.json",
+        "revalidationReportHash": "562ce27789ca77196added208299116f2178f0746db033da7fc59c408f549f45",
+        "revalidationSuccess": true,
+        "blockedReason": null,
+        "revalidationRecordedAt": "2026-07-30T11:04:04.957Z"
+      }
+    ],
+    "repairEntryEvidence": [
+      {
+        "failedReportPath": "validation-report.json",
+        "failedReportHash": "8d9c71365076da0e41f64ad3d63fa56683de8e4a4fa82c69c86ea071102d1e85",
+        "repairWorkflowReadPath": "intent-workflows/intent-project-mutation/main-agent-repair-workflow.md",
+        "repairStartedAt": "2026-07-30T10:59:10.340Z",
+        "ledgerIndex": 0,
+        "ownerTriageCount": 3,
+        "repairActionCount": 2,
+        "revalidationReportPath": "validation-report.json",
+        "revalidationReportHash": "562ce27789ca77196added208299116f2178f0746db033da7fc59c408f549f45",
+        "revalidationSuccess": true
+      }
+    ]
+  },
+  "designSource": {
+    "cssFilePath": "c:\\opt\\workstations\\project\\Bloath\\.design\\colors_and_type.css",
+    "brandPrefix": "blth",
+    "styleConstraints": {
+      "radiusMax": 16,
+      "staticShadowAlphaMax": 0.05,
+      "primaryHue": "0 0% 12%",
+      "backgroundColor": "34 20% 97%",
+      "foregroundColor": "24 6% 17%"
+    },
+    "designLibrary": null
+  },
+  "pages": [
+    {
+      "nodeId": "page-login",
+      "htmlSrc": "pages/login.html",
+      "title": "登录",
+      "deviceType": "desktop",
+      "viewportMode": "document-scroll",
+      "pageType": "task-driven",
+      "pageIndex": 1,
+      "visualNorthStar": "居中登录卡片，GitHub OAuth 按钮，品牌标识，极简留白",
+      "compositionPattern": "centered-card",
+      "continuityAnchors": [
+        "brand-logo",
+        "primary-color",
+        "typography-scale",
+        "radius-scale"
+      ]
+    },
+    {
+      "nodeId": "page-dashboard",
+      "htmlSrc": "pages/dashboard.html",
+      "title": "仪表盘",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "pageType": "showcase",
+      "pageIndex": 2,
+      "visualNorthStar": "统计卡片网格 + 快速操作 + 最近文章列表，信息层次清晰",
+      "compositionPattern": "dashboard-grid",
+      "continuityAnchors": [
+        "sidebar-shell",
+        "primary-color",
+        "typography-scale",
+        "radius-scale",
+        "card-surface"
+      ]
+    },
+    {
+      "nodeId": "page-content-list",
+      "htmlSrc": "pages/content-list.html",
+      "title": "内容库",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "pageType": "task-driven",
+      "pageIndex": 3,
+      "visualNorthStar": "左侧导航 + 右侧内容表格，搜索筛选 + 批量操作",
+      "compositionPattern": "data-table",
+      "continuityAnchors": [
+        "sidebar-shell",
+        "primary-color",
+        "typography-scale",
+        "radius-scale",
+        "card-surface"
+      ]
+    },
+    {
+      "nodeId": "page-editor",
+      "htmlSrc": "pages/editor.html",
+      "title": "编辑器",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "pageType": "task-driven",
+      "pageIndex": 4,
+      "visualNorthStar": "左侧编辑区 + 右侧 Front Matter 表单，分屏布局",
+      "compositionPattern": "split-panel",
+      "continuityAnchors": [
+        "sidebar-shell",
+        "primary-color",
+        "typography-scale",
+        "radius-scale",
+        "card-surface"
+      ]
+    },
+    {
+      "nodeId": "page-new-content",
+      "htmlSrc": "pages/new-content.html",
+      "title": "新建文章",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "pageType": "task-driven",
+      "pageIndex": 5,
+      "visualNorthStar": "标题输入 + 编辑器 + Front Matter 表单，简洁创建流程",
+      "compositionPattern": "form-layout",
+      "continuityAnchors": [
+        "sidebar-shell",
+        "primary-color",
+        "typography-scale",
+        "radius-scale",
+        "card-surface"
+      ]
+    },
+    {
+      "nodeId": "page-media",
+      "htmlSrc": "pages/media.html",
+      "title": "媒体库",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "pageType": "task-driven",
+      "pageIndex": 6,
+      "visualNorthStar": "图片网格浏览 + 上传区域 + 筛选工具栏",
+      "compositionPattern": "media-grid",
+      "continuityAnchors": [
+        "sidebar-shell",
+        "primary-color",
+        "typography-scale",
+        "radius-scale",
+        "card-surface"
+      ]
+    },
+    {
+      "nodeId": "page-settings",
+      "htmlSrc": "pages/settings.html",
+      "title": "设置",
+      "deviceType": "desktop",
+      "viewportMode": "app-shell",
+      "pageType": "task-driven",
+      "pageIndex": 7,
+      "visualNorthStar": "仓库配置表单 + 集合管理列表",
+      "compositionPattern": "settings-form",
+      "continuityAnchors": [
+        "sidebar-shell",
+        "primary-color",
+        "typography-scale",
+        "radius-scale",
+        "card-surface"
+      ]
+    }
+  ],
+  "assets": [],
+  "wiringPlan": [],
+  "hiddenInteractionPlan": []
+}

@@ -1,57 +1,21 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useNavigate, useSearchParams, useMatch } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { readFile, writeFile, moveFile, formatTimestamp, renameFile } from '../lib/api';
+import { sanitizeSlug, sanitizePath, filterValidDirs } from '../lib/path';
 import Toast from '../components/ui/Toast';
 import VditorEditor from '../components/editor/VditorEditor';
 import FrontmatterPanel from '../components/editor/FrontmatterPanel';
 import { ArrowLeft, Save, Send, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import Vditor from 'vditor';
-import yaml from 'js-yaml';
-import type { ArticleFrontmatter } from '../../../shared/types';
-
-interface Frontmatter extends ArticleFrontmatter {}
-
-function parseFrontmatter(raw: string): { fm: Frontmatter; body: string } {
-  const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
-  if (!fmMatch) return { fm: {}, body: raw.trim() };
-
-  let fm: Frontmatter = {};
-  try {
-    fm = yaml.load(fmMatch[1]) as Frontmatter;
-    for (const key of ['categories', 'tags', 'pictures', 'video'] as const) {
-      if (fm[key] !== undefined && !Array.isArray(fm[key])) {
-        (fm as Record<string, unknown>)[key] = [fm[key]];
-      }
-    }
-  } catch {
-    fm = {};
-  }
-
-  return { fm, body: raw.slice(fmMatch[0].length).trim() };
-}
-
-function generateFrontmatter(fm: Frontmatter): string {
-  const cleanFm: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(fm)) {
-    // url 仅用于控制文件名，不写入 frontmatter
-    if (key === 'url') continue;
-    if (value !== undefined && value !== '' && value !== null) {
-      cleanFm[key] = value;
-    }
-  }
-  if (Object.keys(cleanFm).length === 0) return '---\n---';
-  return '---\n' + yaml.dump(cleanFm, { lineWidth: -1 }) + '---';
-}
+import { parseFrontmatter, generateFrontmatter, type Frontmatter } from '../lib/frontmatter';
 
 export default function EditorPage() {
   const match = useMatch('/editor/*');
   const slug = match?.params['*'] || '';
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
   const vditorInstanceRef = useRef<Vditor | null>(null);
@@ -68,7 +32,7 @@ export default function EditorPage() {
 
   const [publishTarget, setPublishTarget] = useState('');
   const [showPublishDialog, setShowPublishDialog] = useState(false);
-  const availableDirs = config.paths || [];
+  const availableDirs = filterValidDirs(config.paths || []);
 
   const [frontmatter, setFrontmatter] = useState<Frontmatter>({});
   const [bodyContent, setBodyContent] = useState('');
@@ -172,7 +136,13 @@ export default function EditorPage() {
       effectiveFm.url = getDefaultSlug();
       setFm('url', effectiveFm.url);
     }
-    const targetSlug = effectiveFm.url || slug;
+    let targetSlug: string;
+    try {
+      targetSlug = sanitizeSlug(effectiveFm.url || slug);
+    } catch (err) {
+      setToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'error' });
+      return;
+    }
     const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
     const targetPath = isNew
       ? `${config.draftPath || '.draft'}/${targetSlug}.md`
@@ -236,7 +206,7 @@ export default function EditorPage() {
   };
 
   const handlePublish = async () => {
-    if (!user || !selectedRepo) return;
+    if (!user || !owner || !repo) return;
 
     // 如果 URL 为空：新建文章自动生成默认值，已有文章 fallback 到路由 slug
     const effectiveFm = { ...frontmatter };
@@ -244,11 +214,23 @@ export default function EditorPage() {
       effectiveFm.url = isNew ? getDefaultSlug() : slug;
       setFm('url', effectiveFm.url);
     }
-    const targetSlug = effectiveFm.url.replace('.md', '');
+    let targetSlug: string;
+    try {
+      targetSlug = sanitizeSlug(effectiveFm.url);
+    } catch (err) {
+      setToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'error' });
+      return;
+    }
     const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
 
     // 优先使用当前文件所在目录作为发布目标
-    const resolvedTarget = publishTarget || defaultPublishTarget;
+    let resolvedTarget: string;
+    try {
+      resolvedTarget = sanitizePath(publishTarget || defaultPublishTarget);
+    } catch (err) {
+      setToast({ message: `发布目标校验失败: ${(err as Error).message}`, type: 'error' });
+      return;
+    }
     if (!resolvedTarget) {
       setToast({ message: '请选择发布目标目录', type: 'error' });
       return;
@@ -262,13 +244,12 @@ export default function EditorPage() {
       const timestamp = formatTimestamp();
 
       await writeFile({
-        owner: selectedRepo.owner,
-        repo: selectedRepo.repo,
+        owner,
+        repo,
         path: filePath,
         content: fullContent,
         message: `${targetSlug}.md-${timestamp}`,
         branch,
-        sha: currentFileSha || undefined,
         userName: user?.login
       });
       publishedPath = filePath;
@@ -278,8 +259,8 @@ export default function EditorPage() {
         const draftPath = getDraftPath(targetSlug);
         if (currentFileSha) {
           await moveFile({
-            owner: selectedRepo.owner,
-            repo: selectedRepo.repo,
+            owner,
+            repo,
             fromPath: draftPath,
             toPath: `${trashPath}/${targetSlug}.md`,
             sha: currentFileSha,
@@ -289,8 +270,8 @@ export default function EditorPage() {
           });
         } else {
           await writeFile({
-            owner: selectedRepo.owner,
-            repo: selectedRepo.repo,
+            owner,
+            repo,
             path: draftPath,
             content: '',
             message: `[skip ci] 删除草稿: ${targetSlug}`,
@@ -305,11 +286,12 @@ export default function EditorPage() {
     } catch (err) {
       console.error('Failed to publish:', err);
       // 如果发布成功但清理草稿失败，提示用户手动清理
-      if (publishedPath && (err as Error).message.includes('draft') || (err as Error).message.includes('trash')) {
-        setToast({ message: `文章已发布，但草稿清理失败: ${(err as Error).message}。请手动删除草稿。`, type: 'error' });
+      const errMsg = (err as Error).message;
+      if (publishedPath && (errMsg.includes('draft') || errMsg.includes('trash'))) {
+        setToast({ message: `文章已发布，但草稿清理失败: ${errMsg}。请手动删除草稿。`, type: 'error' });
         handleBack();
       } else {
-        setToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
+        setToast({ message: `发布失败: ${errMsg}`, type: 'error' });
       }
     } finally {
       setSaving(false);
@@ -317,7 +299,7 @@ export default function EditorPage() {
   };
 
   const handleDeleteArticle = async () => {
-    if (!user || !selectedRepo || !currentFilePath) return;
+    if (!user || !owner || !repo || !currentFilePath) return;
 
     // 删除操作针对已有文章，URL 为空时 fallback 到路由 slug
     const effectiveFm = { ...frontmatter };
@@ -331,8 +313,8 @@ export default function EditorPage() {
     setSaving(true);
     try {
       await moveFile({
-        owner: selectedRepo.owner,
-        repo: selectedRepo.repo,
+        owner,
+        repo,
         fromPath: currentFilePath,
         toPath: trashFile,
         sha: currentFileSha,
@@ -584,10 +566,10 @@ export default function EditorPage() {
         {/* 编辑器区域 */}
         <div className={`flex-1 flex flex-col overflow-hidden ${!showToolbar ? 'toolbar-hidden' : ''}`}>
           {/* 工具栏折叠按钮 */}
-          <div className="flex items-center justify-end px-2 py-1 border-b border-[#F2F2F2] bg-[#FAFAFA]">
+          <div className="flex items-center justify-end px-2 py-1 border-b border-border bg-secondary">
             <button
               onClick={() => setShowToolbar(!showToolbar)}
-              className="flex items-center gap-1 text-xs text-[#6B7280] hover:text-[#1F1F1F] transition-colors"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
               title={showToolbar ? '折叠工具栏' : '展开工具栏'}
             >
               {showToolbar ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}

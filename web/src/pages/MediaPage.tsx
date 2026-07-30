@@ -1,11 +1,24 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useCollections } from '../contexts/CollectionsContext';
+import { useRepo } from '../contexts/RepoContext';
 import { useAuth } from '../hooks/useAuth';
 import { getTree, uploadImage, deleteFile } from '../lib/api';
+import { resolveMediaSource } from '../lib/resolveMediaSource';
 import { sortByLastModified } from '../lib/sortFiles';
 import { resolveRenameTemplate } from '../lib/rename';
 import {
-  Upload,
+  compressImage,
+  blobToBase64,
+  formatDate,
+  formatSize,
+  PAGE_SIZE,
+  MAX_FILE_SIZE,
+  type MediaFile
+} from '../lib/mediaUtils';
+import { MediaUploader } from '../components/media/MediaUploader';
+import { MediaPreviewDialog } from '../components/media/MediaPreviewDialog';
+import { DeleteConfirmDialog } from '../components/media/DeleteConfirmDialog';
+import {
   Image as ImageIcon,
   Trash2,
   Copy,
@@ -17,19 +30,11 @@ import {
   SlidersHorizontal
 } from 'lucide-react';
 
-interface MediaFile {
-  name: string;
-  path: string;
-  sha: string;
-  size?: number;
-  url: string;
-  lastModified: number;
-}
-
 export default function MediaPage() {
   const { user } = useAuth();
   const { mediaConfig } = useCollections();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { selectedRepo } = useRepo();
+  const source = useMemo(() => resolveMediaSource(mediaConfig, selectedRepo), [mediaConfig, selectedRepo]);
   const [files, setFiles] = useState<MediaFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -38,50 +43,58 @@ export default function MediaPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedType, setCopiedType] = useState<'url' | 'markdown' | null>(null);
   const [previewFile, setPreviewFile] = useState<MediaFile | null>(null);
-  const [dragOver, setDragOver] = useState(false);
   const [gridCols, setGridCols] = useState(() => {
     const saved = localStorage.getItem('media-grid-cols');
     return saved ? parseInt(saved, 10) : 5;
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteConfirm, setDeleteConfirm] = useState<MediaFile | null>(null);
-  const PAGE_SIZE = 40;
 
-  const isConfigured = mediaConfig.imageOwner && mediaConfig.imageRepo;
+  const isConfigured = source.configured;
 
   const handleGridColsChange = (value: number) => {
     setGridCols(value);
     localStorage.setItem('media-grid-cols', String(value));
   };
 
+  // 构建 CDN URL，custom 模板支持 {branch} 占位符
   const getCdnUrl = useCallback((path: string) => {
-    const { cdnProvider, customCdnTemplate, imageOwner, imageRepo, imageBranch } = mediaConfig;
+    const { cdnProvider, customCdnTemplate } = mediaConfig;
+    const { owner, repo, branch } = source;
     if (cdnProvider === 'custom') {
       return customCdnTemplate
-        .replace('{owner}', imageOwner)
-        .replace('{repo}', imageRepo)
+        .replace('{owner}', owner)
+        .replace('{repo}', repo)
+        .replace('{branch}', branch)
         .replace('{path}', path);
     }
     if (cdnProvider === 'jsdmirror') {
-      return `https://cdn.jsdmirror.cn/gh/${imageOwner}/${imageRepo}@${imageBranch}/${path}`;
+      return `https://cdn.jsdmirror.cn/gh/${owner}/${repo}@${branch}/${path}`;
     }
-    return `https://raw.githubusercontent.com/${imageOwner}/${imageRepo}/${imageBranch}/${path}`;
-  }, [mediaConfig]);
+    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+  }, [mediaConfig, source]);
 
-  // 加载文件列表
-  const loadFiles = useCallback(async () => {
-    if (!user || !isConfigured) return;
-    setLoading(true);
-    setError('');
+  // 加载文件列表；silent=true 时不更新 loading/error 状态并返回结果
+  const loadFiles = useCallback(async (silent = false): Promise<MediaFile[] | null> => {
+    if (!user || !isConfigured) return null;
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const treeItems = await getTree({
-        owner: mediaConfig.imageOwner,
-        repo: mediaConfig.imageRepo,
-        branch: mediaConfig.imageBranch,
+        owner: source.owner,
+        repo: source.repo,
+        branch: source.branch,
         mode: 'filename'
       });
 
-      const mediaFiles: MediaFile[] = treeItems.filter((f) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name))
+      const mediaFiles: MediaFile[] = treeItems.filter((f) => {
+        if (source.pathPrefix && !f.path.startsWith(source.pathPrefix + '/')) {
+          return false;
+        }
+        return /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name);
+      })
         .map((f) => ({
           name: f.name,
           path: f.path,
@@ -91,86 +104,35 @@ export default function MediaPage() {
           lastModified: f.lastModified || 0
         }));
       sortByLastModified(mediaFiles);
+
+      if (silent) {
+        return mediaFiles;
+      }
       setFiles(mediaFiles);
       setCurrentPage(1);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [user, isConfigured, mediaConfig, getCdnUrl]);
-
-  // 静默加载文件列表（不显示 loading/error）
-  const loadFilesSilently = useCallback(async (): Promise<MediaFile[] | null> => {
-    if (!user || !isConfigured) return null;
-    try {
-      const treeItems = await getTree({
-        owner: mediaConfig.imageOwner,
-        repo: mediaConfig.imageRepo,
-        branch: mediaConfig.imageBranch,
-        mode: 'filename'
-      });
-      const mediaFiles: MediaFile[] = treeItems.filter((f) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name))
-        .map((f) => ({
-          name: f.name,
-          path: f.path,
-          sha: f.sha,
-          size: f.size,
-          url: getCdnUrl(f.path),
-          lastModified: f.lastModified || 0
-        }));
-      sortByLastModified(mediaFiles);
       return mediaFiles;
-    } catch {
+    } catch (err) {
+      if (silent) {
+        return null;
+      }
+      setError(err instanceof Error ? err.message : '加载失败');
       return null;
+    } finally {
+      if (!silent) {
+        setLoading(false);
+      }
     }
-  }, [user, isConfigured, mediaConfig, getCdnUrl]);
+  }, [user, isConfigured, source, getCdnUrl]);
 
   useEffect(() => {
     if (isConfigured) loadFiles();
   }, [isConfigured, loadFiles]);
 
-  // 压缩图片为 WebP
-  const compressImage = (file: File, quality: number): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          URL.revokeObjectURL(url);
-          reject(new Error('Canvas 不可用'));
-          return;
-        }
-        ctx.drawImage(img, 0, 0);
-        canvas.toBlob(
-          (blob) => {
-            URL.revokeObjectURL(url);
-            if (blob) resolve(blob);
-            else reject(new Error('压缩失败'));
-          },
-          'image/webp',
-          quality / 100
-        );
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error('图片加载失败'));
-      };
-      img.src = url;
-    });
-  };
-
   // 上传文件
   const handleUpload = async (fileList: FileList | File[]) => {
     if (!user || !isConfigured) return;
 
-    const filesArray = Array.from(fileList).filter((f) =>
-      f.type.startsWith('image/')
-    );
+    const filesArray = Array.from(fileList).filter((f) => f.type.startsWith('image/'));
     if (filesArray.length === 0) {
       setError('请选择图片文件');
       return;
@@ -184,44 +146,50 @@ export default function MediaPage() {
     let skipped = 0;
     const errors: string[] = [];
 
-    // 预先获取文件列表（只查一次，后续用本地缓存判断）
-    let currentFiles = await loadFilesSilently();
+    let currentFiles = await loadFiles(true);
 
     for (const file of filesArray) {
+      if (file.size > MAX_FILE_SIZE) {
+        errors.push(`${file.name}: 超过 20MB 限制`);
+        continue;
+      }
       try {
         const blob = await compressImage(file, mediaConfig.quality);
         const base64 = await blobToBase64(blob);
 
         const fileName = resolveRenameTemplate(mediaConfig.renameTemplate, file.name) + '.webp';
-        const filePath = fileName;
+        const filePath = source.pathPrefix
+          ? `${source.pathPrefix}/${fileName}`
+          : fileName;
 
-        // 检查重复
-        const exists = currentFiles?.some((f) => f.name === fileName);
-        if (exists && mediaConfig.duplicateStrategy === 'skip') {
+        const existing = currentFiles?.find((f) => f.name === fileName);
+        if (existing && mediaConfig.duplicateStrategy === 'skip') {
           skipped++;
           continue;
         }
 
-        let sha: string | undefined;
-        if (exists) {
-          const existing = currentFiles?.find((f) => f.name === fileName);
-          sha = existing?.sha;
-        }
-
         await uploadImage({
-          owner: mediaConfig.imageOwner,
-          repo: mediaConfig.imageRepo,
+          owner: source.owner,
+          repo: source.repo,
           path: filePath,
           base64Content: base64,
           message: `[skip ci] 上传: ${fileName}`,
-          branch: mediaConfig.imageBranch,
+          branch: source.branch,
           userName: user.login,
-          sha
+          sha: existing?.sha
         });
         uploaded++;
-        // 上传成功后更新本地缓存，避免重复查 GitHub
+        // 上传成功后更新本地缓存
         if (currentFiles) {
-          currentFiles = [{ name: fileName, path: filePath, sha: '', size: blob.size, lastModified: Date.now(), url: '' }, ...currentFiles];
+          const newEntry: MediaFile = {
+            name: fileName,
+            path: filePath,
+            sha: existing?.sha || '',
+            size: blob.size,
+            lastModified: Date.now(),
+            url: getCdnUrl(filePath)
+          };
+          currentFiles = [newEntry, ...currentFiles];
         }
       } catch (err) {
         errors.push(`${file.name}: ${err instanceof Error ? err.message : '上传失败'}`);
@@ -237,16 +205,13 @@ export default function MediaPage() {
     }
 
     setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // 删除文件
-  const handleDelete = async (file: MediaFile) => {
+  const handleDelete = (file: MediaFile) => {
     if (!user) return;
     setDeleteConfirm(file);
   };
 
-  // 执行删除
   const executeDelete = async () => {
     const file = deleteConfirm;
     if (!file || !user) return;
@@ -254,8 +219,8 @@ export default function MediaPage() {
 
     try {
       await deleteFile({
-        owner: mediaConfig.imageOwner,
-        repo: mediaConfig.imageRepo,
+        owner: source.owner,
+        repo: source.repo,
         path: file.path,
         sha: file.sha,
         message: `[skip ci] 删除: ${file.name}`,
@@ -268,7 +233,6 @@ export default function MediaPage() {
     }
   };
 
-  // 复制 URL
   const handleCopy = async (file: MediaFile) => {
     try {
       await navigator.clipboard.writeText(file.url);
@@ -280,7 +244,6 @@ export default function MediaPage() {
     }
   };
 
-  // 复制 Markdown 链接
   const handleCopyMarkdown = async (file: MediaFile) => {
     const markdownLink = `![${file.name}](${file.url})`;
     try {
@@ -293,51 +256,18 @@ export default function MediaPage() {
     }
   };
 
-  // 拖拽处理
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(true);
-  };
-  const handleDragLeave = () => setDragOver(false);
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    if (e.dataTransfer.files.length > 0) {
-      handleUpload(e.dataTransfer.files);
-    }
-  };
-
-  const formatDate = (timestamp: number) => {
-    if (!timestamp) return '-';
-    const d = new Date(timestamp);
-    const Y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const h = String(d.getHours()).padStart(2, '0');
-    const min = String(d.getMinutes()).padStart(2, '0');
-    const s = String(d.getSeconds()).padStart(2, '0');
-    return `${Y}-${m}-${day} ${h}:${min}:${s}`;
-  };
-
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return '-';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
   if (!isConfigured) {
     return (
       <div className="flex-1 overflow-auto">
         <header className="px-8 py-5 flex-shrink-0">
-          <h1 className="text-base font-medium text-[#1F1F1F]">媒体库</h1>
-          <p className="text-sm text-[#6B7280] mt-1">管理图片和静态资源</p>
+          <h1 className="text-base font-medium text-foreground">媒体库</h1>
+          <p className="text-sm text-muted-foreground mt-1">管理图片和静态资源</p>
         </header>
         <div className="px-8">
-          <div className="border border-[#E8E8E8] rounded-sm p-12 text-center">
-            <ImageIcon className="w-10 h-10 text-[#9CA3AF] mx-auto mb-3" />
-            <p className="text-sm text-[#6B7280] mb-1">请先配置图床仓库</p>
-            <p className="text-xs text-[#9CA3AF]">前往设置页配置图床仓库和 CDN 域名后即可使用</p>
+          <div className="border border-border rounded-sm p-12 text-center">
+            <ImageIcon className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground mb-1">{source.missingHint || '请先完成媒体库配置'}</p>
+            <p className="text-xs text-muted-foreground">前往设置页配置媒体源后即可使用</p>
           </div>
         </div>
       </div>
@@ -346,88 +276,57 @@ export default function MediaPage() {
 
   return (
     <div className="flex-1 overflow-auto">
-      {/* 顶部栏 */}
       <header className="px-8 py-5 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-base font-medium text-[#1F1F1F]">媒体库</h1>
-            <p className="text-sm text-[#6B7280] mt-1">
-              {mediaConfig.imageOwner}/{mediaConfig.imageRepo} · {files.length} 个文件
+            <h1 className="text-base font-medium text-foreground">媒体库</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {source.owner}/{source.repo} · {files.length} 个文件
             </p>
           </div>
-          {/* 每行个数滑块 */}
           <div className="flex items-center gap-3">
-            <SlidersHorizontal className="w-4 h-4 text-[#9CA3AF]" />
-            <span className="text-xs text-[#6B7280] w-16 hidden sm:inline">每行 {gridCols} 个</span>
+            <SlidersHorizontal className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground w-16 hidden sm:inline">每行 {gridCols} 个</span>
             <input
               type="range"
               min={5}
               max={10}
               value={gridCols}
               onChange={(e) => handleGridColsChange(parseInt(e.target.value, 10))}
-              className="w-24 h-1 accent-[#3B82F6] cursor-pointer hidden sm:block"
+              className="w-24 h-1 accent-primary cursor-pointer hidden sm:block"
             />
           </div>
         </div>
       </header>
 
       <div className="px-8 space-y-4">
-        {/* 消息提示 */}
         {error && (
           <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-sm text-xs text-red-700">
             <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
             <span>{error}</span>
-            <button onClick={() => setError('')} className="ml-auto"><X className="w-3 h-3" /></button>
+            <button type="button" onClick={() => setError('')} className="ml-auto" aria-label="关闭错误提示"><X className="w-3 h-3" /></button>
           </div>
         )}
         {success && (
           <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-sm text-xs text-green-700">
             <Check className="w-3.5 h-3.5 flex-shrink-0" />
             <span>{success}</span>
-            <button onClick={() => setSuccess('')} className="ml-auto"><X className="w-3 h-3" /></button>
+            <button type="button" onClick={() => setSuccess('')} className="ml-auto" aria-label="关闭成功提示"><X className="w-3 h-3" /></button>
           </div>
         )}
 
-        {/* 上传区域 */}
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-sm p-8 text-center cursor-pointer transition-colors ${
-            dragOver
-              ? 'border-[#3B82F6] bg-blue-50'
-              : 'border-[#E8E8E8] hover:border-[#D1D5DB] hover:bg-[#F9FAFA]'
-          } ${uploading ? 'pointer-events-none opacity-60' : ''}`}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={(e) => e.target.files && handleUpload(e.target.files)}
-          />
-          {uploading ? (
-            <Loader2 className="w-8 h-8 text-[#3B82F6] mx-auto mb-2 animate-spin" />
-          ) : (
-            <Upload className="w-8 h-8 text-[#9CA3AF] mx-auto mb-2" />
-          )}
-          <p className="text-sm text-[#6B7280]">
-            {uploading ? '上传中...' : '拖拽图片到此处，或点击选择文件'}
-          </p>
-          <p className="text-xs text-[#9CA3AF] mt-1">
-            自动压缩为 WebP · 质量 {mediaConfig.quality}% · 自动重命名
-          </p>
-        </div>
+        <MediaUploader
+          uploading={uploading}
+          quality={mediaConfig.quality}
+          onUpload={handleUpload}
+        />
 
-        {/* 文件列表 */}
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 text-[#3B82F6] animate-spin" />
+            <Loader2 className="w-6 h-6 text-primary animate-spin" />
           </div>
         ) : files.length === 0 ? (
-          <div className="text-center py-12 text-sm text-[#9CA3AF]">
+          <div className="text-center py-12 text-sm text-muted-foreground">
             暂无图片，上传第一张图片开始使用
           </div>
         ) : (
@@ -441,11 +340,10 @@ export default function MediaPage() {
             {files.slice(0, currentPage * PAGE_SIZE).map((file) => (
             <div
               key={file.path}
-              className="group border border-[#E8E8E8] rounded-sm overflow-hidden hover:border-[#D1D5DB] transition-colors bg-white mb-3 sm:mb-0 break-inside-avoid"
+              className="group border border-border rounded-sm overflow-hidden hover:border-border transition-colors bg-card mb-3 sm:mb-0 break-inside-avoid"
             >
-                {/* 缩略图 */}
                 <div
-                  className="aspect-square bg-[#F9FAFA] flex items-center justify-center cursor-pointer overflow-hidden"
+                  className="aspect-square bg-accent flex items-center justify-center cursor-pointer overflow-hidden"
                   onClick={() => setPreviewFile(file)}
                 >
                   <img
@@ -459,22 +357,21 @@ export default function MediaPage() {
                       (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
                     }}
                   />
-                  <FileImage className="w-8 h-8 text-[#D1D5DB] hidden" />
+                  <FileImage className="w-8 h-8 text-muted-foreground hidden" />
                 </div>
 
-                {/* 文件信息 */}
-                <div className="px-2 py-1.5 border-t border-[#F2F2F2]">
-                  <p className="text-xs text-[#1F1F1F] truncate font-mono" title={file.name}>
+                <div className="px-2 py-1.5 border-t border-border">
+                  <p className="text-xs text-foreground truncate font-mono" title={file.name}>
                     {file.name}
                   </p>
-                  <p className="text-xs text-[#9CA3AF]">{formatSize(file.size)} · {formatDate(file.lastModified)}</p>
+                  <p className="text-xs text-muted-foreground">{formatSize(file.size)} · {formatDate(file.lastModified)}</p>
                 </div>
 
-                {/* 操作按钮 */}
                 <div className="px-2 pb-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
+                    type="button"
                     onClick={() => handleCopy(file)}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs border border-[#E8E8E8] rounded-sm hover:bg-[#F9FAFA] transition-colors text-[#6B7280]"
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs border border-border rounded-sm hover:bg-accent transition-colors text-muted-foreground"
                     title="复制 URL"
                   >
                     {copiedId === file.sha && copiedType === 'url' ? (
@@ -484,8 +381,9 @@ export default function MediaPage() {
                     )}
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleCopyMarkdown(file)}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs border border-[#E8E8E8] rounded-sm hover:bg-[#F9FAFA] transition-colors text-[#6B7280]"
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs border border-border rounded-sm hover:bg-accent transition-colors text-muted-foreground"
                     title="复制 Markdown 链接"
                   >
                     {copiedId === file.sha && copiedType === 'markdown' ? (
@@ -495,8 +393,9 @@ export default function MediaPage() {
                     )}
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleDelete(file)}
-                    className="flex items-center justify-center px-2 py-1 border border-[#E8E8E8] rounded-sm hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors text-[#6B7280]"
+                    className="flex items-center justify-center px-2 py-1 border border-border rounded-sm hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors text-muted-foreground"
                     title="删除"
                   >
                     <Trash2 className="w-3 h-3" />
@@ -508,8 +407,9 @@ export default function MediaPage() {
             {files.length > currentPage * PAGE_SIZE && (
               <div className="flex justify-center py-4">
                 <button
+                  type="button"
                   onClick={() => setCurrentPage((p) => p + 1)}
-                  className="px-6 py-2 text-sm bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors"
+                  className="px-6 py-2 text-sm bg-foreground text-white rounded-sm hover:bg-foreground/90 transition-colors"
                 >
                   加载更多 ({files.length - currentPage * PAGE_SIZE} 张剩余)
                 </button>
@@ -519,110 +419,21 @@ export default function MediaPage() {
         )}
       </div>
 
-      {/* 删除确认弹窗 */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-sm shadow-sm p-4 w-full max-w-sm mx-4 border border-[#E8E8E8]">
-            <p className="text-sm text-[#1F1F1F] mb-4">
-              确定要删除 <span className="font-mono text-[#6B7280]">{deleteConfirm.name}</span> 吗？
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="px-3 py-1.5 text-sm border border-[#E8E8E8] text-[#374151] hover:bg-[#F9FAFA] rounded-sm transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={executeDelete}
-                className="px-3 py-1.5 text-sm text-white bg-red-600 hover:bg-red-700 rounded-sm transition-colors"
-              >
-                删除
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteConfirmDialog
+        file={deleteConfirm}
+        onCancel={() => setDeleteConfirm(null)}
+        onConfirm={executeDelete}
+      />
 
-      {/* 预览弹窗 */}
-      {previewFile && (
-        <div
-          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-          onClick={() => setPreviewFile(null)}
-        >
-          <div
-            className="bg-white rounded-sm max-w-3xl w-full max-h-[90vh] overflow-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#F2F2F2]">
-              <p className="text-sm font-medium text-[#1F1F1F] truncate font-mono">{previewFile.name}</p>
-              <button
-                onClick={() => setPreviewFile(null)}
-                className="text-[#6B7280] hover:text-[#1F1F1F] transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-4 flex items-center justify-center bg-[#F9FAFA]">
-              <img
-                src={previewFile.url}
-                alt={previewFile.name}
-                className="max-w-full max-h-[60vh] object-contain"
-              />
-            </div>
-            <div className="px-4 py-3 border-t border-[#F2F2F2] space-y-2">
-              <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs text-[#1F1F1F] font-mono bg-[#F3F4F6] px-2 py-1 rounded-sm truncate">
-                  {previewFile.url}
-                </code>
-                <button
-                  onClick={() => handleCopy(previewFile)}
-                  className="flex items-center gap-1 px-3 py-1 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors"
-                >
-                  {copiedId === previewFile.sha && copiedType === 'url' ? (
-                    <><Check className="w-3 h-3" /> 已复制</>
-                  ) : (
-                    <><Copy className="w-3 h-3" /> URL</>
-                  )}
-                </button>
-                <button
-                  onClick={() => handleCopyMarkdown(previewFile)}
-                  className="flex items-center gap-1 px-3 py-1 text-xs bg-[#1F1F1F] text-white rounded-sm hover:bg-neutral-800 transition-colors"
-                >
-                  {copiedId === previewFile.sha && copiedType === 'markdown' ? (
-                    <><Check className="w-3 h-3" /> 已复制</>
-                  ) : (
-                    <><span className="text-[10px] font-bold">#</span> MD</>
-                  )}
-                </button>
-              </div>
-              <div className="flex items-center justify-between text-xs text-[#9CA3AF]">
-                <span>{formatSize(previewFile.size)} · 修改于 {formatDate(previewFile.lastModified)}</span>
-                <button
-                  onClick={() => { handleDelete(previewFile); setPreviewFile(null); }}
-                  className="flex items-center gap-1 text-red-600 hover:text-red-700 transition-colors"
-                >
-                  <Trash2 className="w-3 h-3" /> 删除
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <MediaPreviewDialog
+        file={previewFile}
+        copiedId={copiedId}
+        copiedType={copiedType}
+        onClose={() => setPreviewFile(null)}
+        onCopyUrl={handleCopy}
+        onCopyMarkdown={handleCopyMarkdown}
+        onDelete={handleDelete}
+      />
     </div>
   );
-}
-
-// 工具函数：Blob 转 Base64
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const commaIndex = result.indexOf(',');
-      resolve(commaIndex >= 0 ? result.substring(commaIndex + 1) : result);
-    };
-    reader.onerror = () => reject(new Error('Base64 转换失败'));
-    reader.readAsDataURL(blob);
-  });
 }

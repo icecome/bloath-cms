@@ -10,22 +10,19 @@ interface ToastProps {
 }
 
 export default function Toast({ message, type, onClose, onUndo, undoText = '撤销', duration = 10000 }: ToastProps) {
-  const [progress, setProgress] = useState(0);
+  const [shrinking, setShrinking] = useState(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   useEffect(() => {
-    const startTime = Date.now();
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const p = Math.min(elapsed / duration, 1);
-      setProgress(p);
-      if (elapsed >= duration) {
-        clearInterval(interval);
-        onCloseRef.current();
-      }
-    }, 100);
-    return () => clearInterval(interval);
+    // 下一帧启动进度条收缩动画，确保浏览器先渲染初始宽度
+    const rafId = requestAnimationFrame(() => setShrinking(true));
+    // 到期关闭
+    const timeoutId = setTimeout(() => onCloseRef.current(), duration);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timeoutId);
+    };
   }, [duration]);
 
   const handleUndo = useCallback(() => {
@@ -35,18 +32,27 @@ export default function Toast({ message, type, onClose, onUndo, undoText = '撤�
 
   if (type === 'error') {
     return (
-      <div className="fixed top-4 right-4 z-50 px-4 py-2.5 text-xs rounded-md shadow-sm bg-red-600 text-white transition-all">
-        {message}
+      <div className="fixed top-4 right-4 z-50 px-4 py-2.5 text-xs rounded-md shadow-sm bg-red-600 text-white transition-all flex items-center gap-3">
+        <span>{message}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-white/80 hover:text-white flex-shrink-0"
+          aria-label="关闭"
+        >
+          ×
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="fixed top-4 right-4 z-50 px-4 py-2.5 text-xs rounded-md shadow-sm bg-[#37352F] text-white transition-all overflow-hidden">
+    <div className="fixed top-4 right-4 z-50 px-4 py-2.5 text-xs rounded-md shadow-sm bg-foreground text-white transition-all overflow-hidden">
       <div className="relative z-10 flex items-center gap-3">
         <span>{message}</span>
         {onUndo && (
           <button
+            type="button"
             onClick={handleUndo}
             className="text-xs text-white underline hover:text-blue-200 flex-shrink-0"
           >
@@ -54,10 +60,13 @@ export default function Toast({ message, type, onClose, onUndo, undoText = '撤�
           </button>
         )}
       </div>
-      {/* 进度条 */}
+      {/* 进度条：CSS transition 驱动，避免 JS 高频 setState */}
       <div
-        className="absolute bottom-0 left-0 h-0.5 bg-white/30 transition-all"
-        style={{ width: `${progress * 100}%` }}
+        className="absolute bottom-0 left-0 h-0.5 bg-white/30"
+        style={{
+          width: shrinking ? '0%' : '100%',
+          transition: `width ${duration}ms linear`
+        }}
       />
     </div>
   );

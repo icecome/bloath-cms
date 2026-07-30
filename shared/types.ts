@@ -1,3 +1,17 @@
+// 仓库定位信息（前后端共享）
+export interface RepoInfo {
+  owner: string;
+  repo: string;
+  branch?: string;
+}
+
+// 选中的仓库信息（前端 Context 共享）
+export interface SelectedRepo {
+  owner: string;
+  repo: string;
+  branch: string;
+}
+
 // 内容条目
 export interface ContentEntry {
   id: string;
@@ -5,7 +19,7 @@ export interface ContentEntry {
   slug: string;
   collection: string;
   path: string;
-  frontmatter: Record<string, any>;
+  frontmatter: Record<string, unknown>;
   body: string;
   createdAt: string;
   updatedAt: string;
@@ -31,7 +45,7 @@ export interface FieldConfig {
       | 'datetime' | 'select' | 'multiselect' | 'image' | 'url' | 'slug';
   required?: boolean;
   options?: string[];
-  default?: any;
+  default?: unknown;
   description?: string;
 }
 
@@ -85,11 +99,17 @@ export type CdnProvider = 'jsdmirror' | 'github_raw' | 'custom';
 // 同名文件策略
 export type DuplicateStrategy = 'skip' | 'overwrite';
 
+// 媒体源类型
+export type MediaSourceType = 'standalone' | 'repo-dir' | 'image-branch';
+
 // 媒体库配置
 export interface MediaConfig {
+  sourceType: MediaSourceType;
   imageOwner: string;
   imageRepo: string;
   imageBranch: string;
+  mediaPath: string;
+  imageBranchName: string;
   cdnProvider: CdnProvider;
   customCdnTemplate: string;
   quality: number;

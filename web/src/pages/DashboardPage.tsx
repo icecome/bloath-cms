@@ -52,8 +52,15 @@ export default function DashboardPage() {
       .then(results => {
         const allFiles = results.flat();
         sortByFrontMatterDate(allFiles);
-        paths.forEach((p, i) => setCachedFiles(selectedRepo, p, results[i]));
+        paths.forEach((p, i) => {
+          const files = results[i];
+          if (files) setCachedFiles(selectedRepo, p, files);
+        });
         setFiles(allFiles);
+      })
+      .catch((err) => {
+        console.error('加载文件列表失败:', err);
+        setFiles([]);
       })
       .finally(() => setLoading(false));
   }, [selectedRepo, user, config]);

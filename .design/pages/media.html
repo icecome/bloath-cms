@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>媒体库 · Bloath CMS</title>
+    <style id="theme-vars">
+/* ============================================
+   Bloath CMS — Design Tokens
+   黑色强调色 · 暖色极简底板
+   ============================================ */
+
+/* --- Light Mode --- */
+:root {
+  /* 底板：微暖米白 */
+  --blth-background: 34 20% 97%;
+  --blth-foreground: 24 6% 17%;
+
+  /* 卡片：纯白保持 */
+  --blth-card: 0 0% 100%;
+  --blth-card-foreground: 24 6% 17%;
+
+  /* 浮层 */
+  --blth-popover: 0 0% 100%;
+  --blth-popover-foreground: 24 6% 17%;
+
+  /* 主色：近黑色强调色 */
+  --blth-primary: 0 0% 12%;
+  --blth-primary-foreground: 0 0% 100%;
+
+  /* 弱化色 */
+  --blth-muted: 36 14% 94%;
+  --blth-muted-foreground: 30 6% 45%;
+
+  /* 边框：保持极细 */
+  --blth-border: 30 10% 90%;
+  --blth-input: 30 10% 90%;
+  --blth-ring: 0 0% 12%;
+
+  /* 圆角 */
+  --blth-radius-sm: 0.25rem;  /* 4px */
+  --blth-radius-md: 0.375rem; /* 6px */
+  --blth-radius-lg: 0.5rem;   /* 8px */
+
+  /* 语义色 */
+  --blth-success: 142 55% 48%;
+  --blth-warning: 36 70% 52%;
+  --blth-destructive: 0 72% 56%;
+}
+
+/* --- Dark Mode --- */
+.dark {
+  --blth-background: 30 8% 8%;
+  --blth-foreground: 34 15% 92%;
+
+  --blth-card: 30 6% 11%;
+  --blth-card-foreground: 34 15% 92%;
+
+  --blth-popover: 30 6% 11%;
+  --blth-popover-foreground: 34 15% 92%;
+
+  --blth-primary: 0 0% 85%;
+  --blth-primary-foreground: 0 0% 10%;
+
+  --blth-muted: 30 6% 16%;
+  --blth-muted-foreground: 30 8% 55%;
+
+  --blth-border: 30 6% 20%;
+  --blth-input: 30 6% 20%;
+  --blth-ring: 0 0% 85%;
+
+  --blth-success: 142 50% 42%;
+  --blth-warning: 36 65% 48%;
+  --blth-destructive: 0 62% 52%;
+}
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--blth-background);
+    --color-foreground: var(--blth-foreground);
+    --color-card: var(--blth-card);
+    --color-card-foreground: var(--blth-card-foreground);
+    --color-popover: var(--blth-popover);
+    --color-popover-foreground: var(--blth-popover-foreground);
+    --color-primary: var(--blth-primary);
+    --color-primary-foreground: var(--blth-primary-foreground);
+    --color-muted: var(--blth-muted);
+    --color-muted-foreground: var(--blth-muted-foreground);
+    --color-destructive: var(--blth-destructive);
+    --color-border: var(--blth-border);
+    --color-input: var(--blth-input);
+    --color-ring: var(--blth-ring);
+    --radius-sm: var(--blth-radius-sm);
+    --radius-md: var(--blth-radius-md);
+    --radius-lg: var(--blth-radius-lg);
+  }
+  @layer base {
+    body { background: var(--blth-background); color: var(--blth-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--blth-background); }
+      .text-background { color: var(--blth-background); }
+      .border-background { border-color: var(--blth-background); }
+      .ring-background { --tw-ring-color: var(--blth-background); }
+      .bg-foreground { background-color: var(--blth-foreground); }
+      .text-foreground { color: var(--blth-foreground); }
+      .border-foreground { border-color: var(--blth-foreground); }
+      .ring-foreground { --tw-ring-color: var(--blth-foreground); }
+      .bg-card { background-color: var(--blth-card); }
+      .text-card { color: var(--blth-card); }
+      .border-card { border-color: var(--blth-card); }
+      .ring-card { --tw-ring-color: var(--blth-card); }
+      .bg-card-foreground { background-color: var(--blth-card-foreground); }
+      .text-card-foreground { color: var(--blth-card-foreground); }
+      .border-card-foreground { border-color: var(--blth-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--blth-card-foreground); }
+      .bg-popover { background-color: var(--blth-popover); }
+      .text-popover { color: var(--blth-popover); }
+      .border-popover { border-color: var(--blth-popover); }
+      .ring-popover { --tw-ring-color: var(--blth-popover); }
+      .bg-popover-foreground { background-color: var(--blth-popover-foreground); }
+      .text-popover-foreground { color: var(--blth-popover-foreground); }
+      .border-popover-foreground { border-color: var(--blth-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--blth-popover-foreground); }
+      .bg-primary { background-color: var(--blth-primary); }
+      .text-primary { color: var(--blth-primary); }
+      .border-primary { border-color: var(--blth-primary); }
+      .ring-primary { --tw-ring-color: var(--blth-primary); }
+      .bg-primary-foreground { background-color: var(--blth-primary-foreground); }
+      .text-primary-foreground { color: var(--blth-primary-foreground); }
+      .border-primary-foreground { border-color: var(--blth-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--blth-primary-foreground); }
+      .bg-muted { background-color: var(--blth-muted); }
+      .text-muted { color: var(--blth-muted); }
+      .border-muted { border-color: var(--blth-muted); }
+      .ring-muted { --tw-ring-color: var(--blth-muted); }
+      .bg-muted-foreground { background-color: var(--blth-muted-foreground); }
+      .text-muted-foreground { color: var(--blth-muted-foreground); }
+      .border-muted-foreground { border-color: var(--blth-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--blth-muted-foreground); }
+      .bg-destructive { background-color: var(--blth-destructive); }
+      .text-destructive { color: var(--blth-destructive); }
+      .border-destructive { border-color: var(--blth-destructive); }
+      .ring-destructive { --tw-ring-color: var(--blth-destructive); }
+      .bg-border { background-color: var(--blth-border); }
+      .text-border { color: var(--blth-border); }
+      .border-border { border-color: var(--blth-border); }
+      .ring-border { --tw-ring-color: var(--blth-border); }
+      .bg-input { background-color: var(--blth-input); }
+      .text-input { color: var(--blth-input); }
+      .border-input { border-color: var(--blth-input); }
+      .ring-input { --tw-ring-color: var(--blth-input); }
+      .bg-ring { background-color: var(--blth-ring); }
+      .text-ring { color: var(--blth-ring); }
+      .border-ring { border-color: var(--blth-ring); }
+      .ring-ring { --tw-ring-color: var(--blth-ring); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="h-screen overflow-hidden">
+
+  <!-- App Shell -->
+  <div class="flex h-screen overflow-hidden" data-viewport-mode="app-shell">
+
+    <!-- Sidebar -->
+    <aside class="w-[260px] shrink-0 bg-card border-r flex flex-col">
+
+      <!-- Logo -->
+      <div class="flex items-center gap-2.5 px-5 h-16 border-b">
+        <div class="w-8 h-8 rounded-md bg-primary text-primary-foreground flex items-center justify-center font-bold text-base">B</div>
+        <span class="font-semibold text-[15px]">Bloath CMS</span>
+      </div>
+
+      <!-- New Article Button -->
+      <div class="px-4 pt-4">
+        <button class="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium flex items-center justify-center gap-2"
+          onmouseover="this.style.opacity='0.9'"
+          onmouseout="this.style.opacity='1'">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          新建文章
+        </button>
+      </div>
+
+      <!-- Repo & Branch Selector -->
+      <div class="px-4 pt-4 space-y-2">
+        <div class="rounded-md border px-3 py-2 flex items-center justify-between cursor-pointer"
+          onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+          onmouseout="this.style.backgroundColor='transparent'">
+          <div class="flex items-center gap-2 min-w-0">
+            <i data-lucide="git-fork" class="w-4 h-4 shrink-0 text-muted-foreground"></i>
+            <span class="text-sm truncate">username/hugo-blog</span>
+          </div>
+          <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-muted-foreground"></i>
+        </div>
+        <div class="flex items-center gap-2 px-1">
+          <span class="text-xs text-muted-foreground">分支:</span>
+          <span class="text-xs font-medium px-2 py-0.5 rounded bg-muted">main</span>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div class="px-4 pt-4">
+        <div class="border-t"></div>
+      </div>
+
+      <!-- Nav Menu -->
+      <nav class="px-3 pt-3 flex-1 space-y-1">
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground"
+          onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+          onmouseout="this.style.backgroundColor='transparent'">
+          <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+          仪表盘
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground"
+          onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+          onmouseout="this.style.backgroundColor='transparent'">
+          <i data-lucide="file-text" class="w-4 h-4"></i>
+          内容库
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground"
+          onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+          onmouseout="this.style.backgroundColor='transparent'">
+          <i data-lucide="file-edit" class="w-4 h-4"></i>
+          草稿箱
+        </a>
+        <a href="#" data-nav-key="media" class="flex items-center gap-3 px-3 py-2 rounded-md text-sm bg-primary text-primary-foreground font-medium">
+          <i data-lucide="image" class="w-4 h-4"></i>
+          媒体库
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground"
+          onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+          onmouseout="this.style.backgroundColor='transparent'">
+          <i data-lucide="settings" class="w-4 h-4"></i>
+          设置
+        </a>
+      </nav>
+
+      <!-- User Info -->
+      <div class="p-3 border-t">
+        <div class="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
+          onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+          onmouseout="this.style.backgroundColor='transparent'">
+          <div class="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium">U</div>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-medium truncate">username</div>
+            <div class="text-xs text-muted-foreground truncate">user@example.com</div>
+          </div>
+          <i data-lucide="more-horizontal" class="w-4 h-4 text-muted-foreground"></i>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+
+      <!-- Top Bar -->
+      <header class="h-16 bg-card border-b flex items-center justify-between px-6 shrink-0">
+        <h1 class="text-xl font-bold">媒体库</h1>
+        <div class="flex items-center gap-2">
+          <button class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2"
+            onmouseover="this.style.opacity='0.9'"
+            onmouseout="this.style.opacity='1'">
+            <i data-lucide="upload" class="w-4 h-4"></i>
+            上传
+          </button>
+          <div class="flex items-center rounded-md border overflow-hidden">
+            <button class="w-9 h-9 flex items-center justify-center bg-muted"
+              onmouseover="this.style.backgroundColor='hsl(var(--blth-border))'"
+              onmouseout="this.style.backgroundColor='hsl(var(--blth-muted))'"
+              title="网格视图">
+              <i data-lucide="grid" class="w-4 h-4"></i>
+            </button>
+            <button class="w-9 h-9 flex items-center justify-center"
+              onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+              onmouseout="this.style.backgroundColor='transparent'"
+              title="列表视图">
+              <i data-lucide="list" class="w-4 h-4 text-muted-foreground"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Scrollable Content -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-4" data-scroll-region="primary">
+
+        <!-- Toolbar -->
+        <div class="bg-card border rounded-lg p-3 flex items-center justify-between gap-3">
+          <div class="relative flex-1 max-w-sm">
+            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"></i>
+            <input type="text" placeholder="搜索媒体文件..."
+              class="w-full h-9 pl-9 pr-3 rounded-md border bg-transparent text-sm outline-none focus:ring-2 focus:ring-ring">
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="h-9 px-3 rounded-md border text-sm flex items-center gap-2 bg-card"
+              onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+              onmouseout="this.style.backgroundColor='hsl(var(--blth-card))'">
+              <span class="text-muted-foreground">类型:</span>
+              <span>全部</span>
+              <i data-lucide="chevron-down" class="w-4 h-4 text-muted-foreground"></i>
+            </button>
+            <button class="h-9 px-3 rounded-md border text-sm flex items-center gap-2 bg-card"
+              onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+              onmouseout="this.style.backgroundColor='hsl(var(--blth-card))'">
+              <span class="text-muted-foreground">排序:</span>
+              <span>最新</span>
+              <i data-lucide="chevron-down" class="w-4 h-4 text-muted-foreground"></i>
+            </button>
+            <button class="h-9 px-3 rounded-md border text-sm flex items-center gap-2 bg-card"
+              onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+              onmouseout="this.style.backgroundColor='hsl(var(--blth-card))'">
+              <i data-lucide="folder" class="w-4 h-4 text-muted-foreground"></i>
+              <span>所有文件夹</span>
+              <i data-lucide="chevron-down" class="w-4 h-4 text-muted-foreground"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Upload Area -->
+        <div class="rounded-lg py-12 flex flex-col items-center justify-center gap-3"
+          style="border: 2px dashed hsl(var(--blth-border))">
+          <div class="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+            <i data-lucide="upload-cloud" class="w-6 h-6 text-muted-foreground"></i>
+          </div>
+          <p class="text-base font-medium">拖放文件到此处上传</p>
+          <button class="h-9 px-4 rounded-md border text-sm font-medium bg-card"
+            onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+            onmouseout="this.style.backgroundColor='hsl(var(--blth-card))'">
+            或点击选择文件
+          </button>
+          <p class="text-xs text-muted-foreground">支持 JPG, PNG, GIF, WebP, SVG · 最大 5MB</p>
+        </div>
+
+        <!-- Media Grid -->
+        <div class="grid grid-cols-4 gap-4">
+
+          <!-- Card 1 -->
+          <div class="bg-card border rounded-lg overflow-hidden cursor-pointer"
+            onmouseover="this.style.borderColor='hsl(var(--blth-foreground))'"
+            onmouseout="this.style.borderColor='hsl(var(--blth-border))'">
+            <div class="aspect-square bg-muted flex items-center justify-center">
+              <i data-lucide="image" class="w-8 h-8 text-muted-foreground"></i>
+            </div>
+            <div class="p-3 space-y-1">
+              <div class="text-sm font-medium truncate">cover.jpg</div>
+              <div class="text-xs text-muted-foreground truncate">256 KB · 2024-01-15</div>
+            </div>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="bg-card border rounded-lg overflow-hidden cursor-pointer"
+            onmouseover="this.style.borderColor='hsl(var(--blth-foreground))'"
+            onmouseout="this.style.borderColor='hsl(var(--blth-border))'">
+            <div class="aspect-square bg-muted flex items-center justify-center">
+              <i data-lucide="image" class="w-8 h-8 text-muted-foreground"></i>
+            </div>
+            <div class="p-3 space-y-1">
+              <div class="text-sm font-medium truncate">avatar.png</div>
+              <div class="text-xs text-muted-foreground truncate">128 KB · 2024-01-14</div>
+            </div>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="bg-card border rounded-lg overflow-hidden cursor-pointer"
+            onmouseover="this.style.borderColor='hsl(var(--blth-foreground))'"
+            onmouseout="this.style.borderColor='hsl(var(--blth-border))'">
+            <div class="aspect-square bg-muted flex items-center justify-center">
+              <i data-lucide="image" class="w-8 h-8 text-muted-foreground"></i>
+            </div>
+            <div class="p-3 space-y-1">
+              <div class="text-sm font-medium truncate">banner.jpg</div>
+              <div class="text-xs text-muted-foreground truncate">512 KB · 2024-01-12</div>
+            </div>
+          </div>
+
+          <!-- Card 4 -->
+          <div class="bg-card border rounded-lg overflow-hidden cursor-pointer"
+            onmouseover="this.style.borderColor='hsl(var(--blth-foreground))'"
+            onmouseout="this.style.borderColor='hsl(var(--blth-border))'">
+            <div class="aspect-square bg-muted flex items-center justify-center">
+              <i data-lucide="image" class="w-8 h-8 text-muted-foreground"></i>
+            </div>
+            <div class="p-3 space-y-1">
+              <div class="text-sm font-medium truncate">screenshot.png</div>
+              <div class="text-xs text-muted-foreground truncate">1.2 MB · 2024-01-10</div>
+            </div>
+          </div>
+
+          <!-- Card 5 -->
+          <div class="bg-card border rounded-lg overflow-hidden cursor-pointer"
+            onmouseover="this.style.borderColor='hsl(var(--blth-foreground))'"
+            onmouseout="this.style.borderColor='hsl(var(--blth-border))'">
+            <div class="aspect-square bg-muted flex items-center justify-center">
+              <i data-lucide="image" class="w-8 h-8 text-muted-foreground"></i>
+            </div>
+            <div class="p-3 space-y-1">
+              <div class="text-sm font-medium truncate">logo.svg</div>
+              <div class="text-xs text-muted-foreground truncate">8 KB · 2024-01-08</div>
+            </div>
+          </div>
+
+          <!-- Card 6 -->
+          <div class="bg-card border rounded-lg overflow-hidden cursor-pointer"
+            onmouseover="this.style.borderColor='hsl(var(--blth-foreground))'"
+            onmouseout="this.style.borderColor='hsl(var(--blth-border))'">
+            <div class="aspect-square bg-muted flex items-center justify-center">
+              <i data-lucide="image" class="w-8 h-8 text-muted-foreground"></i>
+            </div>
+            <div class="p-3 space-y-1">
+              <div class="text-sm font-medium truncate">photo1.jpg</div>
+              <div class="text-xs text-muted-foreground truncate">342 KB · 2024-01-05</div>
+            </div>
+          </div>
+
+          <!-- Card 7 -->
+          <div class="bg-card border rounded-lg overflow-hidden cursor-pointer"
+            onmouseover="this.style.borderColor='hsl(var(--blth-foreground))'"
+            onmouseout="this.style.borderColor='hsl(var(--blth-border))'">
+            <div class="aspect-square bg-muted flex items-center justify-center">
+              <i data-lucide="image" class="w-8 h-8 text-muted-foreground"></i>
+            </div>
+            <div class="p-3 space-y-1">
+              <div class="text-sm font-medium truncate">icon.png</div>
+              <div class="text-xs text-muted-foreground truncate">24 KB · 2024-01-03</div>
+            </div>
+          </div>
+
+          <!-- Card 8 -->
+          <div class="bg-card border rounded-lg overflow-hidden cursor-pointer"
+            onmouseover="this.style.borderColor='hsl(var(--blth-foreground))'"
+            onmouseout="this.style.borderColor='hsl(var(--blth-border))'">
+            <div class="aspect-square bg-muted flex items-center justify-center">
+              <i data-lucide="image" class="w-8 h-8 text-muted-foreground"></i>
+            </div>
+            <div class="p-3 space-y-1">
+              <div class="text-sm font-medium truncate">hero.jpg</div>
+              <div class="text-xs text-muted-foreground truncate">768 KB · 2024-01-01</div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Pagination -->
+        <div class="flex items-center justify-center gap-4 pt-2">
+          <button class="h-9 w-9 rounded-md border flex items-center justify-center bg-card"
+            onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+            onmouseout="this.style.backgroundColor='hsl(var(--blth-card))'"
+            title="上一页">
+            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          </button>
+          <span class="text-sm font-medium">1 / 4</span>
+          <button class="h-9 w-9 rounded-md border flex items-center justify-center bg-card"
+            onmouseover="this.style.backgroundColor='hsl(var(--blth-muted))'"
+            onmouseout="this.style.backgroundColor='hsl(var(--blth-card))'"
+            title="下一页">
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script>lucide.createIcons();</script>
+
+    <style>
+    /* === Theme Variables === */
+    :root {
+      --blth-background: 34 20% 97%;
+      --blth-foreground: 24 6% 17%;
+      --blth-card: 0 0% 100%;
+      --blth-primary: 0 0% 12%;
+      --blth-primary-foreground: 0 0% 100%;
+      --blth-muted: 36 14% 94%;
+      --blth-muted-foreground: 30 6% 45%;
+      --blth-border: 30 10% 90%;
+      --blth-input: 30 10% 90%;
+      --blth-ring: 0 0% 12%;
+      --blth-radius-sm: 0.25rem;
+      --blth-radius-md: 0.375rem;
+      --blth-radius-lg: 0.5rem;
+    }
+
+    .dark {
+      --blth-background: 24 6% 10%;
+      --blth-foreground: 34 20% 96%;
+      --blth-card: 24 6% 13%;
+      --blth-primary: 0 0% 98%;
+      --blth-primary-foreground: 0 0% 12%;
+      --blth-muted: 24 6% 17%;
+      --blth-muted-foreground: 30 6% 65%;
+      --blth-border: 24 6% 20%;
+      --blth-input: 24 6% 20%;
+      --blth-ring: 0 0% 98%;
+    }
+
+    /* === Tailwind v4 Theme Mapping (semantic-token-fallback) === */
+    @theme inline {
+      --color-background: hsl(var(--blth-background, 34 20% 97%));
+      --color-foreground: hsl(var(--blth-foreground, 24 6% 17%));
+      --color-card: hsl(var(--blth-card, 0 0% 100%));
+      --color-primary: hsl(var(--blth-primary, 0 0% 12%));
+      --color-primary-foreground: hsl(var(--blth-primary-foreground, 0 0% 100%));
+      --color-muted: hsl(var(--blth-muted, 36 14% 94%));
+      --color-muted-foreground: hsl(var(--blth-muted-foreground, 30 6% 45%));
+      --color-border: hsl(var(--blth-border, 30 10% 90%));
+      --color-input: hsl(var(--blth-input, 30 10% 90%));
+      --color-ring: hsl(var(--blth-ring, 0 0% 12%));
+      --radius-sm: var(--blth-radius-sm);
+      --radius-md: var(--blth-radius-md);
+      --radius-lg: var(--blth-radius-lg);
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    }
+
+    /* === Base Layer === */
+    @layer base {
+      * {
+        border-color: hsl(var(--blth-border));
+      }
+      body {
+        background-color: hsl(var(--blth-background));
+        color: hsl(var(--blth-foreground));
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: hsl(var(--blth-border)); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: hsl(var(--blth-muted-foreground)); }
+  </style>
+</body>
+</html>

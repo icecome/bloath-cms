@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bloath CMS - 登录</title>
+
+  <!-- theme-vars: 基础 HSL 设计令牌（不带 hsl() 前缀） -->
+  <style id="theme-vars">
+    :root {
+      --blth-background: 34 20% 97%;
+      --blth-foreground: 24 6% 17%;
+      --blth-card: 0 0% 100%;
+      --blth-primary: 0 0% 12%;
+      --blth-primary-foreground: 0 0% 100%;
+      --blth-muted: 36 14% 94%;
+      --blth-muted-foreground: 30 6% 45%;
+      --blth-border: 30 10% 90%;
+      --blth-radius-md: 0.375rem;
+      --blth-radius-lg: 0.5rem;
+      --blth-ring: 0 0% 12%;
+    }
+
+    .dark {
+      --blth-background: 30 8% 8%;
+      --blth-foreground: 34 15% 92%;
+      --blth-card: 30 6% 11%;
+      --blth-primary: 0 0% 85%;
+      --blth-primary-foreground: 0 0% 10%;
+      --blth-muted: 30 6% 16%;
+      --blth-muted-foreground: 30 8% 55%;
+      --blth-border: 30 6% 20%;
+      --blth-radius-md: 0.375rem;
+      --blth-radius-lg: 0.5rem;
+      --blth-ring: 0 0% 85%;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    a { text-decoration: none; }
+  </style>
+
+  <!-- Tailwind CSS v4 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+
+  <style type="text/tailwindcss">
+    @theme inline {
+      --color-blth-background: hsl(var(--blth-background));
+      --color-blth-foreground: hsl(var(--blth-foreground));
+      --color-blth-card: hsl(var(--blth-card));
+      --color-blth-primary: hsl(var(--blth-primary));
+      --color-blth-primary-foreground: hsl(var(--blth-primary-foreground));
+      --color-blth-muted: hsl(var(--blth-muted));
+      --color-blth-muted-foreground: hsl(var(--blth-muted-foreground));
+      --color-blth-border: hsl(var(--blth-border));
+      --color-blth-ring: hsl(var(--blth-ring));
+      --radius-md: var(--blth-radius-md);
+      --radius-lg: var(--blth-radius-lg);
+    }
+
+    @layer base {
+      * {
+        border-color: hsl(var(--blth-border));
+      }
+      body {
+        background-color: hsl(var(--blth-background));
+        color: hsl(var(--blth-foreground));
+      }
+    }
+  </style>
+
+  <!-- semantic-token-fallback: 语义令牌回退 CSS，确保 Tailwind 未就绪时颜色仍正确 -->
+  <style id="semantic-token-fallback">
+    .bg-blth-background { background-color: hsl(var(--blth-background)); }
+    .bg-blth-card { background-color: hsl(var(--blth-card)); }
+    .bg-blth-primary { background-color: hsl(var(--blth-primary)); }
+    .bg-blth-muted { background-color: hsl(var(--blth-muted)); }
+    .text-blth-foreground { color: hsl(var(--blth-foreground)); }
+    .text-blth-primary-foreground { color: hsl(var(--blth-primary-foreground)); }
+    .text-blth-muted-foreground { color: hsl(var(--blth-muted-foreground)); }
+    .border-blth-border { border-color: hsl(var(--blth-border)); }
+    .rounded-md { border-radius: var(--blth-radius-md); }
+    .rounded-lg { border-radius: var(--blth-radius-lg); }
+    button:focus-visible,
+    a:focus-visible,
+    [role="button"]:focus-visible {
+      outline: 2px solid hsl(var(--blth-ring));
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+  <!-- 全屏居中布局 -->
+  <div class="min-h-screen flex items-center justify-center p-4"
+       style="background-color: hsl(var(--blth-background));">
+    <div class="w-full" style="max-width: 400px;">
+
+      <!-- 登录卡片 -->
+      <div class="p-8"
+           style="background-color: hsl(var(--blth-card));
+                  border: 1px solid hsl(var(--blth-border));
+                  border-radius: var(--blth-radius-lg);
+                  box-shadow: 0 1px 2px rgba(0,0,0,0.03), 0 8px 24px rgba(0,0,0,0.04);">
+
+        <!-- Logo + 标题 -->
+        <div class="flex flex-col items-center text-center mb-6">
+          <div class="flex items-center justify-center mb-4"
+               style="width: 56px; height: 56px;
+                      background-color: hsl(var(--blth-primary));
+                      color: hsl(var(--blth-primary-foreground));
+                      border-radius: 50%;">
+            <span class="text-2xl font-bold">B</span>
+          </div>
+          <h1 class="text-2xl font-bold" style="color: hsl(var(--blth-foreground));">Bloath CMS</h1>
+          <p class="text-sm mt-1" style="color: hsl(var(--blth-muted-foreground));">Git 驱动的 Hugo 博客 CMS</p>
+        </div>
+
+        <!-- GitHub OAuth 按钮 -->
+        <button type="button"
+                class="w-full flex items-center justify-center gap-2 py-2.5 px-4 text-sm font-medium"
+                style="background-color: hsl(var(--blth-primary));
+                       color: hsl(var(--blth-primary-foreground));
+                       border-radius: var(--blth-radius-md);
+                       transition: opacity 0.15s ease;"
+                onmouseover="this.style.opacity='0.9'"
+                onmouseout="this.style.opacity='1'">
+          <i data-lucide="github" class="w-5 h-5"></i>
+          使用 GitHub 登录
+        </button>
+
+        <!-- 分隔线 -->
+        <div class="relative my-6">
+          <div class="absolute inset-0 flex items-center">
+            <div class="w-full" style="border-top: 1px solid hsl(var(--blth-border));"></div>
+          </div>
+          <div class="relative flex justify-center">
+            <span class="px-3 text-xs"
+                  style="background-color: hsl(var(--blth-card));
+                         color: hsl(var(--blth-muted-foreground));">或</span>
+          </div>
+        </div>
+
+        <!-- 辅助说明 -->
+        <p class="text-center text-xs leading-relaxed"
+           style="color: hsl(var(--blth-muted-foreground));">
+          使用 GitHub 账号登录以管理你的 Hugo 博客内容
+        </p>
+      </div>
+
+      <!-- 底部链接 -->
+      <div class="text-center mt-6">
+        <a href="#"
+           class="text-sm"
+           style="color: hsl(var(--blth-muted-foreground));
+                  transition: color 0.15s ease;"
+           onmouseover="this.style.color='hsl(var(--blth-foreground))'"
+           onmouseout="this.style.color='hsl(var(--blth-muted-foreground))'">了解更多</a>
+      </div>
+    </div>
+  </div>
+
+  <script>lucide.createIcons();</script>
+</body>
+</html>

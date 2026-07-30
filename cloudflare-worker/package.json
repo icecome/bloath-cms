@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "npm run build-assets && wrangler deploy",
-    "build-assets": "cd ../web && npm run build && cp -r dist/* ./public/",
+    "build-assets": "cd ../web && npm run build && node -e \"const fs=require('fs');const d='../cloudflare-worker/public';if(fs.existsSync(d))fs.rmSync(d,{recursive:true});fs.cpSync('dist',d,{recursive:true})\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {},
