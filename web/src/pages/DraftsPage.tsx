@@ -321,7 +321,7 @@ export default function DraftsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="h-full flex flex-col">
       {/* Toast */}
       {toast && (
         <Toast
@@ -334,7 +334,7 @@ export default function DraftsPage() {
 
       {/* 搜索栏 + 操作工具栏 */}
       {selectedRepo && (
-        <div className="px-4 md:px-8 py-4 border-b border-border-subtle">
+        <div className="flex-shrink-0 px-4 md:px-8 py-4 border-b border-border-subtle">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
@@ -445,7 +445,7 @@ export default function DraftsPage() {
       )}
 
       {/* 文件列表 */}
-      <div className="px-4 md:px-8">
+      <div className="flex-1 overflow-auto px-4 md:px-8">
         {!selectedRepo ? (
           <EmptyState
             icon={<FileText className="w-12 h-12" />}

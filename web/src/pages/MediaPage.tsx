@@ -258,12 +258,12 @@ export default function MediaPage() {
 
   if (!isConfigured) {
     return (
-      <div className="flex-1 overflow-auto">
+      <div className="h-full flex flex-col">
         <header className="px-8 py-5 flex-shrink-0">
           <h1 className="text-base font-medium text-foreground">媒体库</h1>
           <p className="text-sm text-muted-foreground mt-1">管理图片和静态资源</p>
         </header>
-        <div className="px-8">
+        <div className="flex-1 overflow-auto px-8">
           <div className="border border-border rounded-sm p-12 text-center">
             <ImageIcon className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
             <p className="text-sm text-muted-foreground mb-1">{source.missingHint || '请先完成媒体库配置'}</p>
@@ -275,7 +275,7 @@ export default function MediaPage() {
   }
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="h-full flex flex-col">
       <header className="px-8 py-5 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
@@ -299,7 +299,7 @@ export default function MediaPage() {
         </div>
       </header>
 
-      <div className="px-8 space-y-4">
+      <div className="flex-1 overflow-auto px-8 space-y-4">
         {error && (
           <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-sm text-xs text-red-700">
             <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />

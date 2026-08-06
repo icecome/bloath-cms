@@ -31,6 +31,7 @@ cloudflare-worker/tmp/
 .idea/
 .trae/
 .history/
+.workbuddy/
 
 # OS
 .DS_Store
