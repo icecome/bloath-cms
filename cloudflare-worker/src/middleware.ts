@@ -43,17 +43,14 @@ export function getSessionTokenFromCookie(request: Request): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-// CSRF 防护：校验 Origin 是否匹配允许的域名（X-Requested-With 为 forbidden header，跨域请求会被浏览器移除）
-export function checkCsrf(request: Request, env: Env): boolean {
-  const origin = request.headers.get('Origin');
-  if (!origin) return true;
-  const allowedOrigins = getAllowedOrigins(env);
-  return allowedOrigins.includes(origin);
+// CSRF 防护：校验自定义 header
+export function checkCsrf(request: Request): boolean {
+  return request.headers.get('X-Requested-With') === 'XMLHttpRequest';
 }
 
 // 认证中间件 - 从 Cookie 读取 session token 并验证
 export async function authenticate(request: Request, env: Env): Promise<{ githubToken: string; needsRenewal: boolean } | Response> {
-  if (!checkCsrf(request, env)) {
+  if (!checkCsrf(request)) {
     return Response.json({ error: 'CSRF validation failed' }, { status: 403 });
   }
 
@@ -137,7 +134,7 @@ export function corsHeaders(origin: string, env: Env): Headers | null {
   const headers = new Headers();
   headers.set('Access-Control-Allow-Origin', allowedOrigin);
   headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Frontend-Url');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With, X-Frontend-Url');
   headers.set('Access-Control-Allow-Credentials', 'true');
   headers.set('Access-Control-Max-Age', '86400');
 

@@ -29,7 +29,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const verifySession = useCallback(async (): Promise<boolean> => {
     try {
       const res = await fetch(`${API_BASE}/api/me`, {
-        credentials: 'include'
+        credentials: 'include',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
       });
 
       if (!res.ok) {
@@ -56,12 +57,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     verifySession();
+  }, [verifySession]);
+
+  useEffect(() => {
     if (!state.user) return;
     const interval = setInterval(() => {
       verifySession();
     }, 1800000);
     return () => clearInterval(interval);
-  }, [verifySession, state.user]);
+  }, [state.user, verifySession]);
 
   useEffect(() => {
     const handleExpired = () => {
@@ -75,7 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
-        credentials: 'include'
+        credentials: 'include',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
       });
       if (!res.ok) {
         addToast({ message: '登录服务不可用，请稍后重试', type: 'warning' });

@@ -30,7 +30,11 @@ export function formatTimestamp(): string {
 async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = false): Promise<T> {
   const finalOptions: RequestInit = {
     ...options,
-    credentials: 'include'
+    credentials: 'include',
+    headers: {
+      ...options?.headers,
+      'X-Requested-With': 'XMLHttpRequest'
+    }
   };
 
   let res: Response;
