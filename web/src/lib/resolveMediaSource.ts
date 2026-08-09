@@ -11,7 +11,6 @@ export interface ResolvedMediaSource {
   missingHint?: string;
 }
 
-// 根据模式与选中仓库，解析出统一的媒体源定位
 export function resolveMediaSource(
   config: MediaConfig,
   selectedRepo: SelectedRepo | null

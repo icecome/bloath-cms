@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 
-export type ToastType = 'success' | 'error';
+export type ToastType = 'success' | 'warning' | 'error' | 'info';
 
 export interface ToastItem {
   id: number;
@@ -27,7 +27,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const nextIdRef = useRef(0);
 
-  // 清理指定 toast 的定时器
   const clearTimer = useCallback((id: number) => {
     const timer = timersRef.current.get(id);
     if (timer) {
@@ -43,7 +42,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       return next.length > MAX_TOASTS ? next.slice(next.length - MAX_TOASTS) : next;
     });
 
-    // 设置自动消失定时器
     const duration = item.duration ?? DEFAULT_DURATION_MS;
     const timer = setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -57,7 +55,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, [clearTimer]);
 
-  // 组件卸载时清理所有定时器
   useEffect(() => {
     const timers = timersRef.current;
     return () => {

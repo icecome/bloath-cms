@@ -114,7 +114,6 @@ export default function FrontmatterPanel({
   }, [customFields]);
   return (
     <div className="p-4 space-y-4">
-      {/* URL / 文件名 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <FileText className="w-3 h-3" />
@@ -129,7 +128,6 @@ export default function FrontmatterPanel({
         />
       </div>
 
-      {/* 标题 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <Folder className="w-3 h-3" />
@@ -144,7 +142,6 @@ export default function FrontmatterPanel({
         />
       </div>
 
-      {/* 日期 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <Calendar className="w-3 h-3" />
@@ -179,7 +176,6 @@ export default function FrontmatterPanel({
         </button>
       </div>
 
-      {/* 作者 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <User className="w-3 h-3" />
@@ -194,7 +190,6 @@ export default function FrontmatterPanel({
         />
       </div>
 
-      {/* 分类 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <Folder className="w-3 h-3" />
@@ -217,7 +212,6 @@ export default function FrontmatterPanel({
         </div>
       </div>
 
-      {/* 标签 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <Tag className="w-3 h-3" />
@@ -240,7 +234,6 @@ export default function FrontmatterPanel({
         </div>
       </div>
 
-      {/* 封面图 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <ImageIcon className="w-3 h-3" />
@@ -255,7 +248,6 @@ export default function FrontmatterPanel({
         />
       </div>
 
-      {/* 排序权重 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <Scale className="w-3 h-3" />
@@ -270,7 +262,6 @@ export default function FrontmatterPanel({
         />
       </div>
 
-      {/* 自定义字段 */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -288,7 +279,6 @@ export default function FrontmatterPanel({
         <div className="space-y-2">
           {customFields.map((cf, index) => (
             <div key={index} className="space-y-1.5">
-              {/* 第一行：键名 + 类型 + 删除 */}
               <div className="flex gap-1.5 items-center">
                 <input
                   type="text"
@@ -315,7 +305,6 @@ export default function FrontmatterPanel({
                   <X className="w-3 h-3" />
                 </button>
               </div>
-              {/* 第二行：值输入（全宽） */}
               <input
                 type="text"
                 value={cf.value}
@@ -331,7 +320,6 @@ export default function FrontmatterPanel({
         </div>
       </div>
 
-      {/* 加密开关 */}
       <div className="flex items-center justify-between py-1">
         <span className="flex items-center gap-1.5 text-xs text-foreground">
           <Lock className="w-3 h-3 text-muted-foreground" />
@@ -380,7 +368,6 @@ export default function FrontmatterPanel({
 
       <div className="border-t border-border" />
 
-      {/* 图片 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <Image className="w-3 h-3" />
@@ -403,7 +390,6 @@ export default function FrontmatterPanel({
         </div>
       </div>
 
-      {/* 视频 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <Video className="w-3 h-3" />
@@ -428,7 +414,6 @@ export default function FrontmatterPanel({
 
       <div className="border-t border-border" />
 
-      {/* 链接 */}
       <div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
           <LinkIcon className="w-3 h-3" />

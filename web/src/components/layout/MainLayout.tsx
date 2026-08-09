@@ -39,7 +39,6 @@ function getCurrentNavLabel(pathname: string): string {
   return (match && NAV_ITEM_LABELS[match]) || 'CMS';
 }
 
-// 侧边栏内容组件（桌面端和移动端共用）
 function SidebarContent({
   repos, selectedRepo, branches, user,
   showRepoDropdown, showBranchDropdown, showAccountDropdown,
@@ -68,12 +67,10 @@ function SidebarContent({
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 下拉框关闭时重置搜索
   useEffect(() => {
     if (!showRepoDropdown) setSearchQuery('');
   }, [showRepoDropdown]);
 
-  // 过滤仓库
   const filteredRepos = useMemo(() => {
     if (!searchQuery.trim()) return repos;
     const query = searchQuery.toLowerCase();
@@ -98,7 +95,6 @@ function SidebarContent({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Logo */}
       <div className="px-5 py-4 flex items-center gap-2.5">
         <div className="w-6 h-6 flex items-center justify-center">
           <span className="text-lg font-bold text-foreground">B</span>
@@ -106,7 +102,6 @@ function SidebarContent({
         <span className="text-sm font-semibold text-foreground">Bloath CMS</span>
       </div>
 
-      {/* 新建文章按钮 */}
       <div className="px-4 pb-3">
         <button
           onClick={() => { onNewArticle(); onNavClick(); }}
@@ -118,7 +113,6 @@ function SidebarContent({
         </button>
       </div>
 
-      {/* 仓库选择器 */}
       <div className="px-4 pb-2">
         <div className="relative">
           <button
@@ -231,10 +225,8 @@ function SidebarContent({
         </div>
       )}
 
-      {/* 分隔线 */}
       <div className="mx-4 border-t border-border-subtle"></div>
 
-      {/* 导航菜单 */}
       <nav className="px-2 py-2 flex-1">
         <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">内容</div>
         {navItems.map((item) => (
@@ -254,7 +246,6 @@ function SidebarContent({
         ))}
       </nav>
 
-      {/* 底部用户信息 */}
       <div className="border-t border-border-subtle px-4 py-3">
         {user && (
           <div className="relative">
@@ -323,7 +314,6 @@ export default function MainLayout() {
     }
   }, [user]);
 
-  // 异步检测博客框架（只在初始加载后执行一次）
   useEffect(() => {
     if (repos.length > 0 && !detectedFrameworksRef.current) {
       detectedFrameworksRef.current = true;
@@ -341,7 +331,6 @@ export default function MainLayout() {
     }
   }, [selectedRepo, user, loadBranches]);
 
-  // 路由变化时关闭侧边栏
   useEffect(() => {
     setSidebarOpen(false);
     setShowRepoDropdown(false);
@@ -411,7 +400,6 @@ export default function MainLayout() {
         />
       </aside>
 
-      {/* 移动端侧边栏遮罩 */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/40 z-40 md:hidden"
@@ -442,12 +430,9 @@ export default function MainLayout() {
         />
       </aside>
 
-      {/* 主内容区 */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* 顶部 Header */}
         <header className="px-4 md:px-8 h-12 flex items-center justify-between flex-shrink-0 border-b border-border-subtle">
           <div className="flex items-center gap-3">
-            {/* 移动端汉堡菜单按钮 */}
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="md:hidden text-muted-foreground hover:text-foreground transition-colors"
@@ -462,7 +447,6 @@ export default function MainLayout() {
           </div>
         </header>
 
-        {/* 页面内容 */}
         <div className="flex-1 overflow-auto">
           <Outlet />
         </div>

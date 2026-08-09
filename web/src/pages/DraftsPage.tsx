@@ -58,7 +58,6 @@ export default function DraftsPage() {
   const [publishTarget, setPublishTarget] = useState('');
   const [moveTarget, setMoveTarget] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  // 撤销记录
   const lastDeletedRef = useRef<{ files: EnhancedFileItem[]; originalPaths: string[] } | null>(null);
 
   const availableDirs = filterValidDirs(config.paths || []);
@@ -165,7 +164,6 @@ export default function DraftsPage() {
 
     setActionLoading(true);
     try {
-      // 批量移动到回收站
       for (let i = 0; i < filesToDelete.length; i++) {
         const file = filesToDelete[i];
         const targetPath = trashPaths[i];
@@ -182,14 +180,11 @@ export default function DraftsPage() {
         });
       }
 
-      // 记录撤销信息（批量）
       lastDeletedRef.current = { files: filesToDelete, originalPaths: filesToDelete.map(f => f.path) };
 
-      // 从列表中移除并清除缓存
       setFiles(prev => prev.filter(f => !selectedFiles.has(f.path)));
       clearCache(selectedRepo);
 
-      // 批量删除不显示撤销
       addToast({
         message: `已将 ${filesToDelete.length} 篇草稿移至回收站`,
         type: 'success'
@@ -221,10 +216,8 @@ export default function DraftsPage() {
         userName: user?.login
       });
 
-      // 记录撤销信息
       lastDeletedRef.current = { files: [file], originalPaths: [file.path] };
 
-      // 从列表中移除并清除缓存
       setFiles(prev => prev.filter(f => f.path !== file.path));
       clearCache(selectedRepo);
 
@@ -265,7 +258,6 @@ export default function DraftsPage() {
     if (!selectedRepo || !user || !renameFile || !renameValue.trim()) return;
     setActionLoading(true);
     try {
-      // 读取原文件内容
       const { content: fileContent, sha } = await readFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
@@ -278,7 +270,6 @@ export default function DraftsPage() {
       const newDir = renameFile.path.substring(0, renameFile.path.lastIndexOf('/'));
       const newPath = `${newDir}/${newName}`;
 
-      // 写入新文件（不修改 frontmatter）
       await writeFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
@@ -289,7 +280,6 @@ export default function DraftsPage() {
         userName: user?.login
       });
 
-      // 删除旧文件
       await deleteFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
@@ -303,7 +293,6 @@ export default function DraftsPage() {
       setShowRenameDialog(false);
       setRenameFile(null);
       setRenameValue('');
-      // 刷新列表
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
@@ -322,7 +311,6 @@ export default function DraftsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* 搜索栏 + 操作工具栏 */}
       {selectedRepo && (
         <div className="flex-shrink-0 px-4 md:px-8 py-4 border-b border-border-subtle">
           <div className="relative">
@@ -350,7 +338,6 @@ export default function DraftsPage() {
 
               <div className="w-px h-4 bg-border"></div>
 
-              {/* 发布 */}
               <button
                 onClick={() => setShowPublishDropdown(true)}
                 disabled={actionLoading}
@@ -401,7 +388,6 @@ export default function DraftsPage() {
 
               <div className="w-px h-4 bg-border"></div>
 
-              {/* 删除 */}
               <button
                 onClick={handleDelete}
                 disabled={actionLoading}
@@ -413,7 +399,6 @@ export default function DraftsPage() {
 
               <div className="w-px h-4 bg-border"></div>
 
-              {/* 重命名（仅选中1个文件时可用） */}
               <button
                 onClick={() => {
                   const selected = files.filter(f => selectedFiles.has(f.path));
@@ -434,7 +419,6 @@ export default function DraftsPage() {
         </div>
       )}
 
-      {/* 文件列表 */}
       <div className="flex-1 overflow-auto px-4 md:px-8">
         {!selectedRepo ? (
           <EmptyState
@@ -500,7 +484,6 @@ export default function DraftsPage() {
         )}
       </div>
 
-      {/* 分页 */}
       <Pagination
         currentPage={currentPage}
         totalPages={totalPages}
@@ -548,7 +531,6 @@ export default function DraftsPage() {
         </div>
       )}
 
-      {/* 发布目录选择弹窗 */}
       {showPublishDropdown && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowPublishDropdown(false)}>
           <div className="bg-card rounded-lg p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>

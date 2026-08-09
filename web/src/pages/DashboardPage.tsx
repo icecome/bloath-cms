@@ -35,7 +35,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  // 撤销记录（sessionStorage 持久化，页面刷新后仍可撤销）
   const lastDeletedRef = useRef<{ file: EnhancedFileItem; originalPath: string } | null>(null);
   const undoCleanupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -48,7 +47,6 @@ export default function DashboardPage() {
 
     const paths = (config.paths || []).filter(p => !p.includes('*') && p.trim() !== '');
 
-    // 先尝试从缓存加载
     const allCached = paths.map(p => getCachedFiles(selectedRepo, p));
     if (allCached.every(c => c !== null)) {
       const cachedFiles = (allCached as EnhancedFileItem[][]).flat();
@@ -58,7 +56,6 @@ export default function DashboardPage() {
       setLoading(true);
     }
 
-    // 后台刷新
     Promise.all(paths.map(p => scanMdFiles(selectedRepo, p)))
       .then(results => {
         const allFiles = results.flat();
@@ -76,7 +73,6 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, [selectedRepo, user, config]);
 
-  // 恢复 sessionStorage 中的撤销记录（页面刷新后仍可使用）
   useEffect(() => {
     if (!selectedRepo) return;
     const key = getUndoKey(selectedRepo);
@@ -90,13 +86,11 @@ export default function DashboardPage() {
         return;
       }
       lastDeletedRef.current = { file: record.file, originalPath: record.originalPath };
-      // 剩余时间内自动清理
       undoCleanupRef.current = setTimeout(() => {
         sessionStorage.removeItem(key);
         lastDeletedRef.current = null;
       }, UNDO_TTL_MS - elapsed);
     } catch {
-      // 解析失败则忽略
     }
     return () => {
       if (undoCleanupRef.current) clearTimeout(undoCleanupRef.current);
@@ -117,7 +111,6 @@ export default function DashboardPage() {
     return filteredFiles.slice(start, start + PAGE_SIZE);
   }, [filteredFiles, currentPage]);
 
-  // 当搜索变化时，重置到第一页
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery]);
@@ -134,7 +127,6 @@ export default function DashboardPage() {
         break;
       }
     }
-    // 保留原始相对路径（不含 .md），用于编辑器精确查找文件
     const originalRelative = relative.replace(/\.md$/, '');
     const slug = originalRelative.replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_');
     navigate(`/editor/${slug}?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}&basePath=${encodeURIComponent(foundBasePath)}&filePath=${encodeURIComponent(originalRelative)}&returnTo=${encodeURIComponent(foundBasePath)}`);
@@ -162,7 +154,6 @@ export default function DashboardPage() {
         userName: user?.login
       });
 
-      // 记录撤销信息并持久化到 sessionStorage
       lastDeletedRef.current = { file, originalPath: file.path };
       if (selectedRepo) {
         try {
@@ -173,11 +164,9 @@ export default function DashboardPage() {
             deletedAt: Date.now()
           }));
         } catch {
-          // sessionStorage 写入失败不阻塞主流程
         }
       }
 
-      // 从列表中移除并清除缓存
       setFiles(prev => prev.filter(f => f.path !== file.path));
       clearCache(selectedRepo);
 
@@ -215,7 +204,6 @@ export default function DashboardPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* 筛选栏 */}
       {selectedRepo && (
         <div className="flex-shrink-0 px-4 md:px-8 py-4 flex items-center justify-between border-b border-border-subtle">
           <div className="relative flex-1 max-w-md">
@@ -249,14 +237,12 @@ export default function DashboardPage() {
               <div className="w-[20%] text-right">操作</div>
             </div>
 
-            {/* 列表 */}
             {paginatedFiles.map((file: EnhancedFileItem) => (
               <div
                 key={file.path}
                 className="flex items-center px-4 py-3.5 cursor-pointer border-b border-border-subtle transition-colors hover:bg-accent"
                 onClick={() => handleEdit(file)}
               >
-                {/* 桌面端：表格行 */}
                 <div className="hidden md:flex items-center w-[40%] gap-2.5">
                   <div className="w-2.5 h-2.5 rounded-full bg-success flex-shrink-0" />
                   <span className="text-sm font-medium text-foreground truncate">
@@ -335,7 +321,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* 分页 */}
       <Pagination
         currentPage={currentPage}
         totalPages={totalPages}

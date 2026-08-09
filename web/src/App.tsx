@@ -20,7 +20,6 @@ const EditorPage = lazy(() => import('./pages/EditorPage'));
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
 
-  // 加载中显示加载状态
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -29,7 +28,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // 无用户数据，重定向到登录页
   if (!user) {
     return <Navigate to="/login" replace />;
   }
@@ -37,7 +35,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// 加载状态组件
 function LoadingFallback() {
   return (
     <div className="flex-1 flex items-center justify-center h-full">

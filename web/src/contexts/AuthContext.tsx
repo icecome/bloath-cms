@@ -26,7 +26,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const { addToast } = useToast();
 
-  // 验证 session 并获取用户信息
   const verifySession = useCallback(async (): Promise<boolean> => {
     try {
       const res = await fetch(`${API_BASE}/api/me`, {
@@ -35,7 +34,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!res.ok) {
-        addToast({ message: '登录已过期，请重新登录', type: 'error' });
         setState(prev => ({ ...prev, user: null, loading: false }));
         return false;
       }
@@ -47,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // 服务器返回成功但无用户数据，必须重置 loading 避免页面永久卡在加载态
-      addToast({ message: '登录状态异常，请重新登录', type: 'error' });
+      addToast({ message: '登录状态异常，请重新登录', type: 'warning' });
       setState(prev => ({ ...prev, user: null, loading: false }));
       return false;
     } catch {
@@ -57,29 +55,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [addToast]);
 
-  // 初始化时验证 session
   useEffect(() => {
     verifySession();
-  }, [verifySession]);
-
-  // 监听全局认证过期事件
-  useEffect(() => {
-    const handleExpired = () => {
-      addToast({ message: '登录已过期，请重新登录', type: 'error' });
-      setState(prev => ({ ...prev, user: null }));
-    };
-    window.addEventListener('auth:expired', handleExpired);
-    return () => window.removeEventListener('auth:expired', handleExpired);
-  }, [addToast]);
-
-  // 定期验证 session（每 30 分钟，配合 6 小时有效期自动续期）
-  useEffect(() => {
     if (!state.user) return;
     const interval = setInterval(() => {
       verifySession();
     }, 1800000);
     return () => clearInterval(interval);
-  }, [state.user, verifySession]);
+  }, [verifySession, state.user]);
+
+  useEffect(() => {
+    const handleExpired = () => {
+      addToast({ message: '登录已过期，请重新登录', type: 'warning' });
+      setState(prev => ({ ...prev, user: null }));
+    };
+    window.addEventListener('auth:expired', handleExpired);
+    return () => window.removeEventListener('auth:expired', handleExpired);
+  }, [addToast]);
 
   const login = useCallback(async () => {
     try {
@@ -88,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
       });
       if (!res.ok) {
-        addToast({ message: '登录服务不可用，请稍后重试', type: 'error' });
+        addToast({ message: '登录服务不可用，请稍后重试', type: 'warning' });
         return;
       }
       const data = await res.json();
@@ -104,7 +96,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await apiLogout();
     } catch {
-      // 忽略登出错误
     }
     setState({ user: null, loading: false });
   }, []);

@@ -51,7 +51,6 @@ export interface DetectedRepo extends Repo {
   framework?: FrameworkInfo;
 }
 
-// 检测单个仓库的博客框架（使用 Tree API 一次性获取所有文件路径）
 async function detectFrameworkForRepo(
   owner: string,
   repo: string,
@@ -60,19 +59,16 @@ async function detectFrameworkForRepo(
   try {
     const tree = await getTree({ owner, repo, branch: defaultBranch });
 
-    // 收集所有文件路径和根目录文件名
     const allPaths = new Set(tree.map(f => f.path));
     const rootFileNames = new Set(
       tree.filter(f => !f.path.includes('/')).map(f => f.name)
     );
 
     for (const [frameworkName, rule] of Object.entries(FRAMEWORK_RULES)) {
-      // 检查根目录文件
       if (rule.files.some(f => rootFileNames.has(f))) {
         return { name: frameworkName, color: rule.color };
       }
 
-      // 检查子目录文件（通过 tree 路径匹配，避免多次 readFile 调用）
       if (rule.paths.some(p => allPaths.has(p))) {
         return { name: frameworkName, color: rule.color };
       }

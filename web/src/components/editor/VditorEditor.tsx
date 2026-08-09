@@ -13,7 +13,6 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
   const vditorRef = useRef<Vditor | null>(null);
   const contentRef = useRef(initialContent);
   contentRef.current = initialContent;
-  // 使用 ref 持有最新回调，避免 Vditor 初始化时绑定的闭包捕获过期引用
   const onInputRef = useRef(onInput);
   onInputRef.current = onInput;
   const onReadyRef = useRef(onReady);
@@ -58,7 +57,6 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
       try {
         vditorRef.current?.destroy();
       } catch {
-        // Ignore destroy errors
       }
       vditorRef.current = null;
     };

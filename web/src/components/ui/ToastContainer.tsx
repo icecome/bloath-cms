@@ -1,5 +1,12 @@
-import { useToast, type ToastItem } from '../../contexts/ToastContext';
+import { useToast, type ToastItem, type ToastType } from '../../contexts/ToastContext';
 import { X } from 'lucide-react';
+
+const toastStyles: Record<ToastType, string> = {
+  success: 'bg-success text-white',
+  error: 'bg-destructive text-white',
+  warning: 'bg-warning text-white',
+  info: 'bg-primary text-white',
+};
 
 interface ToastItemProps {
   toast: ToastItem;
@@ -15,7 +22,7 @@ function ToastItemComponent({ toast: t }: ToastItemProps) {
 
   return (
     <div
-      className="px-4 py-2.5 text-xs rounded-md shadow-sm bg-foreground text-white flex items-center gap-3 min-w-[200px] max-w-sm"
+      className={`px-4 py-2.5 text-xs rounded-md shadow-sm flex items-center gap-3 min-w-[200px] max-w-sm ${toastStyles[t.type] || toastStyles.info}`}
       role="alert"
     >
       <span className="flex-1">{t.message}</span>

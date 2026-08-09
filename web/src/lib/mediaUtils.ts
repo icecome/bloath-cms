@@ -13,7 +13,6 @@ export interface MediaFile {
   lastModified: number;
 }
 
-// 压缩图片为 WebP，限制 canvas 最大边长防止显存溢出
 export function compressImage(file: File, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -53,7 +52,6 @@ export function compressImage(file: File, quality: number): Promise<Blob> {
   });
 }
 
-// Blob 转 Base64（去除 data URL 前缀）
 export function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

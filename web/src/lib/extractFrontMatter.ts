@@ -45,17 +45,14 @@ const DEFAULT_OPTIONS: Required<ExtractOptions> = {
 export function parseDateToTimestamp(dateValue?: string | number | Date): number {
   if (!dateValue) return 0;
 
-  // Date 对象
   if (dateValue instanceof Date) return dateValue.getTime();
 
   if (typeof dateValue === 'number') return dateValue;
 
   if (typeof dateValue === 'string') {
-    // 尝试直接解析
     const ts = new Date(dateValue).getTime();
     if (!isNaN(ts)) return ts;
 
-    // 尝试提取 YYYY-MM-DD 或 YYYYMMDD 格式
     const dateMatch = dateValue.match(/(\d{4})[-/年](\d{1,2})[-/月]?(\d{1,2})?[\s日]?/);
     if (dateMatch) {
       const year = parseInt(dateMatch[1] ?? '', 10);
@@ -66,7 +63,6 @@ export function parseDateToTimestamp(dateValue?: string | number | Date): number
       if (!isNaN(fallbackTs)) return fallbackTs;
     }
 
-    // 尝试提取 YYYYMMDD 格式（如 20260707）
     const compactMatch = dateValue.match(/(\d{8})/);
     if (compactMatch) {
       const num = parseInt(compactMatch[1] ?? '', 10);
@@ -99,10 +95,8 @@ async function readSingleFrontmatter(
       branch: repoInfo.branch || 'main',
     }, options.timeoutMs);
 
-    // 提取前 1024 字符（足够覆盖绝大多数 Front Matter）
     const header = content.slice(0, 1024);
 
-    // 使用 front-matter 库解析
     const result = fm<ArticleFrontmatter>(header);
     const attributes = result.attributes || {};
 
@@ -121,7 +115,6 @@ async function readSingleFrontmatter(
       await delay(500 * (retries + 1));
       return readSingleFrontmatter(file, repoInfo, options, retries + 1);
     }
-    // 失败时返回原文件（不带 frontmatter）
     return file;
   }
 }

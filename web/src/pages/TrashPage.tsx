@@ -44,7 +44,6 @@ export default function TrashPage() {
     selectedRepo,
     user,
     onError: (err) => {
-      // .trash 目录不存在是正常情况（首次使用）
       if (err.message.includes('404')) {
         console.info(`回收站目录 ${trashPath} 尚未创建`);
       } else {
@@ -66,7 +65,7 @@ export default function TrashPage() {
   const handleRestore = async (file: EnhancedFileItem, targetDir: string) => {
     if (!selectedRepo || !user || !targetDir.trim()) return;
     if (!file.sha) {
-      addToast({ message: '文件缺少 SHA，无法恢复', type: 'error' });
+      addToast({ message: '文件缺少 SHA，无法恢复', type: 'warning' });
       return;
     }
     setActionLoading(true);
@@ -197,7 +196,6 @@ export default function TrashPage() {
 
   return (
     <div className="h-full flex flex-col" onClick={() => setShowFileRestoreDropdown('')}>
-      {/* 永久删除确认弹窗 */}
       {permanentDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-destructive">
@@ -225,7 +223,6 @@ export default function TrashPage() {
         </div>
       )}
 
-      {/* 单个文件永久删除确认弹窗 */}
       {singleDeleteFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-destructive">
@@ -257,7 +254,6 @@ export default function TrashPage() {
         </div>
       )}
 
-      {/* 搜索栏 + 操作工具栏 */}
       {selectedRepo && (
         <div className="flex-shrink-0 px-4 md:px-8 py-4 border-b border-border-subtle">
           <div className="relative">
@@ -299,7 +295,6 @@ export default function TrashPage() {
 
               <div className="w-px h-4 bg-border"></div>
 
-              {/* 恢复 */}
               <div className="relative">
                 <button
                   onClick={() => setShowRestoreDropdown(!showRestoreDropdown)}
@@ -340,7 +335,6 @@ export default function TrashPage() {
         </div>
       )}
 
-      {/* 文件列表 */}
       <div className="flex-1 overflow-auto px-4 md:px-8">
         {!selectedRepo ? (
           <EmptyState
@@ -467,7 +461,6 @@ export default function TrashPage() {
         )}
       </div>
 
-      {/* 分页 */}
       <Pagination
         currentPage={currentPage}
         totalPages={totalPages}

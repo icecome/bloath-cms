@@ -16,9 +16,6 @@ export interface ContentItem {
 
 const API_TIMEOUT_MS = 10000;
 
-/**
- * 生成本地时间戳，格式 YYYYMMDDTHHmmss（依赖浏览器本地时区）
- */
 export function formatTimestamp(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -30,10 +27,6 @@ export function formatTimestamp(): string {
   return `${y}${m}${d}T${h}${min}${s}`;
 }
 
-/**
- * 统一 API 请求封装，自动处理错误响应
- * @param skipDataCheck - 为 true 时不检查 data 字段（用于 DELETE 等无返回数据的接口）
- */
 async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = false): Promise<T> {
   const finalOptions: RequestInit = {
     ...options,

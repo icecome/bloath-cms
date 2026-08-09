@@ -48,18 +48,15 @@ export default function EditorPage() {
   const [showToolbar, setShowToolbar] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
-  // 已有文章的 basePath 从 currentFilePath 推导，新建文章用 draftPath
   const basePath = useMemo(
     () => paramBasePath || (isNew ? (config.draftPath || '.draft') : (currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : '')),
     [paramBasePath, isNew, config.draftPath, currentFilePath]
   );
 
-  // 从当前文件路径提取默认发布目录
   const defaultPublishTarget = currentFilePath
     ? currentFilePath.split('/').slice(0, -1).join('/')
     : '';
 
-  // 判断当前文章是否在草稿箱中
   const isDraftArticle = returnTo === 'drafts';
 
   const handleBack = () => {
@@ -70,7 +67,6 @@ export default function EditorPage() {
     }
   };
 
-  // 加载已有文章
   useEffect(() => {
     if (isNew || !user || !basePath || hasLoadedOnce) return;
     const relativePath = paramFilePath || slug;
@@ -89,7 +85,7 @@ export default function EditorPage() {
         setCurrentFileSha(sha || '');
         setHasLoadedOnce(true);
         if (!fm.url && relativePath) {
-          const urlFromPath = relativePath.replace(/\.md$/, '');
+          const urlFromPath = relativePath.replace(/\.md$/, '').split('/').pop() || '';
           setFrontmatter((prev) => ({ ...prev, url: urlFromPath }));
         }
         if (vditorInstanceRef.current) {
@@ -134,7 +130,7 @@ export default function EditorPage() {
     try {
       targetSlug = sanitizeSlug(effectiveFm.url || slug);
     } catch (err) {
-      addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'warning' });
       return;
     }
     const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
@@ -147,12 +143,12 @@ export default function EditorPage() {
     try {
       const fullContent = `${generateFrontmatter(effectiveFm)}\n\n${editorContent}`;
       const timestamp = formatTimestamp();
-      const urlChanged = !isNew && effectiveFm.url && effectiveFm.url !== slug && currentFilePath;
+      const saveBasePath = currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : '';
+      const newPath = saveBasePath ? `${saveBasePath}/${targetSlug}.md` : `${config.draftPath || '.draft'}/${targetSlug}.md`;
+      const urlChanged = !isNew && !!currentFilePath && newPath !== currentFilePath;
 
       if (urlChanged) {
         const oldPath = currentFilePath;
-        const saveBasePath = currentFilePath.split('/').slice(0, -1).join('/');
-        const newPath = `${saveBasePath}/${targetSlug}.md`;
 
         await renameFile({
           owner, repo, oldPath, newPath, content: fullContent,
@@ -210,7 +206,7 @@ export default function EditorPage() {
     try {
       targetSlug = sanitizeSlug(effectiveFm.url);
     } catch (err) {
-      addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'warning' });
       return;
     }
     const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
@@ -219,11 +215,11 @@ export default function EditorPage() {
     try {
       resolvedTarget = sanitizePath(publishTarget || defaultPublishTarget);
     } catch (err) {
-      addToast({ message: `发布目标校验失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `发布目标校验失败: ${(err as Error).message}`, type: 'warning' });
       return;
     }
     if (!resolvedTarget) {
-      addToast({ message: '请选择发布目标目录', type: 'error' });
+      addToast({ message: '请选择发布目标目录', type: 'warning' });
       return;
     }
 
@@ -312,7 +308,6 @@ export default function EditorPage() {
     }
   };
 
-  // 键盘快捷键：通过 ref 同步最新 handleSave，避免闭包过期
   const handleSaveRef = useRef(handleSave);
   useEffect(() => {
     handleSaveRef.current = handleSave;
@@ -359,7 +354,6 @@ export default function EditorPage() {
     return () => { wrapperRef.current?.removeEventListener('keydown', handleKeyDown); };
   }, []);
 
-  // 数组字段操作
   const [newCategory, setNewCategory] = useState('');
   const [newTag, setNewTag] = useState('');
   const [newPicture, setNewPicture] = useState('');
@@ -387,7 +381,6 @@ export default function EditorPage() {
     }
   };
 
-  // 元数据面板 props（桌面端与移动端复用）
   const frontmatterPanelProps = {
     frontmatter,
     setFm,
@@ -428,7 +421,6 @@ export default function EditorPage() {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
-      {/* 顶部栏 */}
       <header className="px-4 md:px-6 py-3 md:py-4 flex items-center justify-between flex-shrink-0 border-b border-border">
         <div className="flex items-center gap-2 md:gap-3">
           <button onClick={handleBack} className="text-muted-foreground hover:text-foreground transition-colors" aria-label="返回">
@@ -569,13 +561,11 @@ export default function EditorPage() {
           </div>
         </div>
 
-        {/* 桌面端右侧元数据面板 */}
         <div className="hidden md:block w-72 bg-white border-l border-border overflow-auto flex-shrink-0">
           <FrontmatterPanel {...frontmatterPanelProps} />
         </div>
       </div>
 
-      {/* 移动端元数据面板抽屉 */}
       {showMetadataPanel && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setShowMetadataPanel(false)} />

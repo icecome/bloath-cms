@@ -47,7 +47,7 @@ export function MediaSettings() {
 
   const handleInitBranch = async () => {
     if (!selectedRepo) {
-      addToast({ message: '请先在仪表盘选择博客仓库', type: 'error' });
+      addToast({ message: '请先在仪表盘选择博客仓库', type: 'warning' });
       return;
     }
     const branchName = mediaConfig.imageBranchName || DEFAULT_BRANCH_NAME;
@@ -88,7 +88,6 @@ export function MediaSettings() {
 
   return (
     <div className="space-y-6 max-w-xl">
-      {/* 媒体源类型 */}
       <section>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
           <Image className="w-3 h-3" />
@@ -121,7 +120,6 @@ export function MediaSettings() {
         </div>
       </section>
 
-      {/* standalone 模式：图床仓库 */}
       {mediaConfig.sourceType === 'standalone' && (
         <section>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
@@ -157,7 +155,6 @@ export function MediaSettings() {
         </section>
       )}
 
-      {/* repo-dir 模式：子目录配置 */}
       {mediaConfig.sourceType === 'repo-dir' && (
         <section>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
@@ -185,7 +182,6 @@ export function MediaSettings() {
         </section>
       )}
 
-      {/* image-branch 模式：独立分支配置 */}
       {mediaConfig.sourceType === 'image-branch' && (
         <section>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
@@ -224,7 +220,6 @@ export function MediaSettings() {
         </section>
       )}
 
-      {/* CDN 域名 */}
       <section>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
           <Globe className="w-3 h-3" />
@@ -266,7 +261,6 @@ export function MediaSettings() {
         </div>
       </section>
 
-      {/* 压缩质量 */}
       <section>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
           <Sliders className="w-3 h-3" />
@@ -286,7 +280,6 @@ export function MediaSettings() {
         <p className="text-xs text-muted-foreground mt-1">WebP 输出质量，值越高画质越好但文件越大</p>
       </section>
 
-      {/* 重命名模板 */}
       <section>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
           <FileSignature className="w-3 h-3" />
@@ -309,7 +302,6 @@ export function MediaSettings() {
         </div>
       </section>
 
-      {/* 同名策略 */}
       <section>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
           <AlertTriangle className="w-3 h-3" />
