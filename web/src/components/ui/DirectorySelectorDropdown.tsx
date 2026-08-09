@@ -67,7 +67,10 @@ export default function DirectorySelectorDropdown({
           className="w-full px-2.5 py-1.5 text-xs border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
         />
         <button
-          onClick={handleConfirm}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleConfirm();
+          }}
           disabled={!customValue.trim() || disabled || isLoading}
           className="w-full px-2.5 py-1.5 text-xs text-white bg-foreground rounded-sm hover:bg-foreground/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >

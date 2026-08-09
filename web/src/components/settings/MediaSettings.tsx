@@ -3,9 +3,10 @@ import { useCollections } from '../../contexts/CollectionsContext';
 import { useRepo } from '../../contexts/RepoContext';
 import { createBranch } from '../../lib/api';
 import { DEFAULT_MEDIA_PATH, DEFAULT_BRANCH_NAME } from '../../lib/constants';
+import { useToast } from '../../contexts/ToastContext';
 import {
   Image, Globe, Sliders, FileSignature,
-  AlertTriangle, GitBranch, FolderOpen, Loader2, Check, X
+  AlertTriangle, GitBranch, FolderOpen, Loader2
 } from 'lucide-react';
 import type { CdnProvider, DuplicateStrategy, MediaSourceType } from '../../../../shared/types';
 
@@ -41,19 +42,16 @@ const PLACEHOLDER_DOCS = [
 export function MediaSettings() {
   const { mediaConfig, updateMediaConfig } = useCollections();
   const { selectedRepo } = useRepo();
-  const [mediaError, setMediaError] = useState('');
-  const [mediaSuccess, setMediaSuccess] = useState('');
+  const { addToast } = useToast();
   const [initializing, setInitializing] = useState(false);
 
   const handleInitBranch = async () => {
     if (!selectedRepo) {
-      setMediaError('请先在仪表盘选择博客仓库');
+      addToast({ message: '请先在仪表盘选择博客仓库', type: 'error' });
       return;
     }
     const branchName = mediaConfig.imageBranchName || DEFAULT_BRANCH_NAME;
     setInitializing(true);
-    setMediaError('');
-    setMediaSuccess('');
     try {
       await createBranch({
         owner: selectedRepo.owner,
@@ -61,13 +59,13 @@ export function MediaSettings() {
         branchName,
         sourceBranch: selectedRepo.branch || 'main'
       });
-      setMediaSuccess(`分支 ${branchName} 已就绪`);
+      addToast({ message: `分支 ${branchName} 已就绪`, type: 'success' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       if (msg.includes('已存在')) {
-        setMediaSuccess(`分支 ${branchName} 已存在，可直接使用`);
+        addToast({ message: `分支 ${branchName} 已存在，可直接使用`, type: 'success' });
       } else {
-        setMediaError(msg || '初始化失败');
+        addToast({ message: msg || '初始化失败', type: 'error' });
       }
     } finally {
       setInitializing(false);
@@ -122,22 +120,6 @@ export function MediaSettings() {
           })}
         </div>
       </section>
-
-      {/* 消息提示 */}
-      {mediaError && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-sm text-xs text-red-700">
-          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-          <span className="flex-1">{mediaError}</span>
-          <button type="button" onClick={() => setMediaError('')} className="ml-auto" aria-label="关闭错误提示"><X className="w-3 h-3" /></button>
-        </div>
-      )}
-      {mediaSuccess && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-sm text-xs text-green-700">
-          <Check className="w-3.5 h-3.5 flex-shrink-0" />
-          <span className="flex-1">{mediaSuccess}</span>
-          <button type="button" onClick={() => setMediaSuccess('')} className="ml-auto" aria-label="关闭成功提示"><X className="w-3 h-3" /></button>
-        </div>
-      )}
 
       {/* standalone 模式：图床仓库 */}
       {mediaConfig.sourceType === 'standalone' && (

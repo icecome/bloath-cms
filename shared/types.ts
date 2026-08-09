@@ -6,9 +6,7 @@ export interface RepoInfo {
 }
 
 // 选中的仓库信息（前端 Context 共享）
-export interface SelectedRepo {
-  owner: string;
-  repo: string;
+export interface SelectedRepo extends RepoInfo {
   branch: string;
 }
 

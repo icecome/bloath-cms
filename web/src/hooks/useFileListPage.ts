@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { scanMdFiles } from './useFileList';
+import { scanMdFiles } from '../lib/scanner';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { getCachedFiles, setCachedFiles } from '../lib/fileCache';
 import { sortByFrontMatterDate } from '../lib/sortFiles';

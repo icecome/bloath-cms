@@ -1,8 +1,10 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { useAuth } from './hooks/useAuth';
+import { AuthProvider } from './contexts/AuthContext';
 import { CollectionsProvider } from './contexts/CollectionsContext';
 import { RepoProvider } from './contexts/RepoContext';
+import { ToastProvider } from './contexts/ToastContext';
 import LoginPage from './pages/LoginPage';
 import MainLayout from './components/layout/MainLayout';
 import DashboardPage from './pages/DashboardPage';
@@ -10,7 +12,7 @@ import DraftsPage from './pages/DraftsPage';
 import TrashPage from './pages/TrashPage';
 import MediaPage from './pages/MediaPage';
 import SettingsPage from './pages/SettingsPage';
-import Toast from './components/ui/Toast';
+import ToastContainer from './components/ui/ToastContainer';
 import './styles/globals.css';
 
 const EditorPage = lazy(() => import('./pages/EditorPage'));
@@ -48,38 +50,33 @@ function LoadingFallback() {
 }
 
 export default function App() {
-  const { toast, clearToast } = useAuth();
-
   return (
     <RepoProvider>
       <CollectionsProvider>
-        {toast && (
-          <Toast
-            message={toast}
-            type="error"
-            onClose={clearToast}
-            duration={5000}
-          />
-        )}
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={
-            <ProtectedRoute>
-              <MainLayout />
-            </ProtectedRoute>
-          }>
-            <Route index element={<DashboardPage />} />
-            <Route path="drafts" element={<DraftsPage />} />
-            <Route path="trash" element={<TrashPage />} />
-            <Route path="editor/*" element={
-              <Suspense fallback={<LoadingFallback />}>
-                <EditorPage />
-              </Suspense>
-            } />
-            <Route path="media" element={<MediaPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-          </Route>
-        </Routes>
+        <ToastProvider>
+          <AuthProvider>
+            <ToastContainer />
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/" element={
+                <ProtectedRoute>
+                  <MainLayout />
+                </ProtectedRoute>
+              }>
+                <Route index element={<DashboardPage />} />
+                <Route path="drafts" element={<DraftsPage />} />
+                <Route path="trash" element={<TrashPage />} />
+                <Route path="editor/*" element={
+                  <Suspense fallback={<LoadingFallback />}>
+                    <EditorPage />
+                  </Suspense>
+                } />
+                <Route path="media" element={<MediaPage />} />
+                <Route path="settings" element={<SettingsPage />} />
+              </Route>
+            </Routes>
+          </AuthProvider>
+        </ToastProvider>
       </CollectionsProvider>
     </RepoProvider>
   );

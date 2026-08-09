@@ -3,25 +3,26 @@ import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile, deleteFile } from '../lib/api';
-import { scanMdFiles } from '../hooks/useFileList';
+import { scanMdFiles } from '../lib/scanner';
 import { useFileListPage } from '../hooks/useFileListPage';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { clearCache } from '../lib/fileCache';
 import { filterValidDirs } from '../lib/path';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
-import Toast from '../components/ui/Toast';
 import Pagination from '../components/ui/Pagination';
 import DirectorySelectorDropdown from '../components/ui/DirectorySelectorDropdown';
 import FileTable from '../components/FileTable';
 import { PAGE_SIZE } from '../lib/constants';
 import { FileText, Search, Trash2, RotateCcw, X } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
 
 export default function TrashPage() {
   const { user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const trashPath = config.trashPath || '.trash';
+  const { addToast } = useToast();
 
   const {
     files,
@@ -52,20 +53,20 @@ export default function TrashPage() {
     },
   });
 
-  const [restoreTarget, setRestoreTarget] = useState('');
+  const [restoreTarget, setRestoreTarget] = useState(config.draftPath || '.draft');
   const [showRestoreDropdown, setShowRestoreDropdown] = useState(false);
   const [showFileRestoreDropdown, setShowFileRestoreDropdown] = useState('');
   const [permanentDeleteConfirm, setPermanentDeleteConfirm] = useState(false);
   const [singleDeleteFile, setSingleDeleteFile] = useState<EnhancedFileItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
 
   const availableDirs = filterValidDirs(config.paths || []);
 
   const handleRestore = async (file: EnhancedFileItem, targetDir: string) => {
     if (!selectedRepo || !user || !targetDir.trim()) return;
     if (!file.sha) {
-      setToast({ message: '文件缺少 SHA，无法恢复', type: 'error' });
+      addToast({ message: '文件缺少 SHA，无法恢复', type: 'error' });
       return;
     }
     setActionLoading(true);
@@ -81,14 +82,15 @@ export default function TrashPage() {
         message: `恢复 ${file.name}`,
         userName: user?.login
       });
-      setToast({ message: `已将 ${file.name} 移动到 ${targetDir}`, type: 'success' });
+      addToast({ message: `已将 ${file.name} 移动到 ${targetDir}`, type: 'success' });
       clearCache(selectedRepo);
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
-      setToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      setProgress(null);
     }
   };
 
@@ -104,22 +106,25 @@ export default function TrashPage() {
         message: '[skip ci]',
         userName: user?.login
       });
-      setToast({ message: `已永久删除 ${file.name}`, type: 'success' });
+      addToast({ message: `已永久删除 ${file.name}`, type: 'success' });
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
-      setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      setProgress(null);
     }
   };
 
   const handleBulkRestore = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0 || !restoreTarget.trim()) return;
     setActionLoading(true);
+    setProgress({ current: 0, total: 0 });
     try {
       const filesToRestore = files.filter((f) => selectedFiles.has(f.path));
-      for (const file of filesToRestore) {
+      setProgress({ current: 0, total: filesToRestore.length });
+      for (const [i, file] of filesToRestore.entries()) {
         const newPath = `${restoreTarget.trim()}/${file.name}`;
         await moveFile({
           owner: selectedRepo.owner,
@@ -131,28 +136,32 @@ export default function TrashPage() {
           message: `恢复 ${file.name}`,
           userName: user?.login
         });
+        setProgress({ current: i + 1, total: filesToRestore.length });
       }
-      setToast({ message: `已恢复 ${filesToRestore.length} 个文件`, type: 'success' });
+      addToast({ message: `已恢复 ${filesToRestore.length} 个文件`, type: 'success' });
       setSelectedFiles(new Set());
-      setRestoreTarget('');
+      setRestoreTarget(config.draftPath || '.draft');
       setShowRestoreDropdown(false);
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
-      setToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      setProgress(null);
     }
   };
 
   const handleBulkPermanentDelete = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0) return;
     setActionLoading(true);
+    setProgress({ current: 0, total: 0 });
     try {
       const filesToDelete = files.filter((f) => selectedFiles.has(f.path));
+      setProgress({ current: 0, total: filesToDelete.length });
       let deletedCount = 0;
       const errors: string[] = [];
-      for (const file of filesToDelete) {
+      for (const [i, file] of filesToDelete.entries()) {
         try {
           await deleteFile({
             owner: selectedRepo.owner,
@@ -166,31 +175,28 @@ export default function TrashPage() {
         } catch (err) {
           errors.push(`${file.name}: ${(err as Error).message}`);
         }
+        setProgress({ current: i + 1, total: filesToDelete.length });
       }
       if (deletedCount > 0) {
-        setToast({ message: `已永久删除 ${deletedCount} 个文件`, type: 'success' });
+        addToast({ message: `已永久删除 ${deletedCount} 个文件`, type: 'success' });
       }
       if (errors.length > 0) {
-        setToast({ message: `部分删除失败: ${errors.join('; ')}`, type: 'error' });
+        addToast({ message: `部分删除失败: ${errors.join('; ')}`, type: 'error' });
       }
       setSelectedFiles(new Set());
       setPermanentDeleteConfirm(false);
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
-      setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      setProgress(null);
     }
   };
 
   return (
     <div className="h-full flex flex-col" onClick={() => setShowFileRestoreDropdown('')}>
-      {/* Toast */}
-      {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
-      )}
-
       {/* 永久删除确认弹窗 */}
       {permanentDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -267,9 +273,23 @@ export default function TrashPage() {
 
           {selectedFiles.size > 0 && (
             <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-muted-foreground bg-accent px-2.5 py-1.5 rounded-sm">
-                已选 {selectedFiles.size} 个
-              </span>
+              {progress ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-24 h-2 bg-accent rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-foreground/60 rounded-full transition-all duration-300"
+                      style={{ width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    处理中 {progress.current}/{progress.total}
+                  </span>
+                </div>
+              ) : (
+                <span className="text-sm text-muted-foreground bg-accent px-2.5 py-1.5 rounded-sm">
+                  已选 {selectedFiles.size} 个
+                </span>
+              )}
               <button
                 onClick={handleSelectAll}
                 className="text-sm text-muted-foreground hover:text-foreground hover:bg-accent px-2.5 py-1.5 rounded-sm transition-colors"

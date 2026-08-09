@@ -8,8 +8,7 @@ export async function generateDeviceFingerprint(request: Request): Promise<strin
   const data = `${ua.slice(0, 50)}|${lang}`;
   const encoder = new TextEncoder();
   const hash = await crypto.subtle.digest('SHA-256', encoder.encode(data));
-  return Array.from(new Uint8Array(hash).slice(0, 8))
-    .map(b => b.toString(16).padStart(2, '0')).join('');
+  return bytesToHex(new Uint8Array(hash).slice(0, 8));
 }
 
 // AES-GCM 加密生成 session token
@@ -123,7 +122,7 @@ export async function generateState(frontendUrl: string, env: Env): Promise<stri
     ['sign']
   );
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
-  const sigHex = Array.from(new Uint8Array(signature), (b) => b.toString(16).padStart(2, '0')).join('');
+  const sigHex = bytesToHex(new Uint8Array(signature));
   return `${payload}:${sigHex}`;
 }
 
@@ -173,6 +172,10 @@ export async function parseState(state: string, env: Env): Promise<{ frontendUrl
   } catch {
     return { frontendUrl: '', valid: false };
   }
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 function hexToUint8Array(hex: string): Uint8Array {

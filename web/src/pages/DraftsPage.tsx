@@ -4,14 +4,13 @@ import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile, readFile, writeFile, deleteFile } from '../lib/api';
-import { scanMdFiles } from '../hooks/useFileList';
+import { scanMdFiles } from '../lib/scanner';
 import { useFileListPage } from '../hooks/useFileListPage';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { clearCache } from '../lib/fileCache';
 import { sanitizePath, filterValidDirs } from '../lib/path';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
-import Toast from '../components/ui/Toast';
 import Pagination from '../components/ui/Pagination';
 import FileTable from '../components/FileTable';
 
@@ -23,12 +22,14 @@ import {
   Trash2,
   Pencil
 } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
 
 export default function DraftsPage() {
   const { user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const draftPath = config.draftPath || '.draft';
   const trashPath = config.trashPath || '.trash';
 
@@ -57,7 +58,6 @@ export default function DraftsPage() {
   const [publishTarget, setPublishTarget] = useState('');
   const [moveTarget, setMoveTarget] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; onUndo?: () => void } | null>(null);
   // 撤销记录
   const lastDeletedRef = useRef<{ files: EnhancedFileItem[]; originalPaths: string[] } | null>(null);
 
@@ -85,7 +85,7 @@ export default function DraftsPage() {
     try {
       safeTarget = sanitizePath(publishTarget);
     } catch (err) {
-      setToast({ message: (err as Error).message, type: 'error' });
+      addToast({ message: (err as Error).message, type: 'error' });
       return;
     }
     setActionLoading(true);
@@ -104,7 +104,7 @@ export default function DraftsPage() {
           userName: user?.login
         });
       }
-      setToast({ message: `成功发布 ${filesToMove.length} 篇草稿`, type: 'success' });
+      addToast({ message: `成功发布 ${filesToMove.length} 篇草稿`, type: 'success' });
       setSelectedFiles(new Set());
       setPublishTarget('');
       setShowPublishDropdown(false);
@@ -112,7 +112,7 @@ export default function DraftsPage() {
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
-      setToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -124,7 +124,7 @@ export default function DraftsPage() {
     try {
       safeTarget = sanitizePath(moveTarget);
     } catch (err) {
-      setToast({ message: (err as Error).message, type: 'error' });
+      addToast({ message: (err as Error).message, type: 'error' });
       return;
     }
     setActionLoading(true);
@@ -143,7 +143,7 @@ export default function DraftsPage() {
           userName: user?.login
         });
       }
-      setToast({ message: `成功移动 ${filesToMove.length} 篇草稿`, type: 'success' });
+      addToast({ message: `成功移动 ${filesToMove.length} 篇草稿`, type: 'success' });
       setSelectedFiles(new Set());
       setMoveTarget('');
       setShowMoveDropdown(false);
@@ -151,7 +151,7 @@ export default function DraftsPage() {
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
-      setToast({ message: `移动失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `移动失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -190,14 +190,14 @@ export default function DraftsPage() {
       clearCache(selectedRepo);
 
       // 批量删除不显示撤销
-      setToast({
+      addToast({
         message: `已将 ${filesToDelete.length} 篇草稿移至回收站`,
         type: 'success'
       });
 
       setSelectedFiles(new Set());
     } catch (err) {
-      setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -228,7 +228,7 @@ export default function DraftsPage() {
       setFiles(prev => prev.filter(f => f.path !== file.path));
       clearCache(selectedRepo);
 
-      setToast({
+      addToast({
         message: `已将 ${file.name} 移至回收站`,
         type: 'success',
         onUndo: async () => {
@@ -247,15 +247,15 @@ export default function DraftsPage() {
               userName: user?.login
             });
             setFiles(prev => [...prev, restoredFile]);
-            setToast({ message: '已恢复', type: 'success' });
+            addToast({ message: '已恢复', type: 'success' });
           } catch (err) {
-            setToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
+            addToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
           }
           lastDeletedRef.current = null;
         }
       });
     } catch (err) {
-      setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -299,7 +299,7 @@ export default function DraftsPage() {
         userName: user?.login
       });
 
-      setToast({ message: `重命名成功`, type: 'success' });
+      addToast({ message: `重命名成功`, type: 'success' });
       setShowRenameDialog(false);
       setRenameFile(null);
       setRenameValue('');
@@ -307,7 +307,7 @@ export default function DraftsPage() {
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
-      setToast({ message: `重命名失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `重命名失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -322,16 +322,6 @@ export default function DraftsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Toast */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-          onUndo={toast.onUndo}
-        />
-      )}
-
       {/* 搜索栏 + 操作工具栏 */}
       {selectedRepo && (
         <div className="flex-shrink-0 px-4 md:px-8 py-4 border-b border-border-subtle">

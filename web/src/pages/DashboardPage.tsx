@@ -4,29 +4,40 @@ import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { moveFile } from '../lib/api';
-import { scanMdFiles } from '../hooks/useFileList';
+import { scanMdFiles } from '../lib/scanner';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
 import { sortByFrontMatterDate } from '../lib/sortFiles';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
-import Toast from '../components/ui/Toast';
 import Pagination from '../components/ui/Pagination';
 import { FileText, Search, Trash2, Pencil } from 'lucide-react';
-import { PAGE_SIZE } from '../lib/constants';
+import { PAGE_SIZE, UNDO_STORAGE_PREFIX, UNDO_TTL_MS } from '../lib/constants';
+import { useToast } from '../contexts/ToastContext';
+
+function getUndoKey(repo: { owner: string; repo: string }) {
+  return `${UNDO_STORAGE_PREFIX}_${repo.owner}_${repo.repo}`;
+}
+
+interface UndoRecord {
+  file: EnhancedFileItem;
+  originalPath: string;
+  deletedAt: number;
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [files, setFiles] = useState<EnhancedFileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; onUndo?: () => void } | null>(null);
-  // 撤销记录
+  // 撤销记录（sessionStorage 持久化，页面刷新后仍可撤销）
   const lastDeletedRef = useRef<{ file: EnhancedFileItem; originalPath: string } | null>(null);
+  const undoCleanupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!selectedRepo || !user) {
@@ -64,6 +75,33 @@ export default function DashboardPage() {
       })
       .finally(() => setLoading(false));
   }, [selectedRepo, user, config]);
+
+  // 恢复 sessionStorage 中的撤销记录（页面刷新后仍可使用）
+  useEffect(() => {
+    if (!selectedRepo) return;
+    const key = getUndoKey(selectedRepo);
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) return;
+      const record: UndoRecord = JSON.parse(raw);
+      const elapsed = Date.now() - record.deletedAt;
+      if (elapsed > UNDO_TTL_MS) {
+        sessionStorage.removeItem(key);
+        return;
+      }
+      lastDeletedRef.current = { file: record.file, originalPath: record.originalPath };
+      // 剩余时间内自动清理
+      undoCleanupRef.current = setTimeout(() => {
+        sessionStorage.removeItem(key);
+        lastDeletedRef.current = null;
+      }, UNDO_TTL_MS - elapsed);
+    } catch {
+      // 解析失败则忽略
+    }
+    return () => {
+      if (undoCleanupRef.current) clearTimeout(undoCleanupRef.current);
+    };
+  }, [selectedRepo]);
 
   const filteredFiles = useMemo(() =>
     files.filter((f) =>
@@ -124,14 +162,26 @@ export default function DashboardPage() {
         userName: user?.login
       });
 
-      // 记录撤销信息
+      // 记录撤销信息并持久化到 sessionStorage
       lastDeletedRef.current = { file, originalPath: file.path };
+      if (selectedRepo) {
+        try {
+          const key = getUndoKey(selectedRepo);
+          sessionStorage.setItem(key, JSON.stringify({
+            file,
+            originalPath: file.path,
+            deletedAt: Date.now()
+          }));
+        } catch {
+          // sessionStorage 写入失败不阻塞主流程
+        }
+      }
 
       // 从列表中移除并清除缓存
       setFiles(prev => prev.filter(f => f.path !== file.path));
       clearCache(selectedRepo);
 
-      setToast({
+      addToast({
         message: `已将 ${file.name} 移至回收站`,
         type: 'success',
         onUndo: async () => {
@@ -147,30 +197,24 @@ export default function DashboardPage() {
             });
             setFiles(prev => [...prev, lastDeletedRef.current!.file]);
             clearCache(selectedRepo);
-            setToast({ message: '已恢复', type: 'success' });
+            addToast({ message: '已恢复', type: 'success' });
           } catch (err) {
-            setToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
+            addToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
           }
           lastDeletedRef.current = null;
+          if (selectedRepo) {
+            try { sessionStorage.removeItem(getUndoKey(selectedRepo)); } catch { /* ignore */ }
+          }
+          if (undoCleanupRef.current) { clearTimeout(undoCleanupRef.current); undoCleanupRef.current = null; }
         }
       });
     } catch (err) {
-      setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
     }
   };
 
   return (
     <div className="h-full flex flex-col">
-      {/* Toast */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-          onUndo={toast.onUndo}
-        />
-      )}
-
       {/* 筛选栏 */}
       {selectedRepo && (
         <div className="flex-shrink-0 px-4 md:px-8 py-4 flex items-center justify-between border-b border-border-subtle">

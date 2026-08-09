@@ -2,13 +2,16 @@
 import type { Env } from './github';
 import { validateSessionToken, generateDeviceFingerprint, generateSessionToken } from './session';
 
+// 路径参数安全校验正则（白名单模式）
+const PATH_SAFE_PATTERN = /^[a-zA-Z0-9\u4e00-\u9fff._\-]+$/;
+const PATH_SAFE_PATTERN_WITH_SLASH = /^[a-zA-Z0-9\u4e00-\u9fff._/\-]+$/;
+
 // 路径参数安全校验：白名单模式，仅允许字母、数字、中文、点、连字符、下划线、斜杠
 export function isSafePathParam(value: string | null | undefined, allowSlash = false): value is string {
   if (!value) return false;
   if (value.includes('..')) return false;
   if (value.includes('\0')) return false;
-  const pattern = allowSlash ? /^[a-zA-Z0-9\u4e00-\u9fff._/\-]+$/ : /^[a-zA-Z0-9\u4e00-\u9fff._\-]+$/;
-  return pattern.test(value);
+  return allowSlash ? PATH_SAFE_PATTERN_WITH_SLASH.test(value) : PATH_SAFE_PATTERN.test(value);
 }
 
 // 安全的 JSON 解析，防止原型污染和 DoS 攻击

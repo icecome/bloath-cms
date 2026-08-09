@@ -22,6 +22,23 @@ import {
   Loader2
 } from 'lucide-react';
 
+// 导航配置（模块级常量，SidebarContent 和 Header 面包屑共用）
+const NAV_ITEM_LABELS: Record<string, string> = {
+  '/': '内容库',
+  '/drafts': '草稿箱',
+  '/trash': '回收站',
+  '/media': '媒体库',
+  '/settings': '设置',
+};
+
+function getCurrentNavLabel(pathname: string): string {
+  const match = Object.keys(NAV_ITEM_LABELS).find((p) => {
+    if (p === '/') return pathname === '/';
+    return pathname.startsWith(p);
+  });
+  return (match && NAV_ITEM_LABELS[match]) || 'CMS';
+}
+
 // 侧边栏内容组件（桌面端和移动端共用）
 function SidebarContent({
   repos, selectedRepo, branches, user,
@@ -440,18 +457,7 @@ export default function MainLayout() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>Bloath</span>
               <span className="text-border">/</span>
-              <span className="text-foreground font-medium">
-                {['/', '/drafts', '/trash', '/media', '/settings'].find(p => {
-                  if (p === '/') return location.pathname === '/';
-                  return location.pathname.startsWith(p);
-                }) ? (() => {
-                  const navLabels: Record<string, string> = { '/': '内容库', '/drafts': '草稿箱', '/trash': '回收站', '/media': '媒体库', '/settings': '设置' };
-                  return navLabels[['/', '/drafts', '/trash', '/media', '/settings'].find(p => {
-                    if (p === '/') return location.pathname === '/';
-                    return location.pathname.startsWith(p);
-                  }) || '/'];
-                })() : 'CMS'}
-              </span>
+              <span className="text-foreground font-medium">{getCurrentNavLabel(location.pathname)}</span>
             </div>
           </div>
         </header>
