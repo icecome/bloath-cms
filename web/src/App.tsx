@@ -51,10 +51,10 @@ function LoadingFallback() {
 
 export default function App() {
   return (
-    <RepoProvider>
-      <CollectionsProvider>
-        <ToastProvider>
-          <AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <RepoProvider>
+          <CollectionsProvider>
             <ToastContainer />
             <Routes>
               <Route path="/login" element={<LoginPage />} />
@@ -75,9 +75,9 @@ export default function App() {
                 <Route path="settings" element={<SettingsPage />} />
               </Route>
             </Routes>
-          </AuthProvider>
-        </ToastProvider>
-      </CollectionsProvider>
-    </RepoProvider>
+          </CollectionsProvider>
+        </RepoProvider>
+      </AuthProvider>
+    </ToastProvider>
   );
 }
