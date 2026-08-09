@@ -33,11 +33,6 @@ async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = f
     credentials: 'include'
   };
 
-  if (!finalOptions.headers) {
-    finalOptions.headers = {};
-  }
-  (finalOptions.headers as Record<string, string>)['X-Requested-With'] = 'XMLHttpRequest';
-
   let res: Response;
   try {
     res = await fetch(url, finalOptions);

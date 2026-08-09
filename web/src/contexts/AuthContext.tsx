@@ -29,8 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const verifySession = useCallback(async (): Promise<boolean> => {
     try {
       const res = await fetch(`${API_BASE}/api/me`, {
-        credentials: 'include',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        credentials: 'include'
       });
 
       if (!res.ok) {
@@ -76,8 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
-        credentials: 'include',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        credentials: 'include'
       });
       if (!res.ok) {
         addToast({ message: '登录服务不可用，请稍后重试', type: 'warning' });

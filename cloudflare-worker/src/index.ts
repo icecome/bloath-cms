@@ -71,7 +71,7 @@ export default {
       }
 
       if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
-        if (!checkCsrf(request)) {
+        if (!checkCsrf(request, env)) {
           return addCorsHeaders(Response.json({ error: 'CSRF validation failed' }, { status: 403 }), origin, env);
         }
         const response = Response.json({ success: true });
