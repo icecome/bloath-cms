@@ -48,6 +48,10 @@ async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = f
     throw new Error('登录已过期，请重新登录');
   }
 
+  if (res.status === 503) {
+    throw new Error('GitHub API 暂不可用，请稍后重试');
+  }
+
   let data: { success: boolean; data?: T; error?: string };
   try {
     const contentType = res.headers.get('content-type');

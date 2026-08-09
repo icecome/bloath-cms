@@ -22,15 +22,19 @@ export class ApiError extends Error {
 }
 
 // 统一 GitHub API 错误处理：解析响应体并抛出 ApiError
+// GitHub 403 通常来自速率限制（无 PAT 时每小时 60 次），用 503 向上传播而非 403（避免前端误判为认证过期）
 async function throwGithubError(response: Response, context: string): Promise<never> {
   let message = `${context}: ${response.status}`;
+  let statusCode = response.status;
   try {
-    const body = await response.json() as { message?: string };
+    const body = await response.json() as { message?: string; documentation_url?: string };
     if (body.message) message = `${context}: ${body.message}`;
+    // GitHub 速率限制：响应中包含 URL 说明文档地址
+    if (response.status === 403 && body.documentation_url) statusCode = 503;
   } catch {
     // 响应体非 JSON，仅使用状态码
   }
-  throw new ApiError(message, response.status);
+  throw new ApiError(message, statusCode);
 }
 
 // UTF-8 字符串转 base64（替代已废弃的 unescape/encodeURIComponent 组合）
