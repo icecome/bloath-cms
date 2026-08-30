@@ -65,16 +65,15 @@ export default function SettingsPage() {
                   <code className="text-xs text-foreground font-mono">
                     {path.endsWith('/*.md') ? path : `${path.replace(/\/$/, '')}/*.md`}
                   </code>
-                  {config.paths.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removePath(path)}
-                      className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all"
-                      aria-label="删除路径"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => removePath(path)}
+                    disabled={config.paths.length <= 1}
+                    className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all disabled:opacity-0 disabled:cursor-not-allowed"
+                    aria-label="删除路径"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               ))}
             </div>

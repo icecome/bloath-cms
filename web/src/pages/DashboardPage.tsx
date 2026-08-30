@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
@@ -8,11 +8,13 @@ import { scanMdFiles } from '../hooks/useFileList';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
 import { sortByFrontMatterDate } from '../lib/sortFiles';
+import { filterValidDirs } from '../lib/path';
+import { buildEditUrl } from '../lib/navigation';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Toast from '../components/ui/Toast';
 import Pagination from '../components/ui/Pagination';
-import { FileText, Search, Trash2, Pencil } from 'lucide-react';
+import { FileText, Search, Trash2, Pencil, Folder } from 'lucide-react';
 import { PAGE_SIZE } from '../lib/constants';
 
 export default function DashboardPage() {
@@ -20,6 +22,7 @@ export default function DashboardPage() {
   const { selectedRepo } = useRepo();
   const { config } = useCollections();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [files, setFiles] = useState<EnhancedFileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -28,6 +31,11 @@ export default function DashboardPage() {
   // 撤销记录
   const lastDeletedRef = useRef<{ file: EnhancedFileItem; originalPath: string } | null>(null);
 
+  // 当前展示目录：优先 URL path 参数，未指定或非法时默认第一个有效路径
+  const validPaths = useMemo(() => filterValidDirs(config.paths || []), [config.paths]);
+  const pathParam = searchParams.get('path');
+  const currentDir = pathParam && validPaths.includes(pathParam) ? pathParam : (validPaths[0] || '');
+
   useEffect(() => {
     if (!selectedRepo || !user) {
       setFiles([]);
@@ -35,35 +43,33 @@ export default function DashboardPage() {
       return;
     }
 
-    const paths = (config.paths || []).filter(p => !p.includes('*') && p.trim() !== '');
-
-    // 先尝试从缓存加载
-    const allCached = paths.map(p => getCachedFiles(selectedRepo, p));
-    if (allCached.every(c => c !== null)) {
-      const cachedFiles = (allCached as EnhancedFileItem[][]).flat();
-      sortByFrontMatterDate(cachedFiles);
-      setFiles(cachedFiles);
-    } else {
-      setLoading(true);
+    if (!currentDir) {
+      setFiles([]);
+      setCurrentPage(1);
+      return;
     }
 
+    // 优先从缓存加载，命中直接使用，跳过后台刷新避免重复扫描
+    const cached = getCachedFiles(selectedRepo, currentDir);
+    if (cached) {
+      setFiles(cached);
+      return;
+    }
+    setLoading(true);
+
     // 后台刷新
-    Promise.all(paths.map(p => scanMdFiles(selectedRepo, p)))
-      .then(results => {
-        const allFiles = results.flat();
-        sortByFrontMatterDate(allFiles);
-        paths.forEach((p, i) => {
-          const files = results[i];
-          if (files) setCachedFiles(selectedRepo, p, files);
-        });
-        setFiles(allFiles);
+    scanMdFiles(selectedRepo, currentDir)
+      .then(files => {
+        sortByFrontMatterDate(files);
+        setCachedFiles(selectedRepo, currentDir, files);
+        setFiles(files);
       })
       .catch((err) => {
         console.error('加载文件列表失败:', err);
         setFiles([]);
       })
       .finally(() => setLoading(false));
-  }, [selectedRepo, user, config]);
+  }, [selectedRepo, user, currentDir]);
 
   const filteredFiles = useMemo(() =>
     files.filter((f) =>
@@ -84,22 +90,22 @@ export default function DashboardPage() {
     setCurrentPage(1);
   }, [searchQuery]);
 
+  // 切换目录时，重置到第一页，避免残留页码导致空白分页
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [currentDir]);
+
   const handleEdit = (file: EnhancedFileItem) => {
-    if (!selectedRepo) return;
-    const paths = config.paths || [];
-    let relative = file.path;
-    let foundBasePath = '';
-    for (const path of paths) {
-      if (relative.startsWith(path + '/')) {
-        relative = relative.slice(path.length + 1);
-        foundBasePath = path;
-        break;
-      }
-    }
-    // 保留原始相对路径（不含 .md），用于编辑器精确查找文件
-    const originalRelative = relative.replace(/\.md$/, '');
-    const slug = originalRelative.replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_');
-    navigate(`/editor/${slug}?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}&basePath=${encodeURIComponent(foundBasePath)}&filePath=${encodeURIComponent(originalRelative)}&returnTo=${encodeURIComponent(foundBasePath)}`);
+    if (!selectedRepo || !currentDir) return;
+    const relative = file.path.slice(currentDir.length + 1);
+    navigate(buildEditUrl({
+      owner: selectedRepo.owner,
+      repo: selectedRepo.repo,
+      branch: selectedRepo.branch,
+      basePath: currentDir,
+      filePath: relative,
+      returnTo: currentDir
+    }));
   };
 
   const handleNew = () => {
@@ -173,7 +179,13 @@ export default function DashboardPage() {
 
       {/* 筛选栏 */}
       {selectedRepo && (
-        <div className="flex-shrink-0 px-4 md:px-8 py-4 flex items-center justify-between border-b border-border-subtle">
+        <div className="flex-shrink-0 px-4 md:px-8 py-4 flex items-center gap-3 border-b border-border-subtle">
+          {currentDir && (
+            <div className="flex items-center gap-1.5 text-sm text-foreground bg-accent px-2.5 py-1.5 rounded-sm whitespace-nowrap max-w-[40%]">
+              <Folder className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+              <span className="font-medium truncate">{currentDir}</span>
+            </div>
+          )}
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
@@ -281,10 +293,19 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+        ) : !currentDir ? (
+          <EmptyState
+            icon={<FileText className="w-12 h-12" />}
+            title="未配置内容路径"
+            description="请先在设置中添加内容路径"
+            actionLabel="去设置"
+            onAction={() => navigate('/settings')}
+          />
         ) : (
           <EmptyState
             icon={<FileText className="w-12 h-12" />}
             title="暂无内容"
+            description={`目录 ${currentDir} 下暂无文章`}
             actionLabel="创建第一篇文章"
             onAction={handleNew}
           />

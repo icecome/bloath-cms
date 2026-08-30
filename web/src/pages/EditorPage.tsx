@@ -62,8 +62,10 @@ export default function EditorPage() {
   const handleBack = () => {
     if (returnTo === 'drafts') {
       navigate('/drafts');
+    } else if (returnTo) {
+      // returnTo 是内容路径，返回内容库并停留在该目录
+      navigate(`/?path=${encodeURIComponent(returnTo)}`);
     } else {
-      // returnTo 是路径或为空，返回内容库首页
       navigate('/');
     }
   };
