@@ -100,6 +100,7 @@ function SidebarContent({
   const selectDir = (dir: string) => {
     setContentOpen(true);
     navigate(`/?path=${encodeURIComponent(dir)}`);
+    onNavClick();
   };
 
   // 下拉框关闭时重置搜索
@@ -279,7 +280,7 @@ function SidebarContent({
               : 'text-foreground hover:bg-muted'
           }`}
         >
-          <Folder className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+          <Folder className="w-4 h-4 flex-shrink-0" />
           <span className="truncate flex-1">内容库</span>
         </button>
 
@@ -292,7 +293,7 @@ function SidebarContent({
                   return (
                     <button
                       key={dir}
-                      onClick={() => { selectDir(dir); onNavClick(); }}
+                      onClick={() => selectDir(dir)}
                       className={`w-full flex items-center gap-2 pl-2 pr-2 py-1.5 rounded-sm text-sm text-left transition-colors ${
                         isActiveDir
                           ? 'bg-accent text-foreground font-medium'
