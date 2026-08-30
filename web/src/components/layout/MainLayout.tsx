@@ -5,19 +5,12 @@ import { useCollections } from '../../contexts/CollectionsContext';
 import { getRepos } from '../../lib/api';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { detectFrameworks, type DetectedRepo } from '../../lib/detectFramework';
-import { scanMdFiles } from '../../lib/scanner';
-import { sortByFrontMatterDate } from '../../lib/sortFiles';
-import { getCachedFiles, setCachedFiles } from '../../lib/fileCache';
-import type { SelectedRepo } from '../../../../shared/types';
 import { filterValidDirs } from '../../lib/path';
-import { buildEditUrl } from '../../lib/navigation';
-import type { EnhancedFileItem } from '../../lib/extractFrontMatter';
 import {
   FilePlus2,
   Settings,
   LogOut,
   ChevronDown,
-  ChevronRight,
   Check,
   Users,
   Image as ImageIcon,
@@ -27,8 +20,7 @@ import {
   Menu,
   X,
   Search,
-  Loader2,
-  FileText
+  Loader2
 } from 'lucide-react';
 
 // 导航配置（模块级常量，SidebarContent 和 Header 面包屑共用）
@@ -79,7 +71,7 @@ function SidebarContent({
   const { config } = useCollections();
   const [searchQuery, setSearchQuery] = useState('');
 
-// 有效内容路径（过滤 glob 模式），侧边栏目录树完全由配置驱动
+// 有效内容路径（过滤 glob 模式），内容库次级导航由配置驱动
   const validPaths = useMemo(() => filterValidDirs(config.paths || []), [config.paths]);
 
   // activeDir 仅在内容库路由（/）生效，避免草稿箱/设置等页面误高亮
@@ -88,71 +80,15 @@ function SidebarContent({
   const activeDir = onContent
     ? (urlPath && validPaths.includes(urlPath) ? urlPath : (validPaths[0] || ''))
     : '';
-  const [expandedDir, setExpandedDir] = useState<string | null>(activeDir || null);
 
-  // 各目录已加载的文件列表、加载态、错误态
-  const [dirFiles, setDirFiles] = useState<Record<string, EnhancedFileItem[]>>({});
-  const [dirLoading, setDirLoading] = useState<Record<string, boolean>>({});
-  const [dirErrors, setDirErrors] = useState<Record<string, boolean>>({});
-  // 竞态防护：手风琴同一时间只加载一个目录，用全局递增 id 丢弃过期响应
-  const dirLoadIdRef = useRef(0);
+  // 内容库主项展开状态（次级导航）
+  const [contentOpen, setContentOpen] = useState(true);
 
-  // URL 选中目录变化时同步展开状态（如从编辑器返回）
+  // URL 选中目录变化时确保内容库保持展开（如从编辑器返回）
   useEffect(() => {
-    if (activeDir && activeDir !== expandedDir) {
-      setExpandedDir(activeDir);
-    }
+    if (activeDir) setContentOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDir]);
-
-  const loadDirFiles = useCallback((repo: SelectedRepo, dir: string) => {
-    const requestId = ++dirLoadIdRef.current;
-    setDirLoading(prev => ({ ...prev, [dir]: true }));
-    setDirErrors(prev => ({ ...prev, [dir]: false }));
-    scanMdFiles(repo, dir)
-      .then(files => {
-        if (requestId !== dirLoadIdRef.current) return;
-        sortByFrontMatterDate(files);
-        setCachedFiles(repo, dir, files);
-        setDirFiles(prev => ({ ...prev, [dir]: files }));
-      })
-      .catch(err => {
-        if (requestId !== dirLoadIdRef.current) return;
-        console.error(`加载目录 ${dir} 失败:`, err);
-        setDirFiles(prev => ({ ...prev, [dir]: [] }));
-        setDirErrors(prev => ({ ...prev, [dir]: true }));
-      })
-      .finally(() => {
-        if (requestId !== dirLoadIdRef.current) return;
-        setDirLoading(prev => ({ ...prev, [dir]: false }));
-      });
-  }, [scanMdFiles, sortByFrontMatterDate, setCachedFiles]);
-
-  // 展开目录时加载该路径的文章：有缓存直接复用不重复扫描；无缓存才请求（缓解重复全量扫描）
-  useEffect(() => {
-    if (!expandedDir || !selectedRepo) return;
-
-    const cached = getCachedFiles(selectedRepo, expandedDir);
-    if (cached) {
-      setDirFiles(prev => ({ ...prev, [expandedDir]: cached }));
-      return;
-    }
-    loadDirFiles(selectedRepo, expandedDir);
-  }, [expandedDir, selectedRepo, loadDirFiles]);
-
-  const toggleDir = (dir: string) => {
-    if (expandedDir === dir) {
-      // 折叠时使在途请求过期并清理组件内状态（全局 fileCache 保留，再展开直接读缓存）
-      dirLoadIdRef.current += 1;
-      setExpandedDir(null);
-      setDirFiles(prev => { const next = { ...prev }; delete next[dir]; return next; });
-      setDirLoading(prev => { const next = { ...prev }; delete next[dir]; return next; });
-      setDirErrors(prev => { const next = { ...prev }; delete next[dir]; return next; });
-    } else {
-      setExpandedDir(dir);
-      navigate(`/?path=${encodeURIComponent(dir)}`);
-    }
-  };
 
   // URL 中的 path 指向已删除目录时清理，避免残留无效参数
   useEffect(() => {
@@ -161,25 +97,10 @@ function SidebarContent({
     }
   }, [onContent, urlPath, validPaths, navigate]);
 
-  const openArticle = (dir: string, file: EnhancedFileItem) => {
-    if (!selectedRepo) return;
-    const relative = file.path.slice(dir.length + 1);
-    navigate(buildEditUrl({
-      owner: selectedRepo.owner,
-      repo: selectedRepo.repo,
-      branch: selectedRepo.branch,
-      basePath: dir,
-      filePath: relative,
-      returnTo: dir
-    }));
-    onNavClick();
+  const selectDir = (dir: string) => {
+    setContentOpen(true);
+    navigate(`/?path=${encodeURIComponent(dir)}`);
   };
-
-  // 当前正在编辑的文章（用于侧边栏高亮）
-  const currentFilePathParam = useMemo(
-    () => new URLSearchParams(location.search).get('filePath'),
-    [location.search]
-  );
 
   // 下拉框关闭时重置搜索
   useEffect(() => {
@@ -342,81 +263,57 @@ function SidebarContent({
       <nav className="px-2 py-2 flex-1 overflow-y-auto">
         <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">内容</div>
 
-        {/* 内容库：手风琴目录树，由配置的内容路径驱动（未配置则不显示） */}
-        {validPaths.length > 0 ? (
-          <div className="mb-1">
-            {validPaths.map((dir) => {
-              const isExpanded = expandedDir === dir;
-              const isActiveDir = activeDir === dir;
-              const files = dirFiles[dir] || [];
-              const isLoading = dirLoading[dir];
-              const hasError = dirErrors[dir];
-              return (
-                <div key={dir}>
-                  <button
-                    onClick={() => toggleDir(dir)}
-                    aria-expanded={isExpanded}
-                    className={`w-full flex items-center gap-1.5 px-2 py-2 rounded-sm text-sm transition-colors text-left ${
-                      isActiveDir
-                        ? 'bg-accent text-foreground font-medium'
-                        : 'text-foreground hover:bg-muted'
-                    }`}
-                  >
-                    <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                    <Folder className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                    <span className="truncate flex-1">{dir}</span>
-                    {isLoading && <Loader2 className="w-3 h-3 text-muted-foreground animate-spin flex-shrink-0" />}
-                    {!isLoading && !hasError && files.length > 0 && (
-                      <span className="text-xs text-muted-foreground flex-shrink-0">{files.length}</span>
-                    )}
-                  </button>
+        {/* 内容库：主导航项，点击展开次级导航（各内容路径，样式贴合草稿箱等规范） */}
+        <button
+          onClick={() => {
+            setContentOpen((v) => !v);
+            if (!onContent) {
+              navigate('/');
+              onNavClick();
+            }
+          }}
+          aria-expanded={contentOpen}
+          className={`w-full flex items-center gap-2 px-3 py-2 rounded-sm text-sm transition-colors text-left ${
+            onContent
+              ? 'bg-accent text-foreground font-medium'
+              : 'text-foreground hover:bg-muted'
+          }`}
+        >
+          <Folder className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+          <span className="truncate flex-1">内容库</span>
+        </button>
 
-                  {isExpanded && (
-                    <div className="ml-5 border-l border-border-subtle pl-2">
-                      {isLoading && files.length === 0 ? (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">加载中...</div>
-                      ) : hasError && files.length === 0 ? (
-                        <button
-                          onClick={() => selectedRepo && loadDirFiles(selectedRepo, dir)}
-                          className="w-full px-2 py-1.5 text-xs text-destructive text-left hover:bg-accent"
-                        >
-                          加载失败，点击重试
-                        </button>
-                      ) : files.length === 0 ? (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">暂无文章</div>
-                      ) : (
-                        files.map((file) => {
-                          const relative = file.path.slice(dir.length + 1).replace(/\.md$/, '');
-                          const isCurrent = currentFilePathParam === relative;
-                          return (
-                            <button
-                              key={file.path}
-                              onClick={() => openArticle(dir, file)}
-                              className={`w-full flex items-center gap-1.5 px-2 py-1.5 rounded-sm text-left text-sm transition-colors ${
-                                isCurrent
-                                  ? 'bg-accent text-foreground font-medium'
-                                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                              }`}
-                            >
-                              <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                              <span className="truncate">{relative.split('/').pop()}</span>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+        {contentOpen && (
+          <div className="mb-1">
+            {validPaths.length > 0 ? (
+              <div className="ml-3 pl-3 border-l border-border-subtle space-y-px">
+                {validPaths.map((dir) => {
+                  const isActiveDir = activeDir === dir;
+                  return (
+                    <button
+                      key={dir}
+                      onClick={() => { selectDir(dir); onNavClick(); }}
+                      className={`w-full flex items-center gap-2 pl-2 pr-2 py-1.5 rounded-sm text-sm text-left transition-colors ${
+                        isActiveDir
+                          ? 'bg-accent text-foreground font-medium'
+                          : 'text-foreground hover:bg-muted'
+                      }`}
+                    >
+                      <Folder className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="truncate">{dir}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <button
+                onClick={() => { navigate('/settings'); onNavClick(); }}
+                className="mx-3 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
+              >
+                未配置内容路径，去设置添加
+              </button>
+            )}
           </div>
-        ) : (
-          <button
-            onClick={() => navigate('/settings')}
-            className="px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:underline"
-          >
-            未配置内容路径，去设置添加
-          </button>
         )}
 
         {navItems.map((item) => (
