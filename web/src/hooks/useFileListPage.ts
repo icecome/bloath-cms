@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { scanMdFiles } from './useFileList';
+import { scanMdFiles } from '../lib/scanner';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { getCachedFiles, setCachedFiles } from '../lib/fileCache';
 import { sortByFrontMatterDate } from '../lib/sortFiles';
@@ -27,7 +27,6 @@ export function useFileListPage({
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
 
-  // 用 ref 持有 onError，避免回调变化导致 useEffect 重复执行
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
@@ -38,7 +37,6 @@ export function useFileListPage({
       return;
     }
 
-    // 先尝试从缓存加载
     const cached = getCachedFiles(selectedRepo, basePath);
     if (cached) {
       setFiles(cached);
@@ -46,7 +44,6 @@ export function useFileListPage({
       setLoading(true);
     }
 
-    // 后台刷新
     scanMdFiles(selectedRepo, basePath)
       .then((scannedFiles) => {
         sortByFrontMatterDate(scannedFiles);

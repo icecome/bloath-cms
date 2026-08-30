@@ -57,7 +57,6 @@ export default function MediaPage() {
     localStorage.setItem('media-grid-cols', String(value));
   };
 
-  // 构建 CDN URL，custom 模板支持 {branch} 占位符
   const getCdnUrl = useCallback((path: string) => {
     const { cdnProvider, customCdnTemplate } = mediaConfig;
     const { owner, repo, branch } = source;
@@ -74,7 +73,6 @@ export default function MediaPage() {
     return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
   }, [mediaConfig, source]);
 
-  // 加载文件列表；silent=true 时不更新 loading/error 状态并返回结果
   const loadFiles = useCallback(async (silent = false): Promise<MediaFile[] | null> => {
     if (!user || !isConfigured) return null;
     if (!silent) {
@@ -128,7 +126,6 @@ export default function MediaPage() {
     if (isConfigured) loadFiles();
   }, [isConfigured, loadFiles]);
 
-  // 上传文件
   const handleUpload = async (fileList: FileList | File[]) => {
     if (!user || !isConfigured) return;
 
@@ -179,7 +176,6 @@ export default function MediaPage() {
           sha: existing?.sha
         });
         uploaded++;
-        // 上传成功后更新本地缓存
         if (currentFiles) {
           const newEntry: MediaFile = {
             name: fileName,

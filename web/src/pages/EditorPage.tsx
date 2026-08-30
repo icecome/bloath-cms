@@ -1,15 +1,15 @@
-import { useState, useEffect, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useNavigate, useSearchParams, useMatch } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useCollections } from '../contexts/CollectionsContext';
 import { readFile, writeFile, moveFile, formatTimestamp, renameFile } from '../lib/api';
 import { sanitizeSlug, sanitizePath, filterValidDirs } from '../lib/path';
-import Toast from '../components/ui/Toast';
 import VditorEditor from '../components/editor/VditorEditor';
 import FrontmatterPanel from '../components/editor/FrontmatterPanel';
 import { ArrowLeft, Save, Send, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import Vditor from 'vditor';
 import { parseFrontmatter, generateFrontmatter, type Frontmatter } from '../lib/frontmatter';
+import { useToast } from '../contexts/ToastContext';
 
 export default function EditorPage() {
   const match = useMatch('/editor/*');
@@ -17,8 +17,10 @@ export default function EditorPage() {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { config } = useCollections();
+  const { addToast } = useToast();
   const navigate = useNavigate();
   const vditorInstanceRef = useRef<Vditor | null>(null);
+  const saveSeqRef = useRef(0);
 
   const owner = searchParams.get('owner') || '';
   const repo = searchParams.get('repo') || '';
@@ -41,24 +43,22 @@ export default function EditorPage() {
   const [error, setError] = useState('');
   const [currentFilePath, setCurrentFilePath] = useState('');
   const [currentFileSha, setCurrentFileSha] = useState('');
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; onUndo?: () => void } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMetadataPanel, setShowMetadataPanel] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
-  // 已有文章的 basePath 从 currentFilePath 推导，新建文章用 draftPath
-  const basePath = paramBasePath || (isNew ? (config.draftPath || '.draft') : (currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : ''));
+  const basePath = useMemo(
+    () => paramBasePath || (isNew ? (config.draftPath || '.draft') : (currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : '')),
+    [paramBasePath, isNew, config.draftPath, currentFilePath]
+  );
 
-  // 从当前文件路径提取默认发布目录（用于已有文章发布时自动填充）
   const defaultPublishTarget = currentFilePath
     ? currentFilePath.split('/').slice(0, -1).join('/')
     : '';
 
-  // 判断当前文章是否在草稿箱中（通过 returnTo 参数判断，比 currentFilePath 更可靠）
   const isDraftArticle = returnTo === 'drafts';
 
-  // 返回处理：根据 returnTo 参数决定返回路径
   const handleBack = () => {
     if (returnTo === 'drafts') {
       navigate('/drafts');
@@ -70,8 +70,6 @@ export default function EditorPage() {
     }
   };
 
-  // 加载已有文章：优先使用 filePath 参数（完整保留目录结构），slug 仅用于 URL 展示
-  // hasLoadedOnce 确保只加载一次，避免 user 等状态变化导致内容被重置
   useEffect(() => {
     if (isNew || !user || !basePath || hasLoadedOnce) return;
     const relativePath = paramFilePath || slug;
@@ -89,12 +87,10 @@ export default function EditorPage() {
         setCurrentFilePath(filePath);
         setCurrentFileSha(sha || '');
         setHasLoadedOnce(true);
-        // 如果 frontmatter 中没有 url，从文件路径提取并自动填充
         if (!fm.url && relativePath) {
-          const urlFromPath = relativePath.replace(/\.md$/, '');
+          const urlFromPath = relativePath.replace(/\.md$/, '').split('/').pop() || '';
           setFrontmatter((prev) => ({ ...prev, url: urlFromPath }));
         }
-        // 如果 Vditor 已就绪，更新内容
         if (vditorInstanceRef.current) {
           vditorInstanceRef.current.setValue(body);
         }
@@ -119,20 +115,15 @@ export default function EditorPage() {
     setFrontmatter((prev) => ({ ...prev, [key]: value }));
   };
 
-  // 生成默认 URL：日期-标题（精确到日）
   const getDefaultSlug = (): string => {
     const title = frontmatter.title || '未命名';
     const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}${m}${d}-${title.replace(/\s+/g, '-')}`;
+    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${title.replace(/\s+/g, '-')}`;
   };
 
   const handleSave = async () => {
     if (!user) return;
 
-    // 如果 URL 为空，自动生成默认值
     const effectiveFm = { ...frontmatter };
     if (isNew && !effectiveFm.url) {
       effectiveFm.url = getDefaultSlug();
@@ -142,7 +133,7 @@ export default function EditorPage() {
     try {
       targetSlug = sanitizeSlug(effectiveFm.url || slug);
     } catch (err) {
-      setToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'warning' });
       return;
     }
     const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
@@ -151,57 +142,56 @@ export default function EditorPage() {
       : currentFilePath || `${config.draftPath || '.draft'}/${targetSlug}.md`;
 
     setSaving(true);
+    const seq = ++saveSeqRef.current;
     try {
       const fullContent = `${generateFrontmatter(effectiveFm)}\n\n${editorContent}`;
       const timestamp = formatTimestamp();
-
-      // 检测 URL 变更：已有文章且 URL 与路由 slug 不同
-      const urlChanged = !isNew && effectiveFm.url && effectiveFm.url !== slug && currentFilePath;
+      const saveBasePath = currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : '';
+      const newPath = saveBasePath ? `${saveBasePath}/${targetSlug}.md` : `${config.draftPath || '.draft'}/${targetSlug}.md`;
+      const urlChanged = !isNew && !!currentFilePath && newPath !== currentFilePath;
 
       if (urlChanged) {
-        // URL 变更：写入新路径，删除旧文件
         const oldPath = currentFilePath;
-        // 从当前文件路径推导目录（currentFilePath 在 useEffect 中已设置）
-        const saveBasePath = currentFilePath.split('/').slice(0, -1).join('/');
-        const newPath = `${saveBasePath}/${targetSlug}.md`;
 
         await renameFile({
-          owner,
-          repo,
-          oldPath,
-          newPath,
-          content: fullContent,
+          owner, repo, oldPath, newPath, content: fullContent,
           message: `[skip ci] ${targetSlug}.md-${timestamp}`,
-          branch,
-          sha: currentFileSha || undefined,
-          userName: user?.login
+          branch, sha: currentFileSha || undefined, userName: user?.login
         });
 
-        setCurrentFilePath(newPath);
-        setCurrentFileSha('');
-        setToast({ message: '保存成功（文件名已更新）', type: 'success' });
-        navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}${basePath ? `&basePath=${basePath}` : ''}`);
+        if (seq === saveSeqRef.current) {
+          setCurrentFilePath(newPath);
+          setCurrentFileSha('');
+          addToast({ message: '保存成功（文件名已更新）', type: 'success' });
+          navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}${basePath ? `&basePath=${basePath}` : ''}`);
+        }
       } else {
+        const isContentLibraryArticle = currentFilePath &&
+          availableDirs.some((dir) => currentFilePath.startsWith(dir + '/'));
+        const saveMessage = isContentLibraryArticle
+          ? `${targetSlug}.md-${timestamp}`
+          : `[skip ci] ${targetSlug}.md-${timestamp}`;
+
         await writeFile({
-          owner,
-          repo,
-          path: targetPath,
-          content: fullContent,
-          message: `[skip ci] ${targetSlug}.md-${timestamp}`,
-          branch,
-          sha: currentFileSha || undefined,
-          userName: user?.login
+          owner, repo, path: targetPath, content: fullContent,
+          message: saveMessage, branch,
+          sha: currentFileSha || undefined, userName: user?.login
         });
 
-        if (isNew) {
-          navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}`);
-        } else {
-          setToast({ message: '草稿保存成功', type: 'success' });
+        if (seq === saveSeqRef.current) {
+          if (isNew) {
+            navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}`);
+          } else {
+            const toastMsg = isContentLibraryArticle ? '保存成功（将触发重新部署）' : '草稿保存成功';
+            addToast({ message: toastMsg, type: 'success' });
+          }
         }
       }
     } catch (err) {
       console.error('Failed to save:', err);
-      setToast({ message: `保存失败: ${(err as Error).message}`, type: 'error' });
+      if (seq === saveSeqRef.current) {
+        addToast({ message: `保存失败: ${(err as Error).message}`, type: 'error' });
+      }
     } finally {
       setSaving(false);
     }
@@ -210,7 +200,6 @@ export default function EditorPage() {
   const handlePublish = async () => {
     if (!user || !owner || !repo) return;
 
-    // 如果 URL 为空：新建文章自动生成默认值，已有文章 fallback 到路由 slug
     const effectiveFm = { ...frontmatter };
     if (!effectiveFm.url) {
       effectiveFm.url = isNew ? getDefaultSlug() : slug;
@@ -220,21 +209,20 @@ export default function EditorPage() {
     try {
       targetSlug = sanitizeSlug(effectiveFm.url);
     } catch (err) {
-      setToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'warning' });
       return;
     }
     const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
 
-    // 优先使用当前文件所在目录作为发布目标
     let resolvedTarget: string;
     try {
       resolvedTarget = sanitizePath(publishTarget || defaultPublishTarget);
     } catch (err) {
-      setToast({ message: `发布目标校验失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `发布目标校验失败: ${(err as Error).message}`, type: 'warning' });
       return;
     }
     if (!resolvedTarget) {
-      setToast({ message: '请选择发布目标目录', type: 'error' });
+      addToast({ message: '请选择发布目标目录', type: 'warning' });
       return;
     }
 
@@ -245,55 +233,49 @@ export default function EditorPage() {
       const fullContent = `${generateFrontmatter(effectiveFm)}\n\n${editorContent}`;
       const timestamp = formatTimestamp();
 
-      await writeFile({
-        owner,
-        repo,
-        path: filePath,
-        content: fullContent,
-        message: `${targetSlug}.md-${timestamp}`,
-        branch,
-        userName: user?.login
-      });
-      publishedPath = filePath;
+      const isContentLibraryAlreadyPublished = !isDraftArticle &&
+        currentFilePath &&
+        resolvedTarget === currentFilePath.split('/').slice(0, -1).join('/');
 
-      // 仅对草稿箱文章执行草稿清理（内容库文章原地更新，无需清理）
+      if (!isContentLibraryAlreadyPublished) {
+        await writeFile({
+          owner, repo, path: filePath, content: fullContent,
+          message: `${targetSlug}.md-${timestamp}`,
+          branch, sha: currentFileSha || undefined, userName: user?.login
+        });
+        publishedPath = filePath;
+      }
+
       if (isDraftArticle) {
         const draftPath = getDraftPath(targetSlug);
         if (currentFileSha) {
           await moveFile({
-            owner,
-            repo,
-            fromPath: draftPath,
+            owner, repo, fromPath: draftPath,
             toPath: `${trashPath}/${targetSlug}.md`,
-            sha: currentFileSha,
-            branch,
+            sha: currentFileSha, branch,
             message: `[skip ci] 移至回收站: ${targetSlug}`,
             userName: user?.login
           });
         } else {
           await writeFile({
-            owner,
-            repo,
-            path: draftPath,
-            content: '',
+            owner, repo, path: draftPath, content: '',
             message: `[skip ci] 删除草稿: ${targetSlug}`,
             userName: user?.login
           });
         }
       }
 
-      setToast({ message: '发布成功', type: 'success' });
+      addToast({ message: '发布成功', type: 'success' });
       setPublishTarget('');
       handleBack();
     } catch (err) {
       console.error('Failed to publish:', err);
-      // 如果发布成功但清理草稿失败，提示用户手动清理
       const errMsg = (err as Error).message;
       if (publishedPath && (errMsg.includes('draft') || errMsg.includes('trash'))) {
-        setToast({ message: `文章已发布，但草稿清理失败: ${errMsg}。请手动删除草稿。`, type: 'error' });
+        addToast({ message: `文章已发布，但草稿清理失败: ${errMsg}。请手动删除草稿。`, type: 'error' });
         handleBack();
       } else {
-        setToast({ message: `发布失败: ${errMsg}`, type: 'error' });
+        addToast({ message: `发布失败: ${errMsg}`, type: 'error' });
       }
     } finally {
       setSaving(false);
@@ -303,7 +285,6 @@ export default function EditorPage() {
   const handleDeleteArticle = async () => {
     if (!user || !owner || !repo || !currentFilePath) return;
 
-    // 删除操作针对已有文章，URL 为空时 fallback 到路由 slug
     const effectiveFm = { ...frontmatter };
     if (!effectiveFm.url) {
       effectiveFm.url = slug;
@@ -315,29 +296,25 @@ export default function EditorPage() {
     setSaving(true);
     try {
       await moveFile({
-        owner,
-        repo,
-        fromPath: currentFilePath,
-        toPath: trashFile,
-        sha: currentFileSha,
-        branch,
+        owner, repo, fromPath: currentFilePath,
+        toPath: trashFile, sha: currentFileSha, branch,
         message: `[skip ci] 移至回收站: ${targetSlug}`,
         userName: user?.login
       });
-
-      setToast({ message: '已移至回收站', type: 'success' });
+      addToast({ message: '已移至回收站', type: 'success' });
       handleBack();
     } catch (err) {
-      setToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setSaving(false);
       setShowDeleteConfirm(false);
     }
   };
 
-  // 键盘快捷键
   const handleSaveRef = useRef(handleSave);
-  handleSaveRef.current = handleSave;
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  }, [handleSave]);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -351,8 +328,7 @@ export default function EditorPage() {
       const vditorEditor = activeEl.closest('.vditor');
       const isFocusInEditor = !!vditorEditor;
       const isFocusInMetadataPanel = activeEl.matches('input, textarea, button, select') &&
-        wrapperRef.current.contains(activeEl) &&
-        !isFocusInEditor;
+        wrapperRef.current.contains(activeEl) && !isFocusInEditor;
 
       if (isFocusInMetadataPanel) return;
 
@@ -365,16 +341,10 @@ export default function EditorPage() {
         }
 
         const editKeys = ['c', 'v', 'x', 'z', 'y'];
-        if ((e.ctrlKey || e.metaKey) && editKeys.includes(e.key.toLowerCase())) {
-          return;
-        }
+        if ((e.ctrlKey || e.metaKey) && editKeys.includes(e.key.toLowerCase())) return;
 
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
-          // Ctrl+A 放行，让浏览器默认全选行为生效
-          return;
-        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') return;
 
-        // 仅拦截已知快捷键，其余组合键放行
         const knownShortcuts = ['s', 'c', 'v', 'x', 'z', 'y'];
         if ((e.ctrlKey || e.metaKey || e.altKey) && knownShortcuts.includes(e.key.toLowerCase())) {
           e.preventDefault();
@@ -384,12 +354,9 @@ export default function EditorPage() {
     };
 
     wrapperRef.current.addEventListener('keydown', handleKeyDown);
-    return () => {
-      wrapperRef.current?.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => { wrapperRef.current?.removeEventListener('keydown', handleKeyDown); };
   }, []);
 
-  // 数组字段操作
   const [newCategory, setNewCategory] = useState('');
   const [newTag, setNewTag] = useState('');
   const [newPicture, setNewPicture] = useState('');
@@ -417,6 +384,22 @@ export default function EditorPage() {
     }
   };
 
+  const frontmatterPanelProps = {
+    frontmatter,
+    setFm,
+    removeArrayItem,
+    newCategory,
+    setNewCategory,
+    newTag,
+    setNewTag,
+    newPicture,
+    setNewPicture,
+    newVideo,
+    setNewVideo,
+    addItem,
+    handleInputKeyDown
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center h-full">
@@ -441,11 +424,6 @@ export default function EditorPage() {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
-      {toast && (
-        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
-      )}
-
-      {/* 顶部栏 */}
       <header className="px-4 md:px-6 py-3 md:py-4 flex items-center justify-between flex-shrink-0 border-b border-border">
         <div className="flex items-center gap-2 md:gap-3">
           <button onClick={handleBack} className="text-muted-foreground hover:text-foreground transition-colors" aria-label="返回">
@@ -463,7 +441,7 @@ export default function EditorPage() {
           >
             <Settings2 className="w-4 h-4" />
           </button>
-          {!isNew && (
+          {isNew || isDraftArticle ? (
             <button
               onClick={() => setShowPublishDialog(true)}
               disabled={saving}
@@ -472,7 +450,7 @@ export default function EditorPage() {
               <Send className="w-4 h-4" />
               <span className="hidden md:inline">{saving ? '发布中...' : '发布'}</span>
             </button>
-          )}
+          ) : null}
           <button
             onClick={handleSave}
             disabled={saving}
@@ -567,7 +545,6 @@ export default function EditorPage() {
       <div ref={wrapperRef} className="flex-1 flex overflow-hidden">
         {/* 编辑器区域 */}
         <div className={`flex-1 flex flex-col overflow-hidden ${!showToolbar ? 'toolbar-hidden' : ''}`}>
-          {/* 工具栏折叠按钮 */}
           <div className="flex items-center justify-end px-2 py-1 border-b border-border bg-secondary">
             <button
               onClick={() => setShowToolbar(!showToolbar)}
@@ -587,27 +564,11 @@ export default function EditorPage() {
           </div>
         </div>
 
-        {/* 桌面端右侧元数据面板 */}
         <div className="hidden md:block w-72 bg-white border-l border-border overflow-auto flex-shrink-0">
-          <FrontmatterPanel
-            frontmatter={frontmatter}
-            setFm={setFm}
-            removeArrayItem={removeArrayItem}
-            newCategory={newCategory}
-            setNewCategory={setNewCategory}
-            newTag={newTag}
-            setNewTag={setNewTag}
-            newPicture={newPicture}
-            setNewPicture={setNewPicture}
-            newVideo={newVideo}
-            setNewVideo={setNewVideo}
-            addItem={addItem}
-            handleInputKeyDown={handleInputKeyDown}
-          />
+          <FrontmatterPanel {...frontmatterPanelProps} />
         </div>
       </div>
 
-      {/* 移动端元数据面板抽屉 */}
       {showMetadataPanel && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setShowMetadataPanel(false)} />
@@ -618,21 +579,7 @@ export default function EditorPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <FrontmatterPanel
-              frontmatter={frontmatter}
-              setFm={setFm}
-              removeArrayItem={removeArrayItem}
-              newCategory={newCategory}
-              setNewCategory={setNewCategory}
-              newTag={newTag}
-              setNewTag={setNewTag}
-              newPicture={newPicture}
-              setNewPicture={setNewPicture}
-              newVideo={newVideo}
-              setNewVideo={setNewVideo}
-              addItem={addItem}
-              handleInputKeyDown={handleInputKeyDown}
-            />
+            <FrontmatterPanel {...frontmatterPanelProps} />
           </div>
         </>
       )}

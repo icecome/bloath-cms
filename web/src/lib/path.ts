@@ -1,15 +1,3 @@
-/**
- * 路径安全校验工具
- * 防止路径穿越攻击 (Path Traversal)
- */
-
-/**
- * 校验并清理目录路径，防止路径穿越
- * - 去除首尾斜杠
- * - 合并连续斜杠
- * - 禁止包含 ..
- * @throws Error 路径包含 .. 时抛出异常
- */
 export function sanitizePath(input: string): string {
   const cleaned = input.trim().replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
   if (cleaned.includes('..')) {
@@ -32,12 +20,6 @@ export function sanitizeSlug(slug: string): string {
   return cleaned;
 }
 
-/**
- * 从配置路径列表中提取有效目录，过滤 glob 模式
- * - 去除 /*.md 后缀
- * - 去除尾部斜杠
- * - 过滤掉仍含通配符的路径
- */
 export function filterValidDirs(paths: string[]): string[] {
   return paths
     .map(p => p.replace(/\/\*\.md$/, '').replace(/\/+$/, ''))

@@ -5,7 +5,7 @@ import { useCollections } from '../../contexts/CollectionsContext';
 import { getRepos } from '../../lib/api';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { detectFrameworks, type DetectedRepo } from '../../lib/detectFramework';
-import { scanMdFiles } from '../../hooks/useFileList';
+import { scanMdFiles } from '../../lib/scanner';
 import { sortByFrontMatterDate } from '../../lib/sortFiles';
 import { getCachedFiles, setCachedFiles } from '../../lib/fileCache';
 import type { SelectedRepo } from '../../../../shared/types';
@@ -31,7 +31,23 @@ import {
   FileText
 } from 'lucide-react';
 
-// 侧边栏内容组件（桌面端和移动端共用）
+// 导航配置（模块级常量，SidebarContent 和 Header 面包屑共用）
+const NAV_ITEM_LABELS: Record<string, string> = {
+  '/': '内容库',
+  '/drafts': '草稿箱',
+  '/trash': '回收站',
+  '/media': '媒体库',
+  '/settings': '设置',
+};
+
+function getCurrentNavLabel(pathname: string): string {
+  const match = Object.keys(NAV_ITEM_LABELS).find((p) => {
+    if (p === '/') return pathname === '/';
+    return pathname.startsWith(p);
+  });
+  return (match && NAV_ITEM_LABELS[match]) || 'CMS';
+}
+
 function SidebarContent({
   repos, selectedRepo, branches, user,
   showRepoDropdown, showBranchDropdown, showAccountDropdown,
@@ -63,7 +79,7 @@ function SidebarContent({
   const { config } = useCollections();
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 有效内容路径（过滤 glob 模式），侧边栏目录树完全由配置驱动
+// 有效内容路径（过滤 glob 模式），侧边栏目录树完全由配置驱动
   const validPaths = useMemo(() => filterValidDirs(config.paths || []), [config.paths]);
 
   // activeDir 仅在内容库路由（/）生效，避免草稿箱/设置等页面误高亮
@@ -170,7 +186,6 @@ function SidebarContent({
     if (!showRepoDropdown) setSearchQuery('');
   }, [showRepoDropdown]);
 
-  // 过滤仓库
   const filteredRepos = useMemo(() => {
     if (!searchQuery.trim()) return repos;
     const query = searchQuery.toLowerCase();
@@ -191,7 +206,6 @@ function SidebarContent({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Logo */}
       <div className="px-5 py-4 flex items-center gap-2.5">
         <div className="w-6 h-6 flex items-center justify-center">
           <span className="text-lg font-bold text-foreground">B</span>
@@ -199,7 +213,6 @@ function SidebarContent({
         <span className="text-sm font-semibold text-foreground">Bloath CMS</span>
       </div>
 
-      {/* 新建文章按钮 */}
       <div className="px-4 pb-3">
         <button
           onClick={() => { onNewArticle(); onNavClick(); }}
@@ -211,7 +224,6 @@ function SidebarContent({
         </button>
       </div>
 
-      {/* 仓库选择器 */}
       <div className="px-4 pb-2">
         <div className="relative">
           <button
@@ -324,10 +336,9 @@ function SidebarContent({
         </div>
       )}
 
-      {/* 分隔线 */}
       <div className="mx-4 border-t border-border-subtle"></div>
 
-      {/* 导航菜单 */}
+{/* 导航菜单 */}
       <nav className="px-2 py-2 flex-1 overflow-y-auto">
         <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">内容</div>
 
@@ -425,7 +436,6 @@ function SidebarContent({
         ))}
       </nav>
 
-      {/* 底部用户信息 */}
       <div className="border-t border-border-subtle px-4 py-3">
         {user && (
           <div className="relative">
@@ -494,7 +504,6 @@ export default function MainLayout() {
     }
   }, [user]);
 
-  // 异步检测博客框架（只在初始加载后执行一次）
   useEffect(() => {
     if (repos.length > 0 && !detectedFrameworksRef.current) {
       detectedFrameworksRef.current = true;
@@ -512,7 +521,6 @@ export default function MainLayout() {
     }
   }, [selectedRepo, user, loadBranches]);
 
-  // 路由变化时关闭侧边栏
   useEffect(() => {
     setSidebarOpen(false);
     setShowRepoDropdown(false);
@@ -582,7 +590,6 @@ export default function MainLayout() {
         />
       </aside>
 
-      {/* 移动端侧边栏遮罩 */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/40 z-40 md:hidden"
@@ -613,12 +620,9 @@ export default function MainLayout() {
         />
       </aside>
 
-      {/* 主内容区 */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* 顶部 Header */}
         <header className="px-4 md:px-8 h-12 flex items-center justify-between flex-shrink-0 border-b border-border-subtle">
           <div className="flex items-center gap-3">
-            {/* 移动端汉堡菜单按钮 */}
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="md:hidden text-muted-foreground hover:text-foreground transition-colors"
@@ -628,23 +632,11 @@ export default function MainLayout() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>Bloath</span>
               <span className="text-border">/</span>
-              <span className="text-foreground font-medium">
-                {['/', '/drafts', '/trash', '/media', '/settings'].find(p => {
-                  if (p === '/') return location.pathname === '/';
-                  return location.pathname.startsWith(p);
-                }) ? (() => {
-                  const navLabels: Record<string, string> = { '/': '内容库', '/drafts': '草稿箱', '/trash': '回收站', '/media': '媒体库', '/settings': '设置' };
-                  return navLabels[['/', '/drafts', '/trash', '/media', '/settings'].find(p => {
-                    if (p === '/') return location.pathname === '/';
-                    return location.pathname.startsWith(p);
-                  }) || '/'];
-                })() : 'CMS'}
-              </span>
+              <span className="text-foreground font-medium">{getCurrentNavLabel(location.pathname)}</span>
             </div>
           </div>
         </header>
 
-        {/* 页面内容 */}
         <div className="flex-1 overflow-auto">
           <Outlet />
         </div>

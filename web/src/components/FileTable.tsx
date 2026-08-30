@@ -30,7 +30,6 @@ export default function FileTable({
 }: FileTableProps) {
   return (
     <div>
-      {/* 桌面端表头 */}
       <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-muted-foreground bg-accent border-b border-border">
         <div className="w-8 flex items-center justify-center">
           <input
@@ -45,7 +44,6 @@ export default function FileTable({
         <div className="w-[20%] text-right">操作</div>
       </div>
 
-      {/* 列表 */}
       {files.map((file) => (
         <div
           key={file.path}
@@ -59,7 +57,6 @@ export default function FileTable({
             onRowClick(file);
           }}
         >
-          {/* 桌面端：表格行 */}
           <div className="hidden md:flex items-center w-8 justify-center" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"
@@ -81,7 +78,6 @@ export default function FileTable({
             {renderDesktopActions(file)}
           </div>
 
-          {/* 移动端：卡片布局 */}
           <div className="flex md:hidden flex-1 min-w-0 items-center gap-3" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"

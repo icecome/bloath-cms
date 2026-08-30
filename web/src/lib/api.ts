@@ -1,5 +1,5 @@
 import type { Repo, RepoInfo } from '../../../shared/types';
-import { API_BASE } from './constants';
+import { API_BASE, MAX_TREE_ITEMS } from './constants';
 
 export interface ContentItem {
   name: string;
@@ -16,9 +16,6 @@ export interface ContentItem {
 
 const API_TIMEOUT_MS = 10000;
 
-/**
- * 生成本地时间戳，格式 YYYYMMDDTHHmmss（依赖浏览器本地时区）
- */
 export function formatTimestamp(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -30,20 +27,15 @@ export function formatTimestamp(): string {
   return `${y}${m}${d}T${h}${min}${s}`;
 }
 
-/**
- * 统一 API 请求封装，自动处理错误响应
- * @param skipDataCheck - 为 true 时不检查 data 字段（用于 DELETE 等无返回数据的接口）
- */
 async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = false): Promise<T> {
   const finalOptions: RequestInit = {
     ...options,
-    credentials: 'include'
+    credentials: 'include',
+    headers: {
+      ...options?.headers,
+      'X-Requested-With': 'XMLHttpRequest'
+    }
   };
-
-  if (!finalOptions.headers) {
-    finalOptions.headers = {};
-  }
-  (finalOptions.headers as Record<string, string>)['X-Requested-With'] = 'XMLHttpRequest';
 
   let res: Response;
   try {
@@ -58,6 +50,10 @@ async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = f
   if (res.status === 401) {
     window.dispatchEvent(new CustomEvent('auth:expired'));
     throw new Error('登录已过期，请重新登录');
+  }
+
+  if (res.status === 503) {
+    throw new Error('GitHub API 暂不可用，请稍后重试');
   }
 
   let data: { success: boolean; data?: T; error?: string };
@@ -303,6 +299,7 @@ export async function createBranch(params: {
  * 使用 GitHub Trees API 一次性获取整个目录树（替代递归扫描）
  * mode: 'commits' = 通过 commits API 获取时间（内容库/草稿箱/回收站）
  *       'filename' = 优先从文件名提取时间，回退到 commits API（媒体库）
+ * 限制：单次最多返回 800 个文件，超限则抛出错误（GitHub API 上限 1000）
  */
 export async function getTree(params: RepoInfo & { mode?: 'commits' | 'filename' }): Promise<TreeItem[]> {
   const searchParams = new URLSearchParams({
@@ -312,7 +309,13 @@ export async function getTree(params: RepoInfo & { mode?: 'commits' | 'filename'
   });
   if (params.mode) searchParams.set('mode', params.mode);
 
-  return apiFetch<TreeItem[]>(`${API_BASE}/api/repos/tree?${searchParams}`);
+  const result = await apiFetch<TreeItem[]>(`${API_BASE}/api/repos/tree?${searchParams}`);
+
+  if (result.length > MAX_TREE_ITEMS) {
+    throw new Error(`目录文件数超过 ${MAX_TREE_ITEMS} 个上限，请检查仓库是否过大`);
+  }
+
+  return result;
 }
 
 /**

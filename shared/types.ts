@@ -1,18 +1,13 @@
-// 仓库定位信息（前后端共享）
 export interface RepoInfo {
   owner: string;
   repo: string;
   branch?: string;
 }
 
-// 选中的仓库信息（前端 Context 共享）
-export interface SelectedRepo {
-  owner: string;
-  repo: string;
+export interface SelectedRepo extends RepoInfo {
   branch: string;
 }
 
-// 内容条目
 export interface ContentEntry {
   id: string;
   title: string;
@@ -26,7 +21,6 @@ export interface ContentEntry {
   status: 'published' | 'draft';
 }
 
-// 内容集合
 export interface Collection {
   name: string;
   label: string;
@@ -49,7 +43,6 @@ export interface FieldConfig {
   description?: string;
 }
 
-// 用户信息
 export interface User {
   login: string;
   avatar_url: string;
@@ -57,7 +50,6 @@ export interface User {
   email?: string;
 }
 
-// GitHub仓库
 export interface Repo {
   name: string;
   full_name: string;
@@ -68,7 +60,6 @@ export interface Repo {
   default_branch: string;
 }
 
-// API响应
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -85,7 +76,6 @@ export interface FileInfo {
   lastModified?: number;
 }
 
-// 内容列表请求
 export interface ContentListParams {
   owner: string;
   repo: string;
@@ -96,13 +86,10 @@ export interface ContentListParams {
 // CDN 提供商
 export type CdnProvider = 'jsdmirror' | 'github_raw' | 'custom';
 
-// 同名文件策略
 export type DuplicateStrategy = 'skip' | 'overwrite';
 
-// 媒体源类型
 export type MediaSourceType = 'standalone' | 'repo-dir' | 'image-branch';
 
-// 媒体库配置
 export interface MediaConfig {
   sourceType: MediaSourceType;
   imageOwner: string;
@@ -117,7 +104,6 @@ export interface MediaConfig {
   duplicateStrategy: DuplicateStrategy;
 }
 
-// 文章 frontmatter
 export interface ArticleFrontmatter {
   url?: string;
   title?: string;

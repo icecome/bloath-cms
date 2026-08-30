@@ -1,16 +1,3 @@
-/**
- * 重命名占位符解析器
- * 支持的占位符：
- * {Y} - 年份 4 位
- * {m} - 月份 2 位
- * {d} - 日期 2 位
- * {h} - 小时 2 位
- * {i} - 分钟 2 位
- * {s} - 秒 2 位
- * {filename} - 原始文件名（无扩展名）
- * {str-n} - n 位随机字符串
- */
-
 function padZero(n: number, len = 2): string {
   return String(n).padStart(len, '0');
 }
@@ -24,11 +11,9 @@ function randomString(length: number): string {
     for (let i = 0; i < bytes.length && result.length < length; i++) {
       const byte = bytes[i];
       if (byte === undefined) break;
-      // 拒绝采样消除模偏差：252 = floor(255/36)*36
       if (byte < 252) {
         result += chars[byte % chars.length] ?? '';
       }
-      // byte >= 252 的字节直接丢弃，下一轮重新生成
     }
   }
   return result;

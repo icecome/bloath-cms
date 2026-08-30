@@ -40,7 +40,6 @@ export function clearCache(repo: RepoInfo, basePath?: string): void {
     const key = getCacheKey(repo, basePath);
     cache.delete(key);
   } else {
-    // 清除该仓库所有缓存
     const prefix = `${repo.owner}/${repo.repo}/${repo.branch || 'main'}/`;
     for (const key of cache.keys()) {
       if (key.startsWith(prefix)) {
