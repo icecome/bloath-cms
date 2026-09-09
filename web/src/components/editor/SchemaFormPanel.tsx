@@ -31,7 +31,7 @@ const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 function isFieldVisible(fm: Frontmatter, field: FieldConfig): boolean {
   const cond = field.showWhen;
   if (!cond) return true;
-  const actual = (fm as Record<string, unknown>)[cond.field];
+  const actual = (fm as Record<string, unknown>)[cond.field] ?? false;
   return actual === cond.equals;
 }
 
