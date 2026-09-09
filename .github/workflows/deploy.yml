@@ -62,6 +62,8 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           workingDirectory: cloudflare-worker
+        env:
+          KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
 
       - name: Set Wrangler Secrets
         working-directory: cloudflare-worker
