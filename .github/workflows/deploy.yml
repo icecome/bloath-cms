@@ -81,15 +81,16 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         run: |
-          printf '%s' "$GITHUB_CLIENT_ID" | npx wrangler secret put GITHUB_CLIENT_ID
-          printf '%s' "$GITHUB_CLIENT_SECRET" | npx wrangler secret put GITHUB_CLIENT_SECRET
-          printf '%s' "$SESSION_SECRET" | npx wrangler secret put SESSION_SECRET
-          printf '%s' "$FRONTEND_URL" | npx wrangler secret put FRONTEND_URL
-          printf '%s' "$PROD_ORIGINS" | npx wrangler secret put PROD_ORIGINS
+          # 显式使用注入后的部署配置，避免模板占位干扰 worker 目标解析
+          printf '%s' "$GITHUB_CLIENT_ID" | npx wrangler secret put GITHUB_CLIENT_ID --config wrangler.deploy.jsonc
+          printf '%s' "$GITHUB_CLIENT_SECRET" | npx wrangler secret put GITHUB_CLIENT_SECRET --config wrangler.deploy.jsonc
+          printf '%s' "$SESSION_SECRET" | npx wrangler secret put SESSION_SECRET --config wrangler.deploy.jsonc
+          printf '%s' "$FRONTEND_URL" | npx wrangler secret put FRONTEND_URL --config wrangler.deploy.jsonc
+          printf '%s' "$PROD_ORIGINS" | npx wrangler secret put PROD_ORIGINS --config wrangler.deploy.jsonc
 
       - name: Verify Secrets
         working-directory: cloudflare-worker
-        run: npx wrangler secret list
+        run: npx wrangler secret list --config wrangler.deploy.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}

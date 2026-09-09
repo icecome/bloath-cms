@@ -651,14 +651,18 @@ export async function dispatchWorkflow(
   }
 }
 
-// 获取仓库目录树（recursive，仅返回文件；lastModified 恒为 0，排序逻辑在前端）
+/**
+ * 获取仓库目录树（recursive）。mode 传 'filename' 时（媒体库），
+ * 额外通过 commits API 填充每个文件的最后修改时间，供前端按最新优先排序。
+ * 其余模式不触发 commits 查询，避免拖慢内容库/框架扫描。
+ */
 export async function getTree(
   token: string,
   owner: string,
   repo: string,
-  branch: string = 'main'
+  branch: string = 'main',
+  mode?: 'filename' | 'commits'
 ): Promise<FileInfo[]> {
-  // 获取文件列表
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
     {
@@ -674,7 +678,7 @@ export async function getTree(
   }
 
   const data = await response.json() as { tree: Array<{ path: string; sha: string; type: string; size?: number }> };
-  return data.tree
+  const fileItems: FileInfo[] = data.tree
     .filter((item) => item.type === 'blob')
     .map((item) => {
       const name = item.path.split('/').pop() || item.path;
@@ -687,4 +691,61 @@ export async function getTree(
         lastModified: 0
       };
     });
+
+  if (fileItems.length === 0) return fileItems;
+
+  const ghHeaders = { Authorization: `Bearer ${token}`, 'User-Agent': 'Bloath-CMS' };
+
+  // 通过 commits API 填充真实修改时间：遍历最近提交详情（files[].filename）构建 path→时间 映射
+  if (mode === 'filename') {
+    try {
+      const pending = new Set(fileItems.map((f) => f.path));
+      const pathToTime = new Map<string, number>();
+      let page = 1;
+      const MAX_PAGES = 3;
+
+      while (pending.size > 0 && page <= MAX_PAGES) {
+        const listResp = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=100&page=${page}`,
+          { headers: ghHeaders }
+        );
+        if (!listResp.ok) break;
+        const commits = await listResp.json() as unknown as Array<{ sha: string }>;
+        if (!Array.isArray(commits) || commits.length === 0) break;
+
+        for (const commit of commits) {
+          if (pending.size === 0) break;
+          const detailResp = await fetch(
+            `https://api.github.com/repos/${owner}/${repo}/commits/${commit.sha}`,
+            { headers: ghHeaders }
+          );
+          if (!detailResp.ok) continue;
+          const detail = await detailResp.json() as unknown as {
+            commit?: { committer?: { date?: string } };
+            files?: Array<{ filename?: string }>;
+          };
+          const commitDate = new Date(detail.commit?.committer?.date || '').getTime();
+          if (!commitDate) continue;
+          for (const file of detail.files || []) {
+            const filePath = file.filename;
+            if (filePath && pending.has(filePath) && !pathToTime.has(filePath)) {
+              pathToTime.set(filePath, commitDate);
+              pending.delete(filePath);
+            }
+          }
+        }
+        if (commits.length < 100) break;
+        page++;
+      }
+
+      for (const file of fileItems) {
+        const time = pathToTime.get(file.path);
+        if (time) file.lastModified = time;
+      }
+    } catch (err) {
+      console.warn(`[getTree] 填充 lastModified 失败: ${err instanceof Error ? err.message : 'unknown'}`);
+    }
+  }
+
+  return fileItems;
 }

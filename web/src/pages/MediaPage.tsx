@@ -47,6 +47,11 @@ export default function MediaPage() {
     const saved = localStorage.getItem('media-grid-cols');
     return saved ? parseInt(saved, 10) : 5;
   });
+  const [mobileCols, setMobileCols] = useState(() => {
+    const saved = localStorage.getItem('media-grid-cols-mobile');
+    return saved ? parseInt(saved, 10) : 3;
+  });
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteConfirm, setDeleteConfirm] = useState<MediaFile | null>(null);
 
@@ -55,6 +60,12 @@ export default function MediaPage() {
   const handleGridColsChange = (value: number) => {
     setGridCols(value);
     localStorage.setItem('media-grid-cols', String(value));
+  };
+
+  const handleMobileColsChange = (value: number) => {
+    setMobileCols(value);
+    localStorage.setItem('media-grid-cols-mobile', String(value));
+    setMobileMenuOpen(false);
   };
 
   const getCdnUrl = useCallback((path: string) => {
@@ -89,14 +100,14 @@ export default function MediaPage() {
           url: getCdnUrl(f.path),
           lastModified: f.lastModified || 0
         }));
-      sortByLastModified(mediaFiles);
+      const sorted = sortByLastModified(mediaFiles);
 
       if (silent) {
-        return mediaFiles;
+        return sorted;
       }
-      setFiles(mediaFiles);
+      setFiles(sorted);
       setCurrentPage(1);
-      return mediaFiles;
+      return sorted;
     } catch (err) {
       if (silent) {
         return null;
@@ -268,8 +279,8 @@ export default function MediaPage() {
               {source.owner}/{source.repo} · {files.length} 个文件
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <SlidersHorizontal className="w-4 h-4 text-muted-foreground" />
+          <div className="relative flex items-center gap-3">
+            <SlidersHorizontal className="w-4 h-4 text-muted-foreground hidden sm:block" />
             <span className="text-xs text-muted-foreground w-16 hidden sm:inline">每行 {gridCols} 个</span>
             <input
               type="range"
@@ -279,6 +290,32 @@ export default function MediaPage() {
               onChange={(e) => handleGridColsChange(parseInt(e.target.value, 10))}
               className="w-24 h-1 accent-primary cursor-pointer hidden sm:block"
             />
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((o) => !o)}
+              className="sm:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-border rounded-sm text-muted-foreground hover:bg-accent transition-colors"
+              aria-expanded={mobileMenuOpen}
+              aria-label="设置每行列数"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>每行 {mobileCols} 个</span>
+            </button>
+            {mobileMenuOpen && (
+              <div className="absolute top-full right-0 mt-1 bg-card border border-border z-50 min-w-[120px] p-1.5 shadow-lg">
+                <p className="text-xs text-muted-foreground mb-1.5 px-1.5">每行列数</p>
+                {[2, 3, 4].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => handleMobileColsChange(n)}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-sm hover:bg-accent rounded-sm transition-colors"
+                  >
+                    <Check className={`w-3.5 h-3.5 ${mobileCols === n ? 'text-foreground' : 'opacity-0'}`} />
+                    <span>{n} 列</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -317,7 +354,7 @@ export default function MediaPage() {
           <>
             <div
               className="media-grid"
-              style={{ '--pgrid': String(gridCols) } as CSSProperties}
+              style={{ '--pgrid': String(gridCols), '--mgrid': String(mobileCols) } as CSSProperties}
             >
             {files.slice(0, currentPage * MEDIA_PAGE_SIZE).map((file) => (
             <div

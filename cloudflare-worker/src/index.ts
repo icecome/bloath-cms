@@ -273,6 +273,7 @@ export default {
         const owner = params.get('owner');
         const repo = params.get('repo');
         const branch = params.get('branch') || 'main';
+        const mode = params.get('mode') === 'filename' ? 'filename' : (params.get('mode') === 'commits' ? 'commits' : undefined);
 
         if (!isSafePathParam(owner) || !isSafePathParam(repo)) {
           return addCorsHeaders(Response.json({ error: 'Missing owner or repo' }, { status: 400 }), origin, env);
@@ -281,7 +282,7 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Invalid branch' }, { status: 400 }), origin, env);
         }
 
-        const tree = await getTree(authResult.githubToken, owner, repo, branch);
+        const tree = await getTree(authResult.githubToken, owner, repo, branch, mode);
         return addCorsHeaders(Response.json({ success: true, data: tree }), origin, env);
       }
 

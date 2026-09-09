@@ -74,8 +74,20 @@
 
 @layer components {
   /* ============================================
-     极简扁平风格 · 组件样式
-     ============================================ */
+   极简扁平风格 · 组件样式
+   ============================================ */
+
+  /* 媒体库网格：row-major（先左到右再上到下）。桌面端用 --pgrid 变量（滑块控制），移动端用 --mgrid 变量（设置按钮控制） */
+  .media-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--pgrid, 3), minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+  @media (max-width: 639px) {
+    .media-grid {
+      grid-template-columns: repeat(var(--mgrid, 3), minmax(0, 1fr));
+    }
+  }
 
   /* --- 按钮系统 --- */
   
