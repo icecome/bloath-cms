@@ -696,15 +696,21 @@ export async function getTree(
 
   const ghHeaders = { Authorization: `Bearer ${token}`, 'User-Agent': 'Bloath-CMS' };
 
-  // 通过 commits API 填充真实修改时间：遍历最近提交详情（files[].filename）构建 path→时间 映射
+  // 通过 commits API 填充真实修改时间（仅媒体库 mode='filename'）。
+  // 注意：GitHub 没有"一次请求返回所有文件最后修改时间"的接口，
+  // 逐文件查询（N 次）或逐 commit 详情（最多数百次）都开销大。
+  // 这里限制详情请求数并并行拉取：仅覆盖最近的提交，未命中的旧文件
+  // 由前端回退到文件名时间戳（默认模板 `{Y}{m}{d}...` 已内嵌时间）。
   if (mode === 'filename') {
     try {
       const pending = new Set(fileItems.map((f) => f.path));
       const pathToTime = new Map<string, number>();
+      const MAX_DETAIL_CALLS = 30; // 单次调用最多 30 次 commit 详情请求（有授权令牌，远低于 5000/h 上限）
+      const MAX_PAGES = 2;         // 列表接口每次 100 条，最多 2 个列表请求
+      let detailCalls = 0;
       let page = 1;
-      const MAX_PAGES = 3;
 
-      while (pending.size > 0 && page <= MAX_PAGES) {
+      while (pending.size > 0 && page <= MAX_PAGES && detailCalls < MAX_DETAIL_CALLS) {
         const listResp = await fetch(
           `https://api.github.com/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=100&page=${page}`,
           { headers: ghHeaders }
@@ -713,20 +719,23 @@ export async function getTree(
         const commits = await listResp.json() as unknown as Array<{ sha: string }>;
         if (!Array.isArray(commits) || commits.length === 0) break;
 
-        for (const commit of commits) {
-          if (pending.size === 0) break;
-          const detailResp = await fetch(
-            `https://api.github.com/repos/${owner}/${repo}/commits/${commit.sha}`,
-            { headers: ghHeaders }
-          );
-          if (!detailResp.ok) continue;
-          const detail = await detailResp.json() as unknown as {
-            commit?: { committer?: { date?: string } };
-            files?: Array<{ filename?: string }>;
-          };
-          const commitDate = new Date(detail.commit?.committer?.date || '').getTime();
+        // 只对该页最新的一批 commit 并行拉取详情，总调用数不超过 MAX_DETAIL_CALLS
+        const sliceCount = Math.max(0, Math.min(commits.length, MAX_DETAIL_CALLS - detailCalls));
+        detailCalls += sliceCount;
+        const batch = commits.slice(0, sliceCount);
+        const details = await Promise.all(
+          batch.map((commit) =>
+            fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${commit.sha}`, { headers: ghHeaders })
+              .then((r) => (r.ok ? r.json() : null))
+              .catch(() => null)
+          )
+        );
+
+        for (const detail of details) {
+          if (!detail || pending.size === 0) break;
+          const commitDate = new Date((detail as { commit?: { committer?: { date?: string } } }).commit?.committer?.date || '').getTime();
           if (!commitDate) continue;
-          for (const file of detail.files || []) {
+          for (const file of (detail as { files?: Array<{ filename?: string }> }).files || []) {
             const filePath = file.filename;
             if (filePath && pending.has(filePath) && !pathToTime.has(filePath)) {
               pathToTime.set(filePath, commitDate);
