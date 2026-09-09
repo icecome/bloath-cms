@@ -21,7 +21,9 @@ PROD_ORIGINS=https://your-domain.com
 # 如需自定义可覆盖，示例：default-src 'self'; script-src 'self'; ...
 CONTENT_SECURITY_POLICY=
 
-# KV 设备名单命名空间 ID（本地 dev 用 miniflare 模拟时可不填；deploy 由 wrangler.jsonc 的
-# ${KV_NAMESPACE_ID} 引用，CI 通过 GitHub Secret KV_NAMESPACE_ID 注入；本地如需连真实 KV 可填写）
-# 在 Cloudflare Dashboard: Workers → KV → 新建 Namespace，取其 ID 填入
+# KV 设备名单命名空间 ID：填入你自己的 Cloudflare KV Namespace ID（形如 24 位十六进制）。
+# 作用：部署脚本 scripts/fill-kv-namespace.mjs 会用此 ID 生成 wrangler.deploy.jsonc，从而把
+#   DEVICES_KV 绑定写进代码部署（CI 推送不会被清空绑定）。
+# 获取方式：Dashboard → Workers → KV → 新建 Namespace 后复制 ID。
+# 注意：CI 部署读取的是 GitHub Secret KV_NAMESPACE_ID，这里仅用于本地 dev。
 KV_NAMESPACE_ID=

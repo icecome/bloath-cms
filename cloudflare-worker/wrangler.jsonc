@@ -11,5 +11,5 @@
       "binding": "DEVICES_KV",
       "id": "${KV_NAMESPACE_ID}"
     }
-  ]
+  ],
 }

@@ -6,6 +6,8 @@ web/node_modules/
 # Cloudflare Wrangler
 cloudflare-worker/.wrangler/
 cloudflare-worker/wrangler.toml
+# KV 绑定由 scripts/fill-kv-namespace.mjs 注入后生成的部署配置（不提交）
+cloudflare-worker/wrangler.deploy.jsonc
 
 # Build output
 dist/

@@ -56,14 +56,19 @@ jobs:
         run: |
           npx wrangler pages deploy web/dist --project-name=bloath-cms-web
 
+      - name: 注入 KV Namespace 配置
+        working-directory: cloudflare-worker
+        env:
+          KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
+        run: node scripts/fill-kv-namespace.mjs
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           workingDirectory: cloudflare-worker
-        env:
-          KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
+          command: deploy --config wrangler.deploy.jsonc
 
       - name: Set Wrangler Secrets
         working-directory: cloudflare-worker
