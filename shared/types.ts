@@ -34,10 +34,12 @@ export interface Collection {
 // 字段分组（schema 驱动表单按组折叠展示）
 export type FieldGroup = 'basic' | 'advanced' | 'special' | 'seo' | 'custom';
 
-// 字段条件显示：依赖另一字段值，不满足则隐藏（值保留）
+// 字段条件显示：依赖另一字段值，不满足则隐藏（值保留）。
+// equals 限定布尔：依赖字段未定义/未开启统一按 false 处理（见 isFieldVisible），
+// 不开放字符串/假值分支以免产生「未定义字段该匹配何值」的歧义。
 export interface ShowWhen {
   field: string;
-  equals: boolean | string;
+  equals: boolean;
 }
 
 // 字段配置

@@ -27,7 +27,8 @@ const GROUP_LABELS: Record<FieldGroup, string> = {
 // 禁止作为自定义字段键名的危险属性，防止原型链污染
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
-// showWhen 不满足时字段隐藏（值保留），避免覆盖已存数据
+// showWhen 不满足时字段隐藏（值保留），避免覆盖已存数据。
+// 依赖字段为空视为 false（未开启布尔），equals 恒为布尔，见 ShowWhen 类型说明。
 function isFieldVisible(fm: Frontmatter, field: FieldConfig): boolean {
   const cond = field.showWhen;
   if (!cond) return true;
