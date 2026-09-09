@@ -1,5 +1,6 @@
 import fm from 'front-matter';
-import { readFile } from './api';
+import { readFile, extractBatch } from './api';
+import { parseFrontmatterBody, FRONTMATTER_TOML_REGEX } from './frontmatter';
 import type { ArticleFrontmatter, RepoInfo } from '../../../shared/types';
 
 /**
@@ -19,7 +20,7 @@ export interface EnhancedFileItem {
 }
 
 export interface ExtractOptions {
-  /** 并发批次大小，默认 5 */
+  /** 并发批次大小，默认 5（仅回退路径使用） */
   batchSize?: number;
   /** 单文件读取超时，默认 8000ms */
   timeoutMs?: number;
@@ -36,7 +37,7 @@ const DEFAULT_OPTIONS: Required<ExtractOptions> = {
 /**
  * 将 Front Matter date 字段转换为时间戳
  * 支持格式：
- * - Date 对象: front-matter 库会将 ISO 8601 日期解析为 Date 对象
+ * - Date 对象: TOML 解析器会将日期解析为 Date 对象
  * - ISO 8601 字符串: "2026-07-07T12:00:00+08:00"
  * - 日期字符串: "2026-07-07"
  * - 完整日期: "Fri Mar 07 2025 18:00:00 GMT+0800"
@@ -78,9 +79,17 @@ export function parseDateToTimestamp(dateValue?: string | number | Date): number
   return 0;
 }
 
-/**
- * 读取单个 Markdown 文件并提取 Front Matter
- */
+function applyExtracted(file: EnhancedFileItem, raw: string, format: 'yaml' | 'toml'): EnhancedFileItem {
+  const parsed = parseFrontmatterBody(raw, format);
+  const attributes = parsed as ArticleFrontmatter;
+  return {
+    ...file,
+    frontmatter: attributes,
+    sortDate: parseDateToTimestamp(attributes.date),
+  };
+}
+
+/** 单文件读取回退路径（Worker 聚合端点不可用时） */
 async function readSingleFrontmatter(
   file: EnhancedFileItem,
   repoInfo: RepoInfo,
@@ -95,15 +104,15 @@ async function readSingleFrontmatter(
       branch: repoInfo.branch || 'main',
     }, options.timeoutMs);
 
-    const header = content.slice(0, 1024);
-
-    const result = fm<ArticleFrontmatter>(header);
-    const attributes = result.attributes || {};
-
-    if (import.meta.env.DEV) {
-      console.log(`[extractFrontMatter] ${file.name}: date=${attributes.date}, sortDate=${parseDateToTimestamp(attributes.date)}`);
+    // YAML 场景沿用 front-matter 库解析；TOML 交给 frontmatter.ts
+    const tomlMatch = content.match(FRONTMATTER_TOML_REGEX);
+    if (tomlMatch) {
+      return applyExtracted(file, tomlMatch[1] ?? '', 'toml');
     }
 
+    const header = content.slice(0, 8192);
+    const result = fm<ArticleFrontmatter>(header);
+    const attributes = result.attributes || {};
     return {
       ...file,
       frontmatter: attributes,
@@ -119,10 +128,8 @@ async function readSingleFrontmatter(
   }
 }
 
-/**
- * 分批并发读取 Front Matter
- */
-async function batchFetch(
+/** 单文件分批并发（回退路径） */
+async function batchFetchFallback(
   files: EnhancedFileItem[],
   repoInfo: RepoInfo,
   options: Required<ExtractOptions>
@@ -143,7 +150,9 @@ async function batchFetch(
 }
 
 /**
- * 从文件路径列表并发提取 Front Matter 元数据
+ * 提取 front-matter 元数据。
+ * 优先走 Worker 聚合端点（1 次往返，每块最多 100 个文件）；
+ * 聚合请求失败时回退到单文件分批并发读取，保证端点未升级时功能可用。
  */
 export async function extractFrontMatters(
   files: EnhancedFileItem[],
@@ -153,8 +162,45 @@ export async function extractFrontMatters(
   if (files.length === 0) return [];
 
   const resolvedOptions = { ...DEFAULT_OPTIONS, ...options };
-  const result = await batchFetch(files, repoInfo, resolvedOptions);
-  return result;
+  const CHUNK_SIZE = 100;
+  const results = [...files];
+
+  try {
+    for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+      const chunk = files.slice(i, i + CHUNK_SIZE);
+      const { results: extracted, errors: extractErrors } = await extractBatch({
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        branch: repoInfo.branch || 'main',
+        paths: chunk.map((f) => f.path),
+      });
+      // 聚合端点个别文件读取失败：回退到单文件读取，避免丢失元数据
+      const failedPaths = new Set(extractErrors.map((e) => e.path));
+      if (failedPaths.size > 0) {
+        console.warn(`[extractFrontMatter] ${failedPaths.size} 个文件聚合失败，回退单文件读取:`,
+          [...failedPaths].join(', '));
+        const failedFiles = chunk.filter((f) => f && failedPaths.has(f.path));
+        const recovered = await batchFetchFallback(failedFiles, repoInfo, resolvedOptions);
+        const recoveredByPath = new Map(recovered.map((f) => [f.path, f]));
+        for (const addr of failedPaths) {
+          const addrFile = recoveredByPath.get(addr);
+          const originIndex = files.findIndex((f) => f.path === addr);
+          if (addrFile && originIndex >= 0) results[originIndex] = addrFile;
+        }
+      }
+      const byPath = new Map(extracted.map((e) => [e.path, e]));
+      for (let j = 0; j < chunk.length; j++) {
+        const file = chunk[j];
+        const hit = file ? byPath.get(file.path) : undefined;
+        if (!file || !hit || !hit.raw) continue;
+        results[i + j] = applyExtracted(file, hit.raw, hit.format);
+      }
+    }
+    return results;
+  } catch (err) {
+    console.error('[extractFrontMatter] 聚合提取失败，回退单文件读取:', err);
+    return batchFetchFallback(files, repoInfo, resolvedOptions);
+  }
 }
 
 function delay(ms: number): Promise<void> {

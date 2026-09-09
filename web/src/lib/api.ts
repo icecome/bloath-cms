@@ -1,5 +1,7 @@
-import type { Repo, RepoInfo } from '../../../shared/types';
+import type { Repo, RepoInfo, CommitOp } from '../../../shared/types';
 import { API_BASE, MAX_TREE_ITEMS } from './constants';
+
+export type { CommitOp };
 
 export interface ContentItem {
   name: string;
@@ -217,7 +219,8 @@ export async function moveFile(
       repo: params.repo,
       path: params.fromPath,
       sha: params.sha || currentSha,
-      message: resolvedMessage,
+      // 删除源文件的 commit 不应再次触发 CI（写入侧已按需触发）
+      message: `[skip ci] ${resolvedMessage}`,
       userName: params.userName
     });
   } catch (err) {
@@ -251,7 +254,8 @@ export async function renameFile(
         repo: params.repo,
         path: params.oldPath,
         sha: params.sha,
-        message: resolvedMessage,
+        // 删除旧文件的 commit 不应再次触发 CI（写入侧已按需触发）
+        message: `[skip ci] ${resolvedMessage}`,
         userName: params.userName
       });
     } else {
@@ -353,5 +357,89 @@ export async function uploadImage(
 export async function logout(): Promise<void> {
   await apiFetch<void>(`${API_BASE}/api/auth/logout`, {
     method: 'POST'
+  }, true);
+}
+
+// ---------- 批量提交（Git Data API，多文件变更合并为单 commit） ----------
+
+/**
+ * 批量提交：N 个文件变更 → 1 个 commit → 最多触发 1 次 CI。
+ * 原子性：失败时整批不落盘，不会出现"发布一半"的中间状态。
+ */
+export async function commitBatch(
+  params: RepoInfo & { message: string; ops: CommitOp[]; userName?: string }
+): Promise<{ sha: string }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    return await apiFetch<{ sha: string }>(`${API_BASE}/api/repos/commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        owner: params.owner,
+        repo: params.repo,
+        branch: params.branch || 'main',
+        message: params.message,
+        ops: params.ops,
+        userName: params.userName
+      }),
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// ---------- front-matter 聚合提取 ----------
+
+export interface ExtractedFrontmatter {
+  path: string;
+  format: 'yaml' | 'toml';
+  raw: string;
+}
+
+/** 单次请求批量拉取多个文件的 front-matter 原文（Worker 侧并发读取） */
+export async function extractBatch(
+  params: RepoInfo & { paths: string[] }
+): Promise<{ results: ExtractedFrontmatter[]; errors: Array<{ path: string; error: string }> }> {
+  return apiFetch<{ results: ExtractedFrontmatter[]; errors: Array<{ path: string; error: string }> }>(
+    `${API_BASE}/api/repos/extract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        owner: params.owner,
+        repo: params.repo,
+        branch: params.branch || 'main',
+        paths: params.paths
+      })
+    }
+  );
+}
+
+// ---------- 手动部署 ----------
+
+export interface WorkflowInfo {
+  id: number;
+  name: string;
+  path: string;
+  state: string;
+}
+
+export async function getWorkflows(owner: string, repo: string): Promise<WorkflowInfo[]> {
+  const searchParams = new URLSearchParams({ owner, repo });
+  return apiFetch<WorkflowInfo[]>(`${API_BASE}/api/repos/workflows?${searchParams}`);
+}
+
+export async function triggerDeploy(params: {
+  owner: string;
+  repo: string;
+  workflowId: number;
+  ref?: string;
+}): Promise<void> {
+  await apiFetch<void>(`${API_BASE}/api/repos/deploy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
   }, true);
 }

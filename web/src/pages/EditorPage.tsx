@@ -1,14 +1,20 @@
-import { useState, useEffect, useRef, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams, useMatch } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useCollections } from '../contexts/CollectionsContext';
-import { readFile, writeFile, moveFile, formatTimestamp, renameFile } from '../lib/api';
+import { readFile, writeFile, commitBatch, formatTimestamp, type CommitOp } from '../lib/api';
+import { buildCommitMessage } from '../lib/deploySettings';
 import { sanitizeSlug, sanitizePath, filterValidDirs } from '../lib/path';
 import VditorEditor from '../components/editor/VditorEditor';
-import FrontmatterPanel from '../components/editor/FrontmatterPanel';
+import SchemaFormPanel from '../components/editor/SchemaFormPanel';
 import { ArrowLeft, Save, Send, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import Vditor from 'vditor';
-import { parseFrontmatter, generateFrontmatter, type Frontmatter } from '../lib/frontmatter';
+import {
+  parseFrontmatter, generateFrontmatter, normalizeFmForProfile, generateOptionsFromProfile,
+  type Frontmatter
+} from '../lib/frontmatter';
+import { getProfileForRepo } from '../lib/profileService';
+import { getProfile, type SiteProfile } from '../../../shared/profiles';
 import { useToast } from '../contexts/ToastContext';
 
 export default function EditorPage() {
@@ -37,6 +43,7 @@ export default function EditorPage() {
   const availableDirs = filterValidDirs(config.paths || []);
 
   const [frontmatter, setFrontmatter] = useState<Frontmatter>({});
+  const [profile, setProfile] = useState<SiteProfile>(() => getProfile('custom'));
   const [bodyContent, setBodyContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -70,6 +77,16 @@ export default function EditorPage() {
     }
   };
 
+  // 加载仓库 Profile（有缓存时近乎同步，供表单渲染与 front-matter 生成使用）
+  useEffect(() => {
+    if (!owner || !repo) return;
+    let cancelled = false;
+    getProfileForRepo(owner, repo, branch)
+      .then((p) => { if (!cancelled) setProfile(p); })
+      .catch(() => { /* 识别失败保持 custom 默认 */ });
+    return () => { cancelled = true; };
+  }, [owner, repo, branch]);
+
   useEffect(() => {
     if (isNew || !user || !basePath || hasLoadedOnce) return;
     const relativePath = paramFilePath || slug;
@@ -80,14 +97,17 @@ export default function EditorPage() {
     const filePath = `${basePath}/${relativePath}.md`;
 
     readFile({ owner, repo, path: filePath, branch })
-      .then(({ content: fileContent, sha }) => {
+      .then(async ({ content: fileContent, sha }) => {
         const { fm, body } = parseFrontmatter(fileContent);
-        setFrontmatter(fm);
+        const resolvedProfile = await getProfileForRepo(owner, repo, branch);
+        const normalized = normalizeFmForProfile(fm, resolvedProfile);
+        setProfile(resolvedProfile);
+        setFrontmatter(normalized);
         setBodyContent(body);
         setCurrentFilePath(filePath);
         setCurrentFileSha(sha || '');
         setHasLoadedOnce(true);
-        if (!fm.url && relativePath) {
+        if (!normalized.url && relativePath) {
           const urlFromPath = relativePath.replace(/\.md$/, '').split('/').pop() || '';
           setFrontmatter((prev) => ({ ...prev, url: urlFromPath }));
         }
@@ -136,7 +156,7 @@ export default function EditorPage() {
       addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'warning' });
       return;
     }
-    const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
+    const editorContent = bodyContent || vditorInstanceRef.current?.getValue();
     const targetPath = isNew
       ? `${config.draftPath || '.draft'}/${targetSlug}.md`
       : currentFilePath || `${config.draftPath || '.draft'}/${targetSlug}.md`;
@@ -144,7 +164,7 @@ export default function EditorPage() {
     setSaving(true);
     const seq = ++saveSeqRef.current;
     try {
-      const fullContent = `${generateFrontmatter(effectiveFm)}\n\n${editorContent}`;
+      const fullContent = `${generateFrontmatter(effectiveFm, generateOptionsFromProfile(profile))}\n\n${editorContent}`;
       const timestamp = formatTimestamp();
       const saveBasePath = currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : '';
       const newPath = saveBasePath ? `${saveBasePath}/${targetSlug}.md` : `${config.draftPath || '.draft'}/${targetSlug}.md`;
@@ -153,10 +173,15 @@ export default function EditorPage() {
       if (urlChanged) {
         const oldPath = currentFilePath;
 
-        await renameFile({
-          owner, repo, oldPath, newPath, content: fullContent,
-          message: `[skip ci] ${targetSlug}.md-${timestamp}`,
-          branch, sha: currentFileSha || undefined, userName: user?.login
+        // 重命名 = 新路径写入 + 旧路径删除，合并为单 commit（原子，且只触发一次 CI）
+        await commitBatch({
+          owner, repo, branch,
+          message: buildCommitMessage(`${targetSlug}.md-${timestamp}`, { skipCi: true }),
+          ops: [
+            { op: 'write', path: newPath, content: fullContent },
+            { op: 'delete', path: oldPath }
+          ],
+          userName: user?.login
         });
 
         if (seq === saveSeqRef.current) {
@@ -168,9 +193,10 @@ export default function EditorPage() {
       } else {
         const isContentLibraryArticle = currentFilePath &&
           availableDirs.some((dir) => currentFilePath.startsWith(dir + '/'));
-        const saveMessage = isContentLibraryArticle
-          ? `${targetSlug}.md-${timestamp}`
-          : `[skip ci] ${targetSlug}.md-${timestamp}`;
+        const saveMessage = buildCommitMessage(
+          `${targetSlug}.md-${timestamp}`,
+          { skipCi: !isContentLibraryArticle }
+        );
 
         await writeFile({
           owner, repo, path: targetPath, content: fullContent,
@@ -212,7 +238,7 @@ export default function EditorPage() {
       addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'warning' });
       return;
     }
-    const editorContent = vditorInstanceRef.current?.getValue() || bodyContent;
+    const editorContent = bodyContent || vditorInstanceRef.current?.getValue();
 
     let resolvedTarget: string;
     try {
@@ -227,42 +253,35 @@ export default function EditorPage() {
     }
 
     setSaving(true);
-    let publishedPath = '';
     try {
       const filePath = `${resolvedTarget}/${targetSlug}.md`;
-      const fullContent = `${generateFrontmatter(effectiveFm)}\n\n${editorContent}`;
+      const fullContent = `${generateFrontmatter(effectiveFm, generateOptionsFromProfile(profile))}\n\n${editorContent}`;
       const timestamp = formatTimestamp();
 
       const isContentLibraryAlreadyPublished = !isDraftArticle &&
         currentFilePath &&
         resolvedTarget === currentFilePath.split('/').slice(0, -1).join('/');
 
+      // 发布写入 + 草稿清理合并为单个 commit：原子生效，CI 至多触发一次
+      const ops: CommitOp[] = [];
       if (!isContentLibraryAlreadyPublished) {
-        await writeFile({
-          owner, repo, path: filePath, content: fullContent,
-          message: `${targetSlug}.md-${timestamp}`,
-          branch, sha: currentFileSha || undefined, userName: user?.login
+        ops.push({ op: 'write', path: filePath, content: fullContent });
+      }
+      if (isDraftArticle && currentFileSha) {
+        // 草稿已持久化到仓库：移入回收站与发布同 commit 生效
+        ops.push({
+          op: 'move',
+          fromPath: getDraftPath(targetSlug),
+          path: `${trashPath}/${targetSlug}.md`
         });
-        publishedPath = filePath;
       }
 
-      if (isDraftArticle) {
-        const draftPath = getDraftPath(targetSlug);
-        if (currentFileSha) {
-          await moveFile({
-            owner, repo, fromPath: draftPath,
-            toPath: `${trashPath}/${targetSlug}.md`,
-            sha: currentFileSha, branch,
-            message: `[skip ci] 移至回收站: ${targetSlug}`,
-            userName: user?.login
-          });
-        } else {
-          await writeFile({
-            owner, repo, path: draftPath, content: '',
-            message: `[skip ci] 删除草稿: ${targetSlug}`,
-            userName: user?.login
-          });
-        }
+      if (ops.length > 0) {
+        await commitBatch({
+          owner, repo, branch,
+          message: buildCommitMessage(`${targetSlug}.md-${timestamp}`),
+          ops, userName: user?.login
+        });
       }
 
       addToast({ message: '发布成功', type: 'success' });
@@ -270,13 +289,7 @@ export default function EditorPage() {
       handleBack();
     } catch (err) {
       console.error('Failed to publish:', err);
-      const errMsg = (err as Error).message;
-      if (publishedPath && (errMsg.includes('draft') || errMsg.includes('trash'))) {
-        addToast({ message: `文章已发布，但草稿清理失败: ${errMsg}。请手动删除草稿。`, type: 'error' });
-        handleBack();
-      } else {
-        addToast({ message: `发布失败: ${errMsg}`, type: 'error' });
-      }
+      addToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setSaving(false);
     }
@@ -295,10 +308,10 @@ export default function EditorPage() {
 
     setSaving(true);
     try {
-      await moveFile({
-        owner, repo, fromPath: currentFilePath,
-        toPath: trashFile, sha: currentFileSha, branch,
-        message: `[skip ci] 移至回收站: ${targetSlug}`,
+      await commitBatch({
+        owner, repo, branch,
+        message: buildCommitMessage(`移至回收站: ${targetSlug}`, { skipCi: true }),
+        ops: [{ op: 'move', fromPath: currentFilePath, path: trashFile }],
         userName: user?.login
       });
       addToast({ message: '已移至回收站', type: 'success' });
@@ -356,49 +369,6 @@ export default function EditorPage() {
     wrapperRef.current.addEventListener('keydown', handleKeyDown);
     return () => { wrapperRef.current?.removeEventListener('keydown', handleKeyDown); };
   }, []);
-
-  const [newCategory, setNewCategory] = useState('');
-  const [newTag, setNewTag] = useState('');
-  const [newPicture, setNewPicture] = useState('');
-  const [newVideo, setNewVideo] = useState('');
-
-  const addItem = (key: 'categories' | 'tags' | 'pictures' | 'video') => {
-    const inputMap = { categories: newCategory, tags: newTag, pictures: newPicture, video: newVideo };
-    const setterMap = { categories: setNewCategory, tags: setNewTag, pictures: setNewPicture, video: setNewVideo };
-    const value = inputMap[key];
-    if (!value?.trim()) return;
-    const arr = frontmatter[key] || [];
-    setFm(key, [...arr, value.trim()]);
-    setterMap[key]('');
-  };
-
-  const removeArrayItem = (key: 'categories' | 'tags' | 'pictures' | 'video', index: number) => {
-    const arr = frontmatter[key] || [];
-    setFm(key, arr.filter((_, i) => i !== index));
-  };
-
-  const handleInputKeyDown = (key: 'categories' | 'tags' | 'pictures' | 'video', e: ReactKeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addItem(key);
-    }
-  };
-
-  const frontmatterPanelProps = {
-    frontmatter,
-    setFm,
-    removeArrayItem,
-    newCategory,
-    setNewCategory,
-    newTag,
-    setNewTag,
-    newPicture,
-    setNewPicture,
-    newVideo,
-    setNewVideo,
-    addItem,
-    handleInputKeyDown
-  };
 
   if (loading) {
     return (
@@ -565,7 +535,7 @@ export default function EditorPage() {
         </div>
 
         <div className="hidden md:block w-72 bg-white border-l border-border overflow-auto flex-shrink-0">
-          <FrontmatterPanel {...frontmatterPanelProps} />
+          <SchemaFormPanel frontmatter={frontmatter} setFm={setFm} profile={profile} />
         </div>
       </div>
 
@@ -579,7 +549,7 @@ export default function EditorPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <FrontmatterPanel {...frontmatterPanelProps} />
+            <SchemaFormPanel frontmatter={frontmatter} setFm={setFm} profile={profile} />
           </div>
         </>
       )}

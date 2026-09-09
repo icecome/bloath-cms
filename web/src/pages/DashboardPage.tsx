@@ -3,12 +3,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
-import { moveFile } from '../lib/api';
+import { commitBatch } from '../lib/api';
+import { buildCommitMessage } from '../lib/deploySettings';
 import { scanMdFiles } from '../lib/scanner';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { getCachedFiles, setCachedFiles, clearCache } from '../lib/fileCache';
 import { sortByFrontMatterDate } from '../lib/sortFiles';
-import { filterValidDirs } from '../lib/path';
+import { filterValidDirs, dedupeTargetPaths } from '../lib/path';
 import { buildEditUrl } from '../lib/navigation';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
@@ -38,6 +39,8 @@ const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [batchLoading, setBatchLoading] = useState(false);
   const lastDeletedRef = useRef<{ file: EnhancedFileItem; originalPath: string } | null>(null);
   const undoCleanupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -123,9 +126,71 @@ if (!currentDir) {
     setCurrentPage(1);
   }, [searchQuery]);
 
-  // 切换目录时，重置到第一页，避免残留页码导致空白分页
+  const handleSelectFile = (path: string) => {
+    setSelectedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllVisible = () => {
+    const visiblePaths = paginatedFiles.map((f) => f.path);
+    const allSelected = visiblePaths.every((p) => selectedFiles.has(p));
+    setSelectedFiles((prev) => {
+      const next = new Set(prev);
+      for (const p of visiblePaths) {
+        if (allSelected) {
+          next.delete(p);
+        } else {
+          next.add(p);
+        }
+      }
+      return next;
+    });
+  };
+
+  // 批量移至回收站：合并为单 commit（跳过 CI）
+  const handleBatchDelete = async () => {
+    if (!selectedRepo || !user || selectedFiles.size === 0) return;
+    setBatchLoading(true);
+    try {
+      const filesToDelete = files.filter((f) => selectedFiles.has(f.path));
+      // 同名文件移入回收站时去重目标名，避免覆盖丢失
+      const targets = dedupeTargetPaths(
+        filesToDelete.map((f) => `${config.trashPath || '.trash'}/${f.name}`)
+      );
+      await commitBatch({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.repo,
+        branch: selectedRepo.branch,
+        message: buildCommitMessage(`移至回收站: ${filesToDelete.length} 篇文章`, { skipCi: true }),
+        ops: filesToDelete.map((f, i) => ({
+          op: 'move',
+          fromPath: f.path,
+          path: targets[i] ?? `${config.trashPath || '.trash'}/${f.name}`
+        })),
+        userName: user?.login
+      });
+      setFiles((prev) => prev.filter((f) => !selectedFiles.has(f.path)));
+      setSelectedFiles(new Set());
+      clearCache(selectedRepo);
+      addToast({ message: `已将 ${filesToDelete.length} 篇文章移至回收站`, type: 'success' });
+    } catch (err) {
+      addToast({ message: `批量删除失败: ${(err as Error).message}`, type: 'error' });
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  // 切换目录时，重置到第一页并清空多选，避免残留页码/选中导致误操作
   useEffect(() => {
     setCurrentPage(1);
+    setSelectedFiles(new Set());
   }, [currentDir]);
 
   const handleEdit = (file: EnhancedFileItem) => {
@@ -152,14 +217,12 @@ if (!selectedRepo || !currentDir) return;
     const trashPath = `${config.trashPath || '.trash'}/${file.name}`;
 
     try {
-      await moveFile({
+      await commitBatch({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
-        fromPath: file.path,
-        toPath: trashPath,
-        sha: file.sha,
         branch: selectedRepo.branch,
-        message: `[skip ci] 移至回收站: ${file.name}`,
+        message: buildCommitMessage(`移至回收站: ${file.name}`, { skipCi: true }),
+        ops: [{ op: 'move', fromPath: file.path, path: trashPath }],
         userName: user?.login
       });
 
@@ -184,13 +247,12 @@ if (!selectedRepo || !currentDir) return;
         type: 'success',
         onUndo: async () => {
           try {
-            await moveFile({
+            await commitBatch({
               owner: selectedRepo.owner,
               repo: selectedRepo.repo,
-              fromPath: trashPath,
-              toPath: lastDeletedRef.current!.originalPath,
               branch: selectedRepo.branch,
-              message: `恢复 ${file.name}`,
+              message: buildCommitMessage(`恢复 ${file.name}`),
+              ops: [{ op: 'move', fromPath: trashPath, path: lastDeletedRef.current!.originalPath }],
               userName: user?.login
             });
             setFiles(prev => [...prev, lastDeletedRef.current!.file]);
@@ -234,6 +296,35 @@ if (!selectedRepo || !currentDir) return;
         </div>
       )}
 
+      {/* 批量操作工具栏 */}
+      {selectedRepo && selectedFiles.size > 0 && (
+        <div className="flex-shrink-0 px-4 md:px-8 py-2.5 border-b border-border-subtle flex items-center gap-2 flex-wrap bg-accent/40">
+          <span className="text-sm text-muted-foreground bg-background px-2.5 py-1.5 rounded-sm">
+            已选 {selectedFiles.size} 篇
+          </span>
+          <button
+            onClick={handleSelectAllVisible}
+            className="text-sm text-muted-foreground hover:text-foreground hover:bg-background px-2.5 py-1.5 rounded-sm transition-colors"
+          >
+            全选本页
+          </button>
+          <button
+            onClick={() => setSelectedFiles(new Set())}
+            className="text-sm text-muted-foreground hover:text-foreground hover:bg-background px-2.5 py-1.5 rounded-sm transition-colors"
+          >
+            取消选择
+          </button>
+          <button
+            onClick={handleBatchDelete}
+            disabled={batchLoading}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 text-white bg-red-600 hover:bg-red-700 rounded-sm transition-colors disabled:opacity-40"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            {batchLoading ? '处理中...' : '移至回收站'}
+          </button>
+        </div>
+      )}
+
       {/* 文件列表 */}
       <div className="flex-1 overflow-auto px-4 md:px-8">
         {!selectedRepo ? (
@@ -259,6 +350,14 @@ if (!selectedRepo || !currentDir) return;
                 onClick={() => handleEdit(file)}
               >
                 <div className="hidden md:flex items-center w-[40%] gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles.has(file.path)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => handleSelectFile(file.path)}
+                    className="flex-shrink-0"
+                    aria-label={`选择 ${file.name}`}
+                  />
                   <div className="w-2.5 h-2.5 rounded-full bg-success flex-shrink-0" />
                   <span className="text-sm font-medium text-foreground truncate">
                     {file.name.replace('.md', '')}
@@ -291,6 +390,14 @@ if (!selectedRepo || !currentDir) return;
 
                 {/* 移动端：卡片布局 */}
                 <div className="flex md:hidden flex-1 min-w-0 items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles.has(file.path)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => handleSelectFile(file.path)}
+                    className="flex-shrink-0"
+                    aria-label={`选择 ${file.name}`}
+                  />
                   <div className="w-2.5 h-2.5 rounded-full bg-success flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-foreground truncate">

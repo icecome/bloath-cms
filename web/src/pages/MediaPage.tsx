@@ -3,7 +3,7 @@ import { useCollections } from '../contexts/CollectionsContext';
 import { useRepo } from '../contexts/RepoContext';
 import { useAuth } from '../hooks/useAuth';
 import { getTree, uploadImage, deleteFile } from '../lib/api';
-import { resolveMediaSource } from '../lib/resolveMediaSource';
+import { resolveMediaSource, mediaCdnUrl } from '../lib/resolveMediaSource';
 import { sortByLastModified } from '../lib/sortFiles';
 import { resolveRenameTemplate } from '../lib/rename';
 import {
@@ -11,7 +11,7 @@ import {
   blobToBase64,
   formatDate,
   formatSize,
-  PAGE_SIZE,
+  MEDIA_PAGE_SIZE,
   MAX_FILE_SIZE,
   type MediaFile
 } from '../lib/mediaUtils';
@@ -58,19 +58,7 @@ export default function MediaPage() {
   };
 
   const getCdnUrl = useCallback((path: string) => {
-    const { cdnProvider, customCdnTemplate } = mediaConfig;
-    const { owner, repo, branch } = source;
-    if (cdnProvider === 'custom') {
-      return customCdnTemplate
-        .replace('{owner}', owner)
-        .replace('{repo}', repo)
-        .replace('{branch}', branch)
-        .replace('{path}', path);
-    }
-    if (cdnProvider === 'jsdmirror') {
-      return `https://cdn.jsdmirror.cn/gh/${owner}/${repo}@${branch}/${path}`;
-    }
-    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+    return mediaCdnUrl(source, mediaConfig, path);
   }, [mediaConfig, source]);
 
   const loadFiles = useCallback(async (silent = false): Promise<MediaFile[] | null> => {
@@ -333,7 +321,7 @@ export default function MediaPage() {
                 gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
               }}
             >
-            {files.slice(0, currentPage * PAGE_SIZE).map((file) => (
+            {files.slice(0, currentPage * MEDIA_PAGE_SIZE).map((file) => (
             <div
               key={file.path}
               className="group border border-border rounded-sm overflow-hidden hover:border-border transition-colors bg-card mb-3 sm:mb-0 break-inside-avoid"
@@ -400,14 +388,14 @@ export default function MediaPage() {
               </div>
             ))}
           </div>
-            {files.length > currentPage * PAGE_SIZE && (
+            {files.length > currentPage * MEDIA_PAGE_SIZE && (
               <div className="flex justify-center py-4">
                 <button
                   type="button"
                   onClick={() => setCurrentPage((p) => p + 1)}
                   className="px-6 py-2 text-sm bg-foreground text-white rounded-sm hover:bg-foreground/90 transition-colors"
                 >
-                  加载更多 ({files.length - currentPage * PAGE_SIZE} 张剩余)
+                  加载更多 ({files.length - currentPage * MEDIA_PAGE_SIZE} 张剩余)
                 </button>
               </div>
             )}

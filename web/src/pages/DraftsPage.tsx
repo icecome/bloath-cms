@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
-import { moveFile, readFile, writeFile, deleteFile } from '../lib/api';
+import { commitBatch, readFile, type CommitOp } from '../lib/api';
+import { buildCommitMessage } from '../lib/deploySettings';
 import { scanMdFiles } from '../lib/scanner';
 import { useFileListPage } from '../hooks/useFileListPage';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { clearCache } from '../lib/fileCache';
-import { sanitizePath, filterValidDirs } from '../lib/path';
+import { sanitizePath, filterValidDirs, dedupeTargetPaths } from '../lib/path';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Pagination from '../components/ui/Pagination';
@@ -90,19 +91,24 @@ export default function DraftsPage() {
     setActionLoading(true);
     try {
       const filesToMove = files.filter((f) => selectedFiles.has(f.path));
-      for (const file of filesToMove) {
-        const newPath = `${safeTarget}/${file.name}`;
-        await moveFile({
-          owner: selectedRepo.owner,
-          repo: selectedRepo.repo,
-          fromPath: file.path,
-          toPath: newPath,
-          sha: file.sha,
-          branch: selectedRepo.branch,
-          message: `发布 ${file.name}`,
-          userName: user?.login
-        });
-      }
+      // 批量发布合并为单 commit：原子生效，CI 至多触发一次
+      const targets = dedupeTargetPaths(filesToMove.map((file) => `${safeTarget}/${file.name}`));
+      const ops: CommitOp[] = filesToMove.map((file, i) => ({
+        op: 'move',
+        fromPath: file.path,
+        path: targets[i] ?? `${safeTarget}/${file.name}`
+      }));
+      const names = filesToMove.map((f) => f.name).slice(0, 3).join(', ');
+      await commitBatch({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.repo,
+        branch: selectedRepo.branch,
+        message: buildCommitMessage(
+          `发布 ${filesToMove.length} 篇草稿: ${names}${filesToMove.length > 3 ? ' ...' : ''}`
+        ),
+        ops,
+        userName: user?.login
+      });
       addToast({ message: `成功发布 ${filesToMove.length} 篇草稿`, type: 'success' });
       setSelectedFiles(new Set());
       setPublishTarget('');
@@ -129,19 +135,19 @@ export default function DraftsPage() {
     setActionLoading(true);
     try {
       const filesToMove = files.filter((f) => selectedFiles.has(f.path));
-      for (const file of filesToMove) {
-        const newPath = `${safeTarget}/${file.name}`;
-        await moveFile({
-          owner: selectedRepo.owner,
-          repo: selectedRepo.repo,
+      const targets = dedupeTargetPaths(filesToMove.map((file) => `${safeTarget}/${file.name}`));
+      await commitBatch({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.repo,
+        branch: selectedRepo.branch,
+        message: buildCommitMessage(`移动 ${filesToMove.length} 篇草稿`, { skipCi: true }),
+        ops: filesToMove.map((file, i) => ({
+          op: 'move',
           fromPath: file.path,
-          toPath: newPath,
-          sha: file.sha,
-          branch: selectedRepo.branch,
-          message: `移动 ${file.name}`,
-          userName: user?.login
-        });
-      }
+          path: targets[i] ?? `${safeTarget}/${file.name}`
+        })),
+        userName: user?.login
+      });
       addToast({ message: `成功移动 ${filesToMove.length} 篇草稿`, type: 'success' });
       setSelectedFiles(new Set());
       setMoveTarget('');
@@ -160,25 +166,22 @@ export default function DraftsPage() {
     if (!selectedRepo || !user || selectedFiles.size === 0) return;
 
     const filesToDelete = files.filter((f) => selectedFiles.has(f.path));
-    const trashPaths = filesToDelete.map(f => `${trashPath}/${f.name}`);
 
     setActionLoading(true);
     try {
-      for (let i = 0; i < filesToDelete.length; i++) {
-        const file = filesToDelete[i];
-        const targetPath = trashPaths[i];
-        if (!file || !targetPath) continue;
-        await moveFile({
-          owner: selectedRepo.owner,
-          repo: selectedRepo.repo,
+      const targets = dedupeTargetPaths(filesToDelete.map((file) => `${trashPath}/${file.name}`));
+      await commitBatch({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.repo,
+        branch: selectedRepo.branch,
+        message: buildCommitMessage(`移至回收站: ${filesToDelete.length} 篇草稿`, { skipCi: true }),
+        ops: filesToDelete.map((file, i) => ({
+          op: 'move',
           fromPath: file.path,
-          toPath: targetPath,
-          sha: file.sha,
-          branch: selectedRepo.branch,
-          message: `[skip ci] 移至回收站: ${file.name}`,
-          userName: user?.login
-        });
-      }
+          path: targets[i] ?? `${trashPath}/${file.name}`
+        })),
+        userName: user?.login
+      });
 
       lastDeletedRef.current = { files: filesToDelete, originalPaths: filesToDelete.map(f => f.path) };
 
@@ -205,14 +208,12 @@ export default function DraftsPage() {
     const trashFile = `${trashPath}/${file.name}`;
 
     try {
-      await moveFile({
+      await commitBatch({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
-        fromPath: file.path,
-        toPath: trashFile,
-        sha: file.sha,
         branch: selectedRepo.branch,
-        message: `[skip ci] 移至回收站: ${file.name}`,
+        message: buildCommitMessage(`移至回收站: ${file.name}`, { skipCi: true }),
+        ops: [{ op: 'move', fromPath: file.path, path: trashFile }],
         userName: user?.login
       });
 
@@ -230,13 +231,12 @@ export default function DraftsPage() {
             const restoredFile = lastDeletedRef.current!.files[0];
             const originalPath = lastDeletedRef.current!.originalPaths[0];
             if (!restoredFile || !originalPath) return;
-            await moveFile({
+            await commitBatch({
               owner: selectedRepo.owner,
               repo: selectedRepo.repo,
-              fromPath: trashFile,
-              toPath: originalPath,
               branch: selectedRepo.branch,
-              message: `恢复 ${restoredFile.name}`,
+              message: buildCommitMessage(`恢复 ${restoredFile.name}`, { skipCi: true }),
+              ops: [{ op: 'move', fromPath: trashFile, path: originalPath }],
               userName: user?.login
             });
             setFiles(prev => [...prev, restoredFile]);
@@ -258,7 +258,7 @@ export default function DraftsPage() {
     if (!selectedRepo || !user || !renameFile || !renameValue.trim()) return;
     setActionLoading(true);
     try {
-      const { content: fileContent, sha } = await readFile({
+      const { content: fileContent } = await readFile({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         path: renameFile.path,
@@ -270,22 +270,16 @@ export default function DraftsPage() {
       const newDir = renameFile.path.substring(0, renameFile.path.lastIndexOf('/'));
       const newPath = `${newDir}/${newName}`;
 
-      await writeFile({
+      // 重命名 = 写新路径 + 删旧路径，合并为单 commit
+      await commitBatch({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
-        path: newPath,
-        content: fileContent,
         branch: selectedRepo.branch,
-        message: `[skip ci] 重命名: ${oldName} -> ${newName}`,
-        userName: user?.login
-      });
-
-      await deleteFile({
-        owner: selectedRepo.owner,
-        repo: selectedRepo.repo,
-        path: renameFile.path,
-        sha,
-        message: '[skip ci]',
+        message: buildCommitMessage(`重命名: ${oldName} -> ${newName}`, { skipCi: true }),
+        ops: [
+          { op: 'write', path: newPath, content: fileContent },
+          { op: 'delete', path: renameFile.path }
+        ],
         userName: user?.login
       });
 

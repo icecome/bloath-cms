@@ -5,6 +5,7 @@ import { useCollections } from '../../contexts/CollectionsContext';
 import { getRepos } from '../../lib/api';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { detectFrameworks, type DetectedRepo } from '../../lib/detectFramework';
+import { pullRepoConfig } from '../../lib/repoConfigSync';
 import { filterValidDirs } from '../../lib/path';
 import {
   FilePlus2,
@@ -384,6 +385,7 @@ function SidebarContent({
 export default function MainLayout() {
   const { user, logout } = useAuth();
   const { selectedRepo, setSelectedRepo, branches, loadBranches } = useRepo();
+  const { updateConfig, updateMediaConfig } = useCollections();
   const location = useLocation();
   const navigate = useNavigate();
   const [repos, setRepos] = useState<DetectedRepo[]>([]);
@@ -393,6 +395,35 @@ export default function MainLayout() {
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const detectedFrameworksRef = useRef(false);
+  const syncedRepoKeyRef = useRef('');
+
+  // 切换仓库时自动拉取仓库内配置（.bloath/config.json），仓库为准实现多设备同步
+  useEffect(() => {
+    if (!selectedRepo || !user) return;
+    const key = `${selectedRepo.owner}/${selectedRepo.repo}@${selectedRepo.branch}`;
+    if (syncedRepoKeyRef.current === key) return;
+    syncedRepoKeyRef.current = key;
+    const { owner, repo, branch } = selectedRepo;
+    pullRepoConfig(owner, repo, branch)
+      .then((remote) => {
+        // 拉取期间仓库已切换：丢弃过期结果，避免覆盖当前仓库配置
+        if (!selectedRepo || selectedRepo.owner !== owner || selectedRepo.repo !== repo) return;
+        if (!remote) return;
+        if (remote.collections) {
+          const { paths, label, draftPath, trashPath } = remote.collections;
+          updateConfig({
+            ...(paths && paths.length > 0 ? { paths } : {}),
+            ...(label ? { label } : {}),
+            ...(draftPath ? { draftPath } : {}),
+            ...(trashPath ? { trashPath } : {})
+          });
+        }
+        if (remote.media) {
+          updateMediaConfig(remote.media);
+        }
+      })
+      .catch((err) => console.error('拉取仓库配置失败:', err));
+  }, [selectedRepo, user, updateConfig, updateMediaConfig]);
 
   useEffect(() => {
     if (user) {

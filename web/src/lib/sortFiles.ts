@@ -24,7 +24,7 @@ export interface EnhancedSortableFile {
 }
 
 export function sortByFrontMatterDate<T extends EnhancedSortableFile>(files: T[]): T[] {
-  return files.sort((a, b) => {
+  return [...files].sort((a, b) => {
     const dateA = a.sortDate || (a.frontmatter?.date ? parseDateToTimestamp(a.frontmatter.date) : 0);
     const dateB = b.sortDate || (b.frontmatter?.date ? parseDateToTimestamp(b.frontmatter.date) : 0);
 
@@ -44,7 +44,7 @@ export function sortByFrontMatterDate<T extends EnhancedSortableFile>(files: T[]
 }
 
 export function sortByLastModified<T extends SortableFile>(files: T[]): T[] {
-  return files.sort((a, b) => {
+  return [...files].sort((a, b) => {
     const timeA = a.lastModified || extractTimestampFromFilename(a.name);
     const timeB = b.lastModified || extractTimestampFromFilename(b.name);
 

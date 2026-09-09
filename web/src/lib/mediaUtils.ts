@@ -1,6 +1,6 @@
 // 媒体库工具函数与常量
 
-export const PAGE_SIZE = 40;
+export const MEDIA_PAGE_SIZE = 40;
 export const MAX_IMAGE_DIM = 4096;
 export const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 

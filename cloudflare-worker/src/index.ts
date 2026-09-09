@@ -1,6 +1,6 @@
 // Cloudflare Worker 入口 - 路由分发
-import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches, getTree, createBranch, ApiError } from './github';
-import type { Env } from './github';
+import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches, getTree, createBranch, batchCommit, extractFrontMatters, listWorkflows, dispatchWorkflow, ApiError } from './github';
+import type { Env, CommitOp } from './github';
 import { generateState, parseState, generateDeviceFingerprint, generateSessionToken } from './session';
 import {
   isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE, checkCsrf, authenticate,
@@ -266,6 +266,115 @@ export default {
         }
 
         await createBranch(authResult.githubToken, owner, repo, branchName, sourceBranch);
+        return addCorsHeaders(Response.json({ success: true }), origin, env);
+      }
+
+      // 批量提交（Git Data API，多文件变更合并为单 commit）
+      if (url.pathname === '/api/repos/commit' && request.method === 'POST') {
+        const authResult = await authenticate(request, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+
+        const data = safeJsonParse(await request.text());
+        const { owner, repo, branch = 'main', message, userName, ops } = data as {
+          owner?: string; repo?: string; branch?: string; message?: string; userName?: string; ops?: CommitOp[];
+        };
+
+        if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branch)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid owner, repo or branch' }, { status: 400 }), origin, env);
+        }
+        if (!message) {
+          return addCorsHeaders(Response.json({ error: 'Missing commit message' }, { status: 400 }), origin, env);
+        }
+        if (!Array.isArray(ops) || ops.length === 0 || ops.length > 200) {
+          return addCorsHeaders(Response.json({ error: 'ops 数量须在 1~200 之间' }, { status: 400 }), origin, env);
+        }
+        for (const op of ops) {
+          const source = op.fromPath;
+          if ((op.op !== 'write' && op.op !== 'move' && op.op !== 'delete') ||
+              !isSafePathParam(op.path, true) ||
+              (op.op === 'move' && (!source || !isSafePathParam(source, true)))) {
+            return addCorsHeaders(Response.json(
+              { error: `非法操作项: op=${op.op}, path=${op.path}${source ? `, from=${source}` : ''}` },
+              { status: 400 }
+            ), origin, env);
+          }
+          if (op.op === 'write') {
+            const len = typeof op.content === 'string' ? op.content.length : 0;
+            const b64len = typeof op.base64Content === 'string' ? op.base64Content.length : 0;
+            if (len === 0 && b64len === 0) {
+              return addCorsHeaders(Response.json(
+                { error: `写入操作缺少内容: ${op.path}` },
+                { status: 400 }
+              ), origin, env);
+            }
+            if (len + b64len > MAX_CONTENT_SIZE) {
+              return addCorsHeaders(Response.json({ error: `文件过大（单文件上限 10MB）: ${op.path}` }, { status: 400 }), origin, env);
+            }
+          }
+        }
+
+        let author: { name: string; email: string } | undefined;
+        if (userName && /^[a-zA-Z0-9_-]+$/.test(userName)) {
+          author = { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
+        }
+
+        const result = await batchCommit(authResult.githubToken, owner!, repo!, branch, message, ops, author);
+        return addCorsHeaders(Response.json({ success: true, data: result }), origin, env);
+      }
+
+      // 聚合提取 front-matter（列表页 N 次读取压缩为 1 次）
+      if (url.pathname === '/api/repos/extract' && request.method === 'POST') {
+        const authResult = await authenticate(request, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+
+        const data = safeJsonParse(await request.text());
+        const { owner, repo, branch = 'main', paths } = data as {
+          owner?: string; repo?: string; branch?: string; paths?: string[];
+        };
+
+        if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branch)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid owner, repo or branch' }, { status: 400 }), origin, env);
+        }
+        if (!Array.isArray(paths) || paths.length === 0 || paths.length > 100 ||
+            paths.some((p) => !isSafePathParam(p, true))) {
+          return addCorsHeaders(Response.json({ error: 'paths 须为 1~100 个合法路径' }, { status: 400 }), origin, env);
+        }
+
+        const result = await extractFrontMatters(authResult.githubToken, owner!, repo!, branch, paths);
+        return addCorsHeaders(Response.json({ success: true, data: result }), origin, env);
+      }
+
+      // 列出仓库可用 workflows（手动部署用）
+      if (url.pathname === '/api/repos/workflows' && request.method === 'GET') {
+        const authResult = await authenticate(request, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+
+        const owner = url.searchParams.get('owner');
+        const repo = url.searchParams.get('repo');
+        if (!isSafePathParam(owner) || !isSafePathParam(repo)) {
+          return addCorsHeaders(Response.json({ error: 'Invalid owner or repo' }, { status: 400 }), origin, env);
+        }
+
+        const workflows = await listWorkflows(authResult.githubToken, owner!, repo!);
+        return addCorsHeaders(Response.json({ success: true, data: workflows }), origin, env);
+      }
+
+      // 手动触发部署
+      if (url.pathname === '/api/repos/deploy' && request.method === 'POST') {
+        const authResult = await authenticate(request, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+
+        const data = safeJsonParse(await request.text());
+        const { owner, repo, workflowId, ref = 'main' } = data as {
+          owner?: string; repo?: string; workflowId?: number; ref?: string;
+        };
+
+        if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(ref) ||
+            typeof workflowId !== 'number') {
+          return addCorsHeaders(Response.json({ error: 'Invalid params' }, { status: 400 }), origin, env);
+        }
+
+        await dispatchWorkflow(authResult.githubToken, owner!, repo!, workflowId, ref);
         return addCorsHeaders(Response.json({ success: true }), origin, env);
       }
 

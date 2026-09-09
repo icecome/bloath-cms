@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
-import { moveFile, deleteFile } from '../lib/api';
+import { commitBatch } from '../lib/api';
+import { buildCommitMessage } from '../lib/deploySettings';
 import { scanMdFiles } from '../lib/scanner';
 import { useFileListPage } from '../hooks/useFileListPage';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { clearCache } from '../lib/fileCache';
-import { filterValidDirs } from '../lib/path';
+import { filterValidDirs, dedupeTargetPaths } from '../lib/path';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Pagination from '../components/ui/Pagination';
@@ -64,21 +65,15 @@ export default function TrashPage() {
 
   const handleRestore = async (file: EnhancedFileItem, targetDir: string) => {
     if (!selectedRepo || !user || !targetDir.trim()) return;
-    if (!file.sha) {
-      addToast({ message: '文件缺少 SHA，无法恢复', type: 'warning' });
-      return;
-    }
     setActionLoading(true);
     try {
       const newPath = `${targetDir.trim()}/${file.name}`;
-      await moveFile({
+      await commitBatch({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
-        fromPath: file.path,
-        toPath: newPath,
-        sha: file.sha,
         branch: selectedRepo.branch,
-        message: `恢复 ${file.name}`,
+        message: buildCommitMessage(`恢复 ${file.name}`),
+        ops: [{ op: 'move', fromPath: file.path, path: newPath }],
         userName: user?.login
       });
       addToast({ message: `已将 ${file.name} 移动到 ${targetDir}`, type: 'success' });
@@ -97,12 +92,12 @@ export default function TrashPage() {
     if (!selectedRepo || !user) return;
     setActionLoading(true);
     try {
-      await deleteFile({
+      await commitBatch({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
-        path: file.path,
-        sha: file.sha,
-        message: '[skip ci]',
+        branch: selectedRepo.branch,
+        message: buildCommitMessage(`永久删除 ${file.name}`, { skipCi: true }),
+        ops: [{ op: 'delete', path: file.path }],
         userName: user?.login
       });
       addToast({ message: `已永久删除 ${file.name}`, type: 'success' });
@@ -122,21 +117,20 @@ export default function TrashPage() {
     setProgress({ current: 0, total: 0 });
     try {
       const filesToRestore = files.filter((f) => selectedFiles.has(f.path));
-      setProgress({ current: 0, total: filesToRestore.length });
-      for (const [i, file] of filesToRestore.entries()) {
-        const newPath = `${restoreTarget.trim()}/${file.name}`;
-        await moveFile({
-          owner: selectedRepo.owner,
-          repo: selectedRepo.repo,
+      // 批量恢复合并为单 commit；同名文件去重目标名避免覆盖
+      const targets = dedupeTargetPaths(filesToRestore.map((file) => `${restoreTarget.trim()}/${file.name}`));
+      await commitBatch({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.repo,
+        branch: selectedRepo.branch,
+        message: buildCommitMessage(`恢复 ${filesToRestore.length} 个文件`),
+        ops: filesToRestore.map((file, i) => ({
+          op: 'move',
           fromPath: file.path,
-          toPath: newPath,
-          sha: file.sha,
-          branch: selectedRepo.branch,
-          message: `恢复 ${file.name}`,
-          userName: user?.login
-        });
-        setProgress({ current: i + 1, total: filesToRestore.length });
-      }
+          path: targets[i] ?? `${restoreTarget.trim()}/${file.name}`
+        })),
+        userName: user?.login
+      });
       addToast({ message: `已恢复 ${filesToRestore.length} 个文件`, type: 'success' });
       setSelectedFiles(new Set());
       setRestoreTarget(config.draftPath || '.draft');
@@ -157,31 +151,16 @@ export default function TrashPage() {
     setProgress({ current: 0, total: 0 });
     try {
       const filesToDelete = files.filter((f) => selectedFiles.has(f.path));
-      setProgress({ current: 0, total: filesToDelete.length });
-      let deletedCount = 0;
-      const errors: string[] = [];
-      for (const [i, file] of filesToDelete.entries()) {
-        try {
-          await deleteFile({
-            owner: selectedRepo.owner,
-            repo: selectedRepo.repo,
-            path: file.path,
-            sha: file.sha,
-            message: '[skip ci]',
-            userName: user?.login
-          });
-          deletedCount++;
-        } catch (err) {
-          errors.push(`${file.name}: ${(err as Error).message}`);
-        }
-        setProgress({ current: i + 1, total: filesToDelete.length });
-      }
-      if (deletedCount > 0) {
-        addToast({ message: `已永久删除 ${deletedCount} 个文件`, type: 'success' });
-      }
-      if (errors.length > 0) {
-        addToast({ message: `部分删除失败: ${errors.join('; ')}`, type: 'error' });
-      }
+      // 批量永久删除合并为单 commit
+      await commitBatch({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.repo,
+        branch: selectedRepo.branch,
+        message: buildCommitMessage(`永久删除 ${filesToDelete.length} 个文件`, { skipCi: true }),
+        ops: filesToDelete.map((file) => ({ op: 'delete', path: file.path })),
+        userName: user?.login
+      });
+      addToast({ message: `已永久删除 ${filesToDelete.length} 个文件`, type: 'success' });
       setSelectedFiles(new Set());
       setPermanentDeleteConfirm(false);
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);

@@ -11,6 +11,24 @@ export interface ResolvedMediaSource {
   missingHint?: string;
 }
 
+// 按媒体配置把仓库内路径解析为可访问 URL
+export function mediaCdnUrl(source: ResolvedMediaSource, config: MediaConfig, path: string): string {
+  const { cdnProvider, customCdnTemplate } = config;
+  const { owner, repo, branch } = source;
+  const encodedPath = encodeURIComponent(path).replace(/%2F/g, '/');
+  if (cdnProvider === 'custom') {
+    return customCdnTemplate
+      .split('{owner}').join(owner)
+      .split('{repo}').join(repo)
+      .split('{branch}').join(branch)
+      .split('{path}').join(encodedPath);
+  }
+  if (cdnProvider === 'jsdmirror') {
+    return `https://cdn.jsdmirror.cn/gh/${owner}/${repo}@${branch}/${encodedPath}`;
+  }
+  return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodedPath}`;
+}
+
 export function resolveMediaSource(
   config: MediaConfig,
   selectedRepo: SelectedRepo | null
