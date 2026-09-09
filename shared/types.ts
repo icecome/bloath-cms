@@ -32,7 +32,13 @@ export interface Collection {
 }
 
 // 字段分组（schema 驱动表单按组折叠展示）
-export type FieldGroup = 'basic' | 'advanced' | 'seo' | 'custom';
+export type FieldGroup = 'basic' | 'advanced' | 'special' | 'seo' | 'custom';
+
+// 字段条件显示：依赖另一字段值，不满足则隐藏（值保留）
+export interface ShowWhen {
+  field: string;
+  equals: boolean | string;
+}
 
 // 字段配置
 export interface FieldConfig {
@@ -47,6 +53,8 @@ export interface FieldConfig {
   description?: string;
   placeholder?: string;
   group?: FieldGroup;
+  /** 满足条件才显示；不满足时字段在前端隐藏但已存值保留 */
+  showWhen?: ShowWhen;
 }
 
 export interface User {

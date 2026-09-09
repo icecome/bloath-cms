@@ -50,26 +50,26 @@ function field(
 const slugField = (label = 'URL') => field('url', label, 'slug', 'basic', { placeholder: '留空则自动生成：日期-标题' });
 const titleField = () => field('title', '标题', 'string', 'basic', { placeholder: '文章标题' });
 const dateField = () => field('date', '日期', 'datetime', 'basic');
-const authorField = () => field('author', '作者', 'string', 'advanced', { placeholder: '作者名称' });
+const authorField = () => field('author', '作者', 'string', 'basic', { placeholder: '作者名称' });
 const categoriesField = () => field('categories', '分类', 'multiselect', 'basic', { placeholder: '输入分类后回车' });
 const tagsField = () => field('tags', '标签', 'multiselect', 'basic', { placeholder: '输入标签后回车' });
-const coverField = () => field('cover', '封面图', 'image', 'basic', { placeholder: '封面图 URL' });
+const coverField = () => field('cover', '封面图', 'image', 'advanced', { placeholder: '封面图 URL' });
 const weightField = () => field('weight', '权重', 'number', 'advanced', { placeholder: '数值越大越靠前' });
 const descriptionField = () => field('description', '描述', 'text', 'seo', { placeholder: 'SEO / 摘要描述' });
 const customFieldsField = () => field('customFields', '自定义字段', 'custom-fields', 'custom');
 
-const picturesField = () => field('pictures', '图片', 'image-list', 'advanced', { placeholder: '图片 URL' });
-const videoField = () => field('video', '视频', 'string-list', 'advanced', { placeholder: '视频 URL' });
+// ---------- 个人组件：Hugo 博客自研字段，按使用频率排序 ----------
+const picturesField = () => field('pictures', '说说图片', 'image-list', 'special', { placeholder: '图片 URL' });
+const videoField = () => field('video', '说说视频', 'string-list', 'special', { placeholder: '视频 URL' });
 const linkFields = () => [
-  field('link', '链接', 'url', 'seo', { placeholder: '链接 URL' }),
-  field('link_text', '链接文本', 'string', 'seo', { placeholder: '链接文本' })
+  field('link', '说说链接', 'url', 'special', { placeholder: '链接 URL' }),
+  field('link_text', '说说链接文本', 'string', 'special', { placeholder: '链接文本' })
 ];
-
 const encryptFields = () => [
-  field('encrypt', '加密', 'boolean', 'advanced'),
-  field('encryptPasswordKey', '密码键名', 'string', 'advanced', { placeholder: '例如 private' }),
-  field('encryptTitle', '加密标题', 'string', 'advanced', { placeholder: '需要密码访问' }),
-  field('encryptMessage', '加密消息', 'text', 'advanced', { placeholder: '请输入密码查看内容' })
+  field('encrypt', '加密', 'boolean', 'special'),
+  field('encryptPasswordKey', '密码键名', 'string', 'special', { placeholder: '例如 private', showWhen: { field: 'encrypt', equals: true } }),
+  field('encryptTitle', '加密标题', 'string', 'special', { placeholder: '需要密码访问', showWhen: { field: 'encrypt', equals: true } }),
+  field('encryptMessage', '加密消息', 'text', 'special', { placeholder: '请输入密码查看内容', showWhen: { field: 'encrypt', equals: true } })
 ];
 
 // ---------- 各框架预置 ----------
@@ -79,22 +79,26 @@ const hugoProfile: SiteProfile = {
   label: 'Hugo',
   format: 'yaml',
   fields: [
+    // 基础信息
     slugField(),
     titleField(),
     dateField(),
-    field('lastmod', '更新时间', 'datetime', 'advanced'),
-    field('publishDate', '定时发布', 'datetime', 'advanced'),
-    field('expiryDate', '过期时间', 'datetime', 'advanced'),
     authorField(),
     categoriesField(),
     tagsField(),
-    coverField(),
+    // 高级选项
     weightField(),
-    ...encryptFields(),
+    coverField(),
+    field('lastmod', '更新时间', 'datetime', 'advanced'),
+    field('publishDate', '定时发布', 'datetime', 'advanced'),
+    field('expiryDate', '过期时间', 'datetime', 'advanced'),
+    // 个人组件（按使用频率排序）
     picturesField(),
     videoField(),
-    descriptionField(),
     ...linkFields(),
+    ...encryptFields(),
+    // SEO / 自定义
+    descriptionField(),
     customFieldsField()
   ],
   urlField: 'url',

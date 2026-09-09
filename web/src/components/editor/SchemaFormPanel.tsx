@@ -15,16 +15,25 @@ interface SchemaFormPanelProps {
   profile: SiteProfile;
 }
 
-const GROUP_ORDER: FieldGroup[] = ['basic', 'advanced', 'seo', 'custom'];
+const GROUP_ORDER: FieldGroup[] = ['basic', 'advanced', 'special', 'seo', 'custom'];
 const GROUP_LABELS: Record<FieldGroup, string> = {
   basic: '基础信息',
   advanced: '高级选项',
+  special: '个人组件',
   seo: 'SEO',
   custom: '自定义'
 };
 
 // 禁止作为自定义字段键名的危险属性，防止原型链污染
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+// showWhen 不满足时字段隐藏（值保留），避免覆盖已存数据
+function isFieldVisible(fm: Frontmatter, field: FieldConfig): boolean {
+  const cond = field.showWhen;
+  if (!cond) return true;
+  const actual = (fm as Record<string, unknown>)[cond.field];
+  return actual === cond.equals;
+}
 
 function fieldHasValue(fm: Frontmatter, field: FieldConfig): boolean {
   const value = (fm as Record<string, unknown>)[field.name];
@@ -71,7 +80,7 @@ function toDatetimeInputValue(value: unknown): string {
 export default function SchemaFormPanel({ frontmatter, setFm, profile }: SchemaFormPanelProps) {
   // 初始折叠状态：基础组始终展开，其余组含有效值才展开
   const [openGroups, setOpenGroups] = useState<Record<FieldGroup, boolean>>(() => {
-    const state = { basic: true, advanced: false, seo: false, custom: false } as Record<FieldGroup, boolean>;
+    const state = { basic: true, advanced: false, special: false, seo: false, custom: false } as Record<FieldGroup, boolean>;
     for (const group of GROUP_ORDER) {
       if (group === 'basic') continue;
       if (profile.fields.some((f) => f.group === group && fieldHasValue(frontmatter, f))) {
@@ -113,7 +122,7 @@ export default function SchemaFormPanel({ frontmatter, setFm, profile }: SchemaF
             </button>
             {open && (
               <div className="space-y-4">
-                {fields.map((f) => (
+                {fields.filter((f) => isFieldVisible(frontmatter, f)).map((f) => (
                   <SchemaField key={f.name} field={f} frontmatter={frontmatter} setFm={setFm} />
                 ))}
               </div>
@@ -456,15 +465,15 @@ function ImageListField({
           placeholder={field.placeholder}
         />
         <button onClick={add} className="px-2 py-1 text-xs bg-foreground text-background rounded-sm hover:bg-foreground/90 transition-colors">添加</button>
-        <button
-          type="button"
-          onClick={() => setPickerOpen(true)}
-          className="px-2 py-1 text-xs text-primary border border-border rounded-sm hover:bg-accent transition-colors"
-          aria-label="从媒体库选择"
-        >
-          <ImageIcon className="w-3 h-3" />
-        </button>
       </div>
+      <button
+        type="button"
+        onClick={() => setPickerOpen(true)}
+        className="mt-1.5 text-xs text-primary hover:underline flex items-center gap-1"
+      >
+        <ImageIcon className="w-3 h-3" />
+        从媒体库选择
+      </button>
       <MediaPickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={onAdd} />
     </FieldShell>
   );

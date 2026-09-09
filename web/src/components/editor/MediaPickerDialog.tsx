@@ -4,6 +4,7 @@ import { useCollections } from '../../contexts/CollectionsContext';
 import { useRepo } from '../../contexts/RepoContext';
 import { useAuth } from '../../hooks/useAuth';
 import { getTree } from '../../lib/api';
+import { sortByLastModified } from '../../lib/sortFiles';
 import { resolveMediaSource, mediaCdnUrl } from '../../lib/resolveMediaSource';
 import { X, Loader2, AlertCircle } from 'lucide-react';
 
@@ -35,10 +36,11 @@ export default function MediaPickerDialog({ open, onClose, onPick }: MediaPicker
     getTree({ owner: source.owner, repo: source.repo, branch: source.branch, mode: 'filename' })
       .then((treeItems) => {
         if (cancelled) return;
-        const media = treeItems
+        const filtered = treeItems
           .filter((f) => (!source.pathPrefix || f.path.startsWith(source.pathPrefix + '/')) &&
-            /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name))
-          .map((f) => ({ path: f.path, url: mediaCdnUrl(source, mediaConfig, f.path) }));
+            /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name));
+        const sorted = sortByLastModified(filtered);
+        const media = sorted.map((f) => ({ path: f.path, url: mediaCdnUrl(source, mediaConfig, f.path) }));
         setItems(media);
       })
       .catch((err) => {
