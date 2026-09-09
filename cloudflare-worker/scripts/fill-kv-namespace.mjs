@@ -3,7 +3,8 @@
 // ID 来源优先级：环境变量 KV_NAMESPACE_ID > .dev.vars 中的 KV_NAMESPACE_ID
 // 用法（在 cloudflare-worker 目录）：
 //   KV_NAMESPACE_ID=xxx node scripts/fill-kv-namespace.mjs
-import { readFile, writeFile, existsSync } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
