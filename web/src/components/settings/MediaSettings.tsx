@@ -290,7 +290,7 @@ export function MediaSettings() {
           value={mediaConfig.renameTemplate}
           onChange={(e) => updateMediaConfig({ renameTemplate: e.target.value })}
           className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
-          placeholder="{Y}{m}{d}{h}{i}{s}{str-4}"
+          placeholder="{Y}{m}{d}{h}{i}{s}-{filename}-{str-8}-{str-5}"
         />
         <div className="mt-2 grid grid-cols-2 gap-1">
           {PLACEHOLDER_DOCS.map((item) => (

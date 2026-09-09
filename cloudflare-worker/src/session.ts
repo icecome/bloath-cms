@@ -1,20 +1,50 @@
-// Session 管理：加密、签名、设备指纹
+// Session 管理：加密、签名、设备指纹、设备名单（KV）
 import type { Env } from './github';
 
-// 生成设备指纹（基于 User-Agent 和 Accept-Language）
+// 会话有效期：普通设备 6 小时，受信任设备 7 天
+export const SESSION_DURATION_MS = 6 * 60 * 60 * 1000;
+export const TRUSTED_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+// KV 设备名单：7 天无活动自动清理
+export const DEVICE_INACTIVE_MS = 7 * 24 * 60 * 60 * 1000;
+const DEVICE_KEY_PREFIX = 'device:';
+
+// 从 UA 中提取稳定内核族标识（忽略浏览器小版本号/build，增强稳定性）
+function parseStableUa(ua: string): string {
+  const lower = ua.toLowerCase();
+  const brands = ['edg/', 'opr/', 'crios/', 'fxios/', 'firefox/', 'chrome/', 'safari/'];
+  for (const brand of brands) {
+    const idx = lower.indexOf(brand);
+    if (idx >= 0) {
+      const rest = lower.slice(idx + brand.length);
+      const major = rest.match(/^\d{1,3}/)?.[0] || '';
+      return `${brand}${major}`;
+    }
+  }
+  return ua.slice(0, 24);
+}
+
+// 生成设备指纹（内核族 + 语言，浏览器升级不再轻易变指纹）
 export async function generateDeviceFingerprint(request: Request): Promise<string> {
   const ua = request.headers.get('User-Agent') || '';
   const lang = request.headers.get('Accept-Language') || '';
-  const data = `${ua.slice(0, 50)}|${lang}`;
+  const data = `${parseStableUa(ua)}|${lang}`;
   const encoder = new TextEncoder();
   const hash = await crypto.subtle.digest('SHA-256', encoder.encode(data));
   return bytesToHex(new Uint8Array(hash).slice(0, 8));
 }
 
-// AES-GCM 加密生成 session token
-export async function generateSessionToken(githubToken: string, env: Env, deviceFingerprint?: string): Promise<string | Response> {
-  const expiresAt = Date.now() + 21600000; // 6 小时
-  const payload = JSON.stringify({ githubToken, expiresAt, deviceFingerprint });
+// AES-GCM 加密生成 session token（longLived=true 时有效期 7 天，否则 6 小时）
+export async function generateSessionToken(
+  githubToken: string,
+  env: Env,
+  deviceFingerprint?: string,
+  longLived = false
+): Promise<string | Response> {
+  const issuedAt = Date.now();
+  const duration = longLived ? TRUSTED_DURATION_MS : SESSION_DURATION_MS;
+  const expiresAt = issuedAt + duration;
+  const payload = JSON.stringify({ githubToken, expiresAt, deviceFingerprint, longLived, issuedAt });
 
   const secretKey = env.SESSION_SECRET;
   if (!secretKey) {
@@ -47,8 +77,20 @@ export async function generateSessionToken(githubToken: string, env: Env, device
   return btoa(String.fromCharCode(...combined));
 }
 
-// AES-GCM 解密验证 session token，返回验证结果和是否需要续期
-export async function validateSessionToken(sessionToken: string, env: Env, currentFingerprint?: string): Promise<{ githubToken: string; needsRenewal: boolean } | null> {
+// AES-GCM 解密验证 session token，返回验证结果、续期时长与设备信任标记
+export interface SessionPayload {
+  githubToken: string;
+  needsRenewal: boolean;
+  /** token 快照中的信任标记（最终以 KV 名单为准，见 middleware） */
+  longLived: boolean;
+  issuedAt: number;
+}
+
+export async function validateSessionToken(
+  sessionToken: string,
+  env: Env,
+  currentFingerprint?: string
+): Promise<SessionPayload | null> {
   try {
     const secretKey = env.SESSION_SECRET;
     if (!secretKey) return null;
@@ -85,6 +127,11 @@ export async function validateSessionToken(sessionToken: string, env: Env, curre
     const deviceFingerprint = typeof sessionPayload.deviceFingerprint === 'string'
       ? sessionPayload.deviceFingerprint
       : undefined;
+    // 向后兼容：旧 token 无 longLived/issuedAt 字段
+    const longLived = sessionPayload.longLived === true;
+    const issuedAt = typeof sessionPayload.issuedAt === 'number'
+      ? sessionPayload.issuedAt
+      : sessionPayload.expiresAt;
 
     if (Date.now() > sessionPayload.expiresAt) return null;
 
@@ -93,12 +140,57 @@ export async function validateSessionToken(sessionToken: string, env: Env, curre
     }
 
     const remaining = sessionPayload.expiresAt - Date.now();
-    const totalDuration = 21600000; // 6 小时
+    const totalDuration = longLived ? TRUSTED_DURATION_MS : SESSION_DURATION_MS;
     const needsRenewal = remaining < totalDuration / 2;
 
-    return { githubToken: sessionPayload.githubToken, needsRenewal };
+    return {
+      githubToken: sessionPayload.githubToken,
+      needsRenewal,
+      longLived,
+      issuedAt
+    };
   } catch {
     return null;
+  }
+}
+
+// ---------- KV 设备名单 ----------
+
+interface DeviceRecord {
+  trusted: boolean;
+  lastSeenAt: number;
+}
+
+// 读取设备记录；7 天无活动自动清理（视为新设备）
+export async function getDeviceRecord(
+  kv: KVNamespace,
+  fingerprint: string
+): Promise<DeviceRecord> {
+  try {
+    const raw = await kv.get(DEVICE_KEY_PREFIX + fingerprint);
+    if (!raw) return { trusted: false, lastSeenAt: 0 };
+    const parsed = JSON.parse(raw) as DeviceRecord;
+    if (Date.now() - (parsed.lastSeenAt || 0) > DEVICE_INACTIVE_MS) {
+      await kv.delete(DEVICE_KEY_PREFIX + fingerprint).catch(() => undefined);
+      return { trusted: false, lastSeenAt: 0 };
+    }
+    return { trusted: parsed.trusted === true, lastSeenAt: parsed.lastSeenAt || 0 };
+  } catch {
+    return { trusted: false, lastSeenAt: 0 };
+  }
+}
+
+// 写入/更新设备记录（登录、续期、勾选信任）
+export async function upsertDeviceRecord(
+  kv: KVNamespace,
+  fingerprint: string,
+  lastSeenAt: number,
+  trusted: boolean
+): Promise<void> {
+  try {
+    await kv.put(DEVICE_KEY_PREFIX + fingerprint, JSON.stringify({ trusted, lastSeenAt }));
+  } catch {
+    // 名单写入失败不影响主流程
   }
 }
 

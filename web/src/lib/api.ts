@@ -360,6 +360,27 @@ export async function logout(): Promise<void> {
   }, true);
 }
 
+export interface DeviceInfo {
+  /** 当前设备是否受信任（7 天续期） */
+  trusted: boolean;
+  /** 最近签发会话的时间戳 */
+  lastLoginAt: number;
+}
+
+/** 查询当前设备会话状态 */
+export async function getDeviceInfo(): Promise<DeviceInfo> {
+  return apiFetch<DeviceInfo>(`${API_BASE}/api/auth/device`);
+}
+
+/** 设置当前设备是否受信任（true=7 天续期，false=6 小时） */
+export async function setDeviceTrusted(trusted: boolean): Promise<void> {
+  await apiFetch<void>(`${API_BASE}/api/auth/device`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trusted })
+  }, true);
+}
+
 // ---------- 批量提交（Git Data API，多文件变更合并为单 commit） ----------
 
 /**

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, type CSSProperties } from 'react';
 import { useCollections } from '../contexts/CollectionsContext';
 import { useRepo } from '../contexts/RepoContext';
 import { useAuth } from '../hooks/useAuth';
@@ -316,15 +316,13 @@ export default function MediaPage() {
         ) : (
           <>
             <div
-              className="columns-3 column-gap-3 sm:grid sm:gap-3"
-              style={{
-                gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-              }}
+              className="media-grid"
+              style={{ '--pgrid': String(gridCols) } as CSSProperties}
             >
             {files.slice(0, currentPage * MEDIA_PAGE_SIZE).map((file) => (
             <div
               key={file.path}
-              className="group border border-border rounded-sm overflow-hidden hover:border-border transition-colors bg-card mb-3 sm:mb-0 break-inside-avoid"
+              className="group border border-border rounded-sm overflow-hidden hover:border-border transition-colors bg-card"
             >
                 <div
                   className="aspect-square bg-accent flex items-center justify-center cursor-pointer overflow-hidden"

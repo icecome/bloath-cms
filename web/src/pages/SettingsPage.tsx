@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth';
 import { Plus, Trash2, FileText, Image, Globe, UploadCloud } from 'lucide-react';
 import { MediaSettings } from '../components/settings/MediaSettings';
 import { SiteSettings } from '../components/settings/SiteSettings';
+import { DeviceSettings } from '../components/settings/DeviceSettings';
 import { pushRepoConfig } from '../lib/repoConfigSync';
 import { useToast } from '../contexts/ToastContext';
 
@@ -186,7 +187,12 @@ export default function SettingsPage() {
 
         {activeTab === 'media' && <MediaSettings />}
 
-        {activeTab === 'site' && <SiteSettings />}
+        {activeTab === 'site' && <>
+          <SiteSettings />
+          <div className="pt-4 border-t border-border">
+            <DeviceSettings />
+          </div>
+        </>}
       </div>
     </div>
   );

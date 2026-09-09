@@ -1,6 +1,9 @@
 // 中间件：CORS、安全头、认证、路径校验
 import type { Env } from './github';
-import { validateSessionToken, generateDeviceFingerprint, generateSessionToken } from './session';
+import {
+  validateSessionToken, generateDeviceFingerprint, generateSessionToken,
+  getDeviceRecord, upsertDeviceRecord, SESSION_DURATION_MS, TRUSTED_DURATION_MS
+} from './session';
 
 // 路径参数安全校验正则（白名单模式）
 const PATH_SAFE_PATTERN = /^[a-zA-Z0-9\u4e00-\u9fff._\-]+$/;
@@ -48,8 +51,19 @@ export function checkCsrf(request: Request): boolean {
   return request.headers.get('X-Requested-With') === 'XMLHttpRequest';
 }
 
-// 认证中间件 - 从 Cookie 读取 session token 并验证
-export async function authenticate(request: Request, env: Env): Promise<{ githubToken: string; needsRenewal: boolean } | Response> {
+export interface AuthResult {
+  githubToken: string;
+  needsRenewal: boolean;
+  /** 设备是否受信任（决定续期时长：7 天 / 6 小时） */
+  trusted: boolean;
+  /** token 快照的信任标记（兼容无 KV 场景） */
+  longLived: boolean;
+  issuedAt: number;
+  deviceFingerprint: string;
+}
+
+// 认证中间件 - 从 Cookie 读取并验证 session token；设备名单（KV）为准决定信任
+export async function authenticate(request: Request, env: Env): Promise<AuthResult | Response> {
   if (!checkCsrf(request)) {
     return Response.json({ error: 'CSRF validation failed' }, { status: 403 });
   }
@@ -64,7 +78,25 @@ export async function authenticate(request: Request, env: Env): Promise<{ github
   if (!result) {
     return Response.json({ error: 'Session expired' }, { status: 401 });
   }
-  return result;
+
+  // 设备信任：有 KV 名单则以 KV 为准（支持 7 天无活动自动清理）；否则降级用 token 快照
+  let trusted = result.longLived;
+  let lastSeenAt = result.issuedAt;
+  if (env.DEVICES_KV) {
+    const record = await getDeviceRecord(env.DEVICES_KV, currentFingerprint);
+    trusted = record.trusted;
+    lastSeenAt = record.lastSeenAt || result.issuedAt;
+    await upsertDeviceRecord(env.DEVICES_KV, currentFingerprint, Date.now(), trusted);
+  }
+
+  return {
+    githubToken: result.githubToken,
+    needsRenewal: result.needsRenewal,
+    trusted,
+    longLived: trusted,
+    issuedAt: lastSeenAt,
+    deviceFingerprint: currentFingerprint
+  };
 }
 
 // 构建 Set-Cookie 头的值
@@ -80,18 +112,19 @@ export function buildSessionCookie(token: string, maxAge: number, isSecure: bool
   return parts.join('; ');
 }
 
-// 辅助函数：为响应添加自动续期 Cookie
+// 辅助函数：为响应添加自动续期 Cookie（按设备信任决定时长）
 export async function addSessionRenewalCookie(
   response: Response,
-  authResult: { githubToken: string; needsRenewal: boolean },
+  authResult: AuthResult,
   env: Env,
-  isSecure: boolean,
-  deviceFingerprint?: string
+  isSecure: boolean
 ): Promise<Response> {
   if (authResult.needsRenewal) {
-    const newToken = await generateSessionToken(authResult.githubToken, env, deviceFingerprint);
+    const trusted = authResult.trusted;
+    const newToken = await generateSessionToken(authResult.githubToken, env, authResult.deviceFingerprint, trusted);
     if (typeof newToken === 'string') {
-      response.headers.set('Set-Cookie', buildSessionCookie(newToken, 21600, isSecure));
+      const maxAge = trusted ? TRUSTED_DURATION_MS / 1000 : SESSION_DURATION_MS / 1000;
+      response.headers.set('Set-Cookie', buildSessionCookie(newToken, maxAge, isSecure));
     }
   }
   return response;

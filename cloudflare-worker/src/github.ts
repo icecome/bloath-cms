@@ -14,6 +14,8 @@ export interface Env {
   ALLOWED_ORIGINS?: string;
   PROD_ORIGINS?: string;
   CONTENT_SECURITY_POLICY?: string;
+  /** 可选：设备名单 KV，未配置时退化为 token 内嵌的信任标记 */
+  DEVICES_KV?: KVNamespace;
 }
 
 // 自定义 API 错误类，携带 HTTP 状态码

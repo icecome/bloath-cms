@@ -26,7 +26,7 @@ const DEFAULT_MEDIA_CONFIG: MediaConfig = {
   cdnProvider: 'jsdmirror',
   customCdnTemplate: '',
   quality: 80,
-  renameTemplate: '{Y}{m}{d}{h}{i}{s}{str-4}',
+  renameTemplate: '{Y}{m}{d}{h}{i}{s}-{filename}-{str-8}-{str-5}',
   duplicateStrategy: 'skip'
 };
 

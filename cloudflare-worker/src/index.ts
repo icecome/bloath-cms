@@ -1,7 +1,7 @@
 // Cloudflare Worker 入口 - 路由分发
 import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches, getTree, createBranch, batchCommit, extractFrontMatters, listWorkflows, dispatchWorkflow, ApiError } from './github';
 import type { Env, CommitOp } from './github';
-import { generateState, parseState, generateDeviceFingerprint, generateSessionToken } from './session';
+import { generateState, parseState, generateDeviceFingerprint, generateSessionToken, getDeviceRecord, upsertDeviceRecord, SESSION_DURATION_MS, TRUSTED_DURATION_MS } from './session';
 import {
   isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE, checkCsrf, authenticate,
   buildSessionCookie, addSessionRenewalCookie, isAllowedFrontendUrl,
@@ -57,7 +57,14 @@ export default {
         const storedFrontendUrl = stateData.frontendUrl || frontendUrl;
         const accessToken = await exchangeCode(code, env.GITHUB_CLIENT_SECRET, env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
         const deviceFingerprint = await generateDeviceFingerprint(request);
-        const sessionTokenResult = await generateSessionToken(accessToken, env, deviceFingerprint);
+        // 设备名单：有 KV 则按名单决定是否信任（受信任设备 7 天，否则 6 小时）
+        let longLived = false;
+        if (env.DEVICES_KV) {
+          const record = await getDeviceRecord(env.DEVICES_KV, deviceFingerprint);
+          longLived = record.trusted;
+          await upsertDeviceRecord(env.DEVICES_KV, deviceFingerprint, Date.now(), longLived);
+        }
+        const sessionTokenResult = await generateSessionToken(accessToken, env, deviceFingerprint, longLived);
         if (sessionTokenResult instanceof Response) {
           return Response.redirect(`${frontendUrl}/login?error=server_error`, 302);
         }
@@ -66,7 +73,8 @@ export default {
           status: 302,
           headers: { 'Location': storedFrontendUrl + '/' }
         });
-        response.headers.set('Set-Cookie', buildSessionCookie(sessionTokenResult, 21600, isSecure));
+        const maxAge = longLived ? TRUSTED_DURATION_MS / 1000 : SESSION_DURATION_MS / 1000;
+        response.headers.set('Set-Cookie', buildSessionCookie(sessionTokenResult, maxAge, isSecure));
         return addSecurityHeaders(response, env);
       }
 
@@ -88,8 +96,37 @@ export default {
           success: true,
           user: { login: user.login, avatar_url: user.avatar_url, name: user.name }
         });
-        const deviceFingerprint = await generateDeviceFingerprint(request);
-        return addCorsHeaders(await addSessionRenewalCookie(response, authResult, env, isSecure, deviceFingerprint), origin, env);
+        return addCorsHeaders(await addSessionRenewalCookie(response, authResult, env, isSecure), origin, env);
+      }
+
+      // 设备名单：查询当前设备会话状态
+      if (url.pathname === '/api/auth/device' && request.method === 'GET') {
+        const authResult = await authenticate(request, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+        return addCorsHeaders(Response.json({
+          success: true,
+          data: { trusted: authResult.trusted, lastLoginAt: authResult.issuedAt }
+        }), origin, env);
+      }
+
+      // 设备名单：切换信任（true=7 天续期，false=6 小时），并即时换发对应时长 token
+      if (url.pathname === '/api/auth/device' && request.method === 'POST') {
+        const authResult = await authenticate(request, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+
+        const data = safeJsonParse(await request.text());
+        const trusted = data.trusted === true;
+        if (env.DEVICES_KV) {
+          await upsertDeviceRecord(env.DEVICES_KV, authResult.deviceFingerprint, Date.now(), trusted);
+        }
+        const newToken = await generateSessionToken(authResult.githubToken, env, authResult.deviceFingerprint, trusted);
+        if (typeof newToken !== 'string') {
+          return addCorsHeaders(Response.json({ success: false, error: '会话签发失败' }, { status: 500 }), origin, env);
+        }
+        const maxAge = trusted ? TRUSTED_DURATION_MS / 1000 : SESSION_DURATION_MS / 1000;
+        const resp = Response.json({ success: true, data: { trusted } });
+        resp.headers.set('Set-Cookie', buildSessionCookie(newToken, maxAge, isSecure));
+        return addCorsHeaders(resp, origin, env);
       }
 
       // === 仓库路由 ===

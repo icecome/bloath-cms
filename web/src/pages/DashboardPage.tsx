@@ -73,9 +73,9 @@ if (!currentDir) {
     // 后台刷新
     scanMdFiles(selectedRepo, currentDir)
       .then(files => {
-        sortByFrontMatterDate(files);
-        setCachedFiles(selectedRepo, currentDir, files);
-        setFiles(files);
+        const sorted = sortByFrontMatterDate(files);
+        setCachedFiles(selectedRepo, currentDir, sorted);
+        setFiles(sorted);
       })
       .catch((err) => {
         console.error('加载文件列表失败:', err);
