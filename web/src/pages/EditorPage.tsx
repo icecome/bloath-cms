@@ -4,7 +4,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useCollections } from '../contexts/CollectionsContext';
 import { readFile, writeFile, commitBatch, formatTimestamp, type CommitOp } from '../lib/api';
 import { buildCommitMessage } from '../lib/deploySettings';
-import { sanitizeSlug, sanitizePath, filterValidDirs } from '../lib/path';
+import { sanitizeSlug, sanitizePath, filterValidDirs, fileStemFromPath } from '../lib/path';
+import { resolvePathAndSlug } from '../lib/articleSlug';
 import VditorEditor from '../components/editor/VditorEditor';
 import SchemaFormPanel from '../components/editor/SchemaFormPanel';
 import { ArrowLeft, Save, Send, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
@@ -54,6 +55,8 @@ export default function EditorPage() {
   const [showMetadataPanel, setShowMetadataPanel] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  /** 加载时的原始 slug；用于清空表单时不误删已有 front-matter slug */
+  const initialSlugRef = useRef('');
 
   const basePath = useMemo(
     () => paramBasePath || (isNew ? (config.draftPath || '.draft') : (currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : '')),
@@ -107,8 +110,11 @@ export default function EditorPage() {
         setCurrentFilePath(filePath);
         setCurrentFileSha(sha || '');
         setHasLoadedOnce(true);
-        if (!normalized.url && relativePath) {
+        initialSlugRef.current = typeof normalized.url === 'string' ? normalized.url : '';
+        // 解耦模式（Hugo）：URL 不从文件名回填，避免中文文件名写入 slug
+        if (!normalized.url && relativePath && resolvedProfile.urlFilenameMode !== 'decoupled') {
           const urlFromPath = relativePath.replace(/\.md$/, '').split('/').pop() || '';
+          initialSlugRef.current = urlFromPath;
           setFrontmatter((prev) => ({ ...prev, url: urlFromPath }));
         }
         if (vditorInstanceRef.current) {
@@ -126,14 +132,11 @@ export default function EditorPage() {
     vditorInstanceRef.current = instance;
   }, []);
 
-  const getDraftPath = (targetSlug: string): string => {
-    if (currentFilePath) return currentFilePath;
-    return `${config.draftPath || '.draft'}/${targetSlug}.md`;
-  };
-
   const setFm = (key: keyof Frontmatter, value: unknown) => {
     setFrontmatter((prev) => ({ ...prev, [key]: value }));
   };
+
+  const isDecoupled = profile.urlFilenameMode === 'decoupled';
 
   const getDefaultSlug = (): string => {
     const title = frontmatter.title || '未命名';
@@ -141,17 +144,49 @@ export default function EditorPage() {
     return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${title.replace(/\s+/g, '-')}`;
   };
 
+  const applyResolvedSlug = (fm: Frontmatter, result: ReturnType<typeof resolvePathAndSlug>): Frontmatter => {
+    const next = { ...fm };
+    if (result.frontmatterUrl) {
+      next.url = result.frontmatterUrl;
+      initialSlugRef.current = result.frontmatterUrl;
+    } else if (isDecoupled && !isNew) {
+      delete next.url;
+    }
+    if (result.coreDropped) {
+      addToast({ message: '核心词需为 a-z0-9，已忽略无效字符', type: 'warning' });
+    }
+    return next;
+  };
+
+  const syncUrlState = (url: string | undefined) => {
+    if (url !== undefined) {
+      setFrontmatter((prev) => ({ ...prev, url }));
+    }
+  };
+
+  const getDraftPath = (targetSlug: string): string => {
+    if (currentFilePath) return currentFilePath;
+    return `${config.draftPath || '.draft'}/${targetSlug}.md`;
+  };
+
   const handleSave = async () => {
     if (!user) return;
 
-    const effectiveFm = { ...frontmatter };
-    if (isNew && !effectiveFm.url) {
-      effectiveFm.url = getDefaultSlug();
-      setFm('url', effectiveFm.url);
-    }
+    const rawFm = { ...frontmatter };
+    const resolved = resolvePathAndSlug({
+      fm: rawFm,
+      profile,
+      isNew,
+      currentFilePath,
+      routeSlug: slug,
+      initialSlug: initialSlugRef.current,
+      defaultCoupledSlug: getDefaultSlug
+    });
+    const effectiveFm = applyResolvedSlug(rawFm, resolved);
+
     let targetSlug: string;
     try {
-      targetSlug = sanitizeSlug(effectiveFm.url || slug);
+      targetSlug = sanitizeSlug(resolved.fileStem);
     } catch (err) {
       addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'warning' });
       return;
@@ -187,6 +222,7 @@ export default function EditorPage() {
         if (seq === saveSeqRef.current) {
           setCurrentFilePath(newPath);
           setCurrentFileSha('');
+          syncUrlState(effectiveFm.url);
           addToast({ message: '保存成功（文件名已更新）', type: 'success' });
           navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}${basePath ? `&basePath=${basePath}` : ''}`);
         }
@@ -205,8 +241,11 @@ export default function EditorPage() {
         });
 
         if (seq === saveSeqRef.current) {
+          syncUrlState(effectiveFm.url);
           if (isNew) {
-            navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}`);
+            const draftDir = config.draftPath || '.draft';
+            setCurrentFilePath(`${draftDir}/${targetSlug}.md`);
+            navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}&basePath=${encodeURIComponent(draftDir)}`);
           } else {
             const toastMsg = isContentLibraryArticle ? '保存成功（将触发重新部署）' : '草稿保存成功';
             addToast({ message: toastMsg, type: 'success' });
@@ -226,14 +265,21 @@ export default function EditorPage() {
   const handlePublish = async () => {
     if (!user || !owner || !repo) return;
 
-    const effectiveFm = { ...frontmatter };
-    if (!effectiveFm.url) {
-      effectiveFm.url = isNew ? getDefaultSlug() : slug;
-      setFm('url', effectiveFm.url);
-    }
+    const rawFm = { ...frontmatter };
+    const resolved = resolvePathAndSlug({
+      fm: rawFm,
+      profile,
+      isNew,
+      forceNew: true,
+      currentFilePath,
+      routeSlug: slug,
+      initialSlug: initialSlugRef.current,
+      defaultCoupledSlug: getDefaultSlug
+    });
+    const effectiveFm = applyResolvedSlug(rawFm, resolved);
     let targetSlug: string;
     try {
-      targetSlug = sanitizeSlug(effectiveFm.url);
+      targetSlug = sanitizeSlug(resolved.fileStem);
     } catch (err) {
       addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'warning' });
       return;
@@ -268,11 +314,12 @@ export default function EditorPage() {
         ops.push({ op: 'write', path: filePath, content: fullContent });
       }
       if (isDraftArticle && currentFileSha) {
+        const draftStem = currentFilePath ? fileStemFromPath(currentFilePath) : targetSlug;
         // 草稿已持久化到仓库：移入回收站与发布同 commit 生效
         ops.push({
           op: 'move',
-          fromPath: getDraftPath(targetSlug),
-          path: `${trashPath}/${targetSlug}.md`
+          fromPath: getDraftPath(draftStem),
+          path: `${trashPath}/${draftStem}.md`
         });
       }
 
@@ -298,12 +345,7 @@ export default function EditorPage() {
   const handleDeleteArticle = async () => {
     if (!user || !owner || !repo || !currentFilePath) return;
 
-    const effectiveFm = { ...frontmatter };
-    if (!effectiveFm.url) {
-      effectiveFm.url = slug;
-      setFm('url', effectiveFm.url);
-    }
-    const targetSlug = effectiveFm.url.replace('.md', '');
+    const targetSlug = fileStemFromPath(currentFilePath);
     const trashFile = `${trashPath}/${targetSlug}.md`;
 
     setSaving(true);

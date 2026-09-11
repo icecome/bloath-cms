@@ -18,14 +18,23 @@ export type ProfileId =
  */
 export type DraftStrategy = 'directory';
 
+/**
+ * URL 字段与文件名的关系：
+ * - coupled: URL 字段同时控制文件名（Hexo/Astro/Jekyll 等）
+ * - decoupled: URL 写入 front-matter slug，文件名由标题生成（Hugo 等）
+ */
+export type UrlFilenameMode = 'coupled' | 'decoupled';
+
 export interface SiteProfile {
   id: ProfileId;
   label: string;
   format: FrontmatterFormat;
   /** 表单 schema：按 group 分组渲染 */
   fields: FieldConfig[];
-  /** URL 控制字段语义（当前实现统一为「控制文件名」） */
+  /** URL 控制字段语义 */
   urlField: 'slug' | 'url' | 'permalink' | 'path';
+  /** URL 字段与文件名是否耦合 */
+  urlFilenameMode: UrlFilenameMode;
   /** 自定义字段挂载块：Hugo → params，Zola → extra，null → 平铺 */
   customFieldsWrapper?: 'params' | 'extra' | null;
   /** 分类法挂载块：Zola → taxonomies */
@@ -47,7 +56,8 @@ function field(
   return { name, label, type, group, ...extra };
 }
 
-const slugField = (label = 'URL') => field('url', label, 'slug', 'basic', { placeholder: '留空则自动生成：日期-标题' });
+const slugField = (label = 'URL', placeholder = '留空则自动生成：日期-标题') =>
+  field('url', label, 'slug', 'basic', { placeholder });
 const titleField = () => field('title', '标题', 'string', 'basic', { placeholder: '文章标题' });
 const dateField = () => field('date', '日期', 'datetime', 'basic');
 const authorField = () => field('author', '作者', 'string', 'basic', { placeholder: '作者名称' });
@@ -80,7 +90,7 @@ const hugoProfile: SiteProfile = {
   format: 'yaml',
   fields: [
     // 基础信息
-    slugField(),
+    slugField('Slug', '核心词仅限 a-z0-9；留空为 日期-时间，填写则为 日期-核心词'),
     titleField(),
     dateField(),
     authorField(),
@@ -102,6 +112,7 @@ const hugoProfile: SiteProfile = {
     customFieldsField()
   ],
   urlField: 'url',
+  urlFilenameMode: 'decoupled',
   customFieldsWrapper: 'params',
   taxonomyWrapper: null,
   draftStrategy: 'directory',
@@ -127,6 +138,7 @@ const hexoProfile: SiteProfile = {
     customFieldsField()
   ],
   urlField: 'permalink',
+  urlFilenameMode: 'coupled',
   customFieldsWrapper: null,
   taxonomyWrapper: null,
   draftStrategy: 'directory',
@@ -149,6 +161,7 @@ const astroProfile: SiteProfile = {
     customFieldsField()
   ],
   urlField: 'slug',
+  urlFilenameMode: 'coupled',
   customFieldsWrapper: null,
   taxonomyWrapper: null,
   draftStrategy: 'directory',
@@ -170,6 +183,7 @@ const jekyllProfile: SiteProfile = {
     customFieldsField()
   ],
   urlField: 'permalink',
+  urlFilenameMode: 'coupled',
   customFieldsWrapper: null,
   taxonomyWrapper: null,
   draftStrategy: 'directory',
@@ -192,6 +206,7 @@ const zolaProfile: SiteProfile = {
     customFieldsField()
   ],
   urlField: 'slug',
+  urlFilenameMode: 'coupled',
   customFieldsWrapper: 'extra',
   taxonomyWrapper: 'taxonomies',
   draftStrategy: 'directory',
@@ -210,6 +225,7 @@ const vitepressProfile: SiteProfile = {
     customFieldsField()
   ],
   urlField: 'slug',
+  urlFilenameMode: 'coupled',
   customFieldsWrapper: null,
   taxonomyWrapper: null,
   draftStrategy: 'directory',
@@ -233,6 +249,7 @@ const customProfile: SiteProfile = {
     customFieldsField()
   ],
   urlField: 'url',
+  urlFilenameMode: 'coupled',
   customFieldsWrapper: null,
   taxonomyWrapper: null,
   draftStrategy: 'directory',

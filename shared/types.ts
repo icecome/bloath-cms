@@ -121,7 +121,10 @@ export interface MediaConfig {
 }
 
 export interface ArticleFrontmatter {
+  /** 表单内 URL 字段：解耦模式下映射为 front-matter slug */
   url?: string;
+  /** Hugo 等框架的 front-matter slug（URL 最后一段） */
+  slug?: string;
   title?: string;
   date?: string;
   author?: string;

@@ -1,7 +1,7 @@
 import yaml from 'js-yaml';
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 import type { ArticleFrontmatter } from '../../../shared/types';
-import { FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } from '../../../shared/types';
+import { FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } from '../../../shared/types.ts';
 import type { FrontmatterFormat, SiteProfile } from '../../../shared/profiles';
 
 export type Frontmatter = ArticleFrontmatter;
@@ -13,6 +13,8 @@ export interface GenerateOptions {
   format?: FrontmatterFormat;
   customFieldsWrapper?: 'params' | 'extra' | null;
   taxonomyWrapper?: 'taxonomies' | null;
+  /** 解耦模式：表单 url → front-matter slug */
+  slugFromUrl?: boolean;
 }
 
 // TOML 输出时需要转为原生日期（不带引号的 TOML datetime）的键
@@ -20,6 +22,36 @@ const TOML_DATE_KEYS = new Set([
   'date', 'lastmod', 'publishDate', 'expiryDate',
   'updated', 'pubDate', 'updatedDate'
 ]);
+
+// 输出键序优先级：标题 → 时间 → 作者 → slug → 分类 → 标签 → 其它（保持相对顺序）
+// date 优先于其它时间字段；同优先级按原有相对顺序输出
+const FM_KEY_PRIORITY: Record<string, number> = {
+  title: 0,
+  date: 1,
+  lastmod: 2,
+  publishDate: 2,
+  expiryDate: 2,
+  updated: 2,
+  pubDate: 2,
+  updatedDate: 2,
+  author: 3,
+  slug: 4,
+  categories: 5,
+  tags: 6,
+  taxonomies: 5
+};
+const FM_OTHER_PRIORITY = 7;
+
+function sortFrontmatterKeys(obj: Record<string, unknown>): Record<string, unknown> {
+  const entries = Object.entries(obj);
+  // Array.prototype.sort 稳定：同优先级保持原有相对顺序
+  entries.sort(([a], [b]) => {
+    const pa = FM_KEY_PRIORITY[a] ?? FM_OTHER_PRIORITY;
+    const pb = FM_KEY_PRIORITY[b] ?? FM_OTHER_PRIORITY;
+    return pa - pb;
+  });
+  return Object.fromEntries(entries);
+}
 
 // 归一化：单值转数组（categories/tags/pictures/video 允许省略 [] 书写）
 function normalizeArrayFields(fm: Record<string, unknown>): void {
@@ -105,12 +137,20 @@ export function normalizeFmForProfile(fm: Frontmatter, profile: SiteProfile): Fr
     delete result[taxonomy];
   }
 
+  // 解耦模式：front-matter slug 映射到表单 url 字段，避免重复写出
+  if (profile.urlFilenameMode === 'decoupled' && result.slug != null) {
+    if (result.url == null || result.url === '') {
+      result.url = result.slug;
+    }
+    delete result.slug;
+  }
+
   normalizeArrayFields(result);
   return result as Frontmatter;
 }
 
 // 禁止作为自定义字段键名的危险属性，防止原型链污染
-const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype', 'url', 'customFields']);
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype', 'url', 'slug', 'customFields']);
 
 function cleanCustomFields(fm: Frontmatter): Record<string, unknown> {
   const raw = fm.customFields;
@@ -133,29 +173,36 @@ function toTomlValue(key: string, value: unknown): unknown {
 
 /**
  * 按 Profile 生成 front-matter 文本。
- * - url 仅用于控制文件名，不写入 front-matter（现状约定）
+ * - url 默认不写入 front-matter（仅控文件名的框架）
+ * - slugFromUrl：解耦模式下将表单 url 写成 front-matter slug
  * - customFields 按挂载规则放置：params / extra / 平铺（平铺时跳过与既有字段冲突的键）
  * - Zola：tags/categories 移入 [taxonomies]
+ * - 输出键序：标题 → 时间 → 作者 → slug → 分类 → 标签 → 其它（其余保持相对顺序）
  */
 export function generateFrontmatter(fm: Frontmatter, options: GenerateOptions = {}): string {
   const {
     format = 'yaml',
     customFieldsWrapper = null,
-    taxonomyWrapper = null
+    taxonomyWrapper = null,
+    slugFromUrl = false
   } = options;
 
   const clean: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fm)) {
-    if (key === 'url' || key === 'customFields') continue;
+    if (key === 'url' || key === 'slug' || key === 'customFields') continue;
     if (taxonomyWrapper && (key === 'tags' || key === 'categories')) continue;
     if (value !== undefined && value !== '' && value !== null) {
       clean[key] = format === 'toml' ? toTomlValue(key, value) : value;
     }
   }
 
+  if (slugFromUrl && typeof fm.url === 'string' && fm.url.trim()) {
+    clean.slug = fm.url.trim();
+  }
+
   if (taxonomyWrapper) {
     const tax: Record<string, unknown> = {};
-    for (const key of ['tags', 'categories'] as const) {
+    for (const key of ['categories', 'tags'] as const) {
       const value = fm[key];
       if (Array.isArray(value) && value.length > 0) {
         tax[key] = value;
@@ -186,11 +233,12 @@ export function generateFrontmatter(fm: Frontmatter, options: GenerateOptions = 
     return format === 'toml' ? '+++\n+++' : '---\n---';
   }
 
+  const ordered = sortFrontmatterKeys(clean);
   if (format === 'toml') {
-    const body = stringifyToml(clean);
+    const body = stringifyToml(ordered);
     return '+++\n' + body + (body.endsWith('\n') ? '' : '\n') + '+++';
   }
-  return '---\n' + yaml.dump(clean, { lineWidth: -1 }) + '---';
+  return '---\n' + yaml.dump(ordered, { lineWidth: -1 }) + '---';
 }
 
 /** 由 Profile 生成 generateFrontmatter 所需选项 */
@@ -198,6 +246,7 @@ export function generateOptionsFromProfile(profile: SiteProfile): GenerateOption
   return {
     format: profile.format,
     customFieldsWrapper: profile.customFieldsWrapper ?? null,
-    taxonomyWrapper: profile.taxonomyWrapper ?? null
+    taxonomyWrapper: profile.taxonomyWrapper ?? null,
+    slugFromUrl: profile.urlFilenameMode === 'decoupled'
   };
 }
