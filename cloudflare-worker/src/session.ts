@@ -159,6 +159,8 @@ export async function validateSessionToken(
 interface DeviceRecord {
   trusted: boolean;
   lastSeenAt: number;
+  /** UA 描述字符串（仅用于列表展示，非安全依赖） */
+  ua?: string;
 }
 
 // 读取设备记录；7 天无活动自动清理（视为新设备）
@@ -174,7 +176,11 @@ export async function getDeviceRecord(
       await kv.delete(DEVICE_KEY_PREFIX + fingerprint).catch(() => undefined);
       return { trusted: false, lastSeenAt: 0 };
     }
-    return { trusted: parsed.trusted === true, lastSeenAt: parsed.lastSeenAt || 0 };
+    return {
+      trusted: parsed.trusted === true,
+      lastSeenAt: parsed.lastSeenAt || 0,
+      ua: typeof parsed.ua === 'string' ? parsed.ua : undefined
+    };
   } catch {
     return { trusted: false, lastSeenAt: 0 };
   }
@@ -185,12 +191,55 @@ export async function upsertDeviceRecord(
   kv: KVNamespace,
   fingerprint: string,
   lastSeenAt: number,
-  trusted: boolean
+  trusted: boolean,
+  ua?: string
 ): Promise<void> {
   try {
-    await kv.put(DEVICE_KEY_PREFIX + fingerprint, JSON.stringify({ trusted, lastSeenAt }));
+    const record: DeviceRecord = { trusted, lastSeenAt };
+    if (ua) record.ua = ua;
+    await kv.put(DEVICE_KEY_PREFIX + fingerprint, JSON.stringify(record));
   } catch {
     // 名单写入失败不影响主流程
+  }
+}
+
+// 列出所有设备记录（含已过期未清理的，过滤后返回）
+export async function listDeviceRecords(kv: KVNamespace): Promise<Array<{ fingerprint: string } & DeviceRecord>> {
+  try {
+    const list = await kv.list({ prefix: DEVICE_KEY_PREFIX });
+    const results: Array<{ fingerprint: string } & DeviceRecord> = [];
+    for (const key of list.keys) {
+      if (!key.name.startsWith(DEVICE_KEY_PREFIX)) continue;
+      const fingerprint = key.name.slice(DEVICE_KEY_PREFIX.length);
+      const raw = await kv.get(key.name);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw) as DeviceRecord;
+        if (Date.now() - (parsed.lastSeenAt || 0) > DEVICE_INACTIVE_MS) continue;
+        results.push({
+          fingerprint,
+          trusted: parsed.trusted === true,
+          lastSeenAt: parsed.lastSeenAt || 0,
+          ua: typeof parsed.ua === 'string' ? parsed.ua : undefined
+        });
+      } catch { /* skip invalid */ }
+    }
+    return results.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+  } catch {
+    return [];
+  }
+}
+
+// 删除指定设备记录
+export async function deleteDeviceRecord(
+  kv: KVNamespace,
+  fingerprint: string
+): Promise<boolean> {
+  try {
+    await kv.delete(DEVICE_KEY_PREFIX + fingerprint);
+    return true;
+  } catch {
+    return false;
   }
 }
 

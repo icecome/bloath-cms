@@ -1,7 +1,11 @@
 // Cloudflare Worker 入口 - 路由分发
 import { exchangeCode, getUserInfo, getUserRepos, readFile, writeFile, deleteFile, listDir, getRepoBranches, getTree, createBranch, batchCommit, extractFrontMatters, listWorkflows, dispatchWorkflow, ApiError } from './github';
 import type { Env, CommitOp } from './github';
-import { generateState, parseState, generateDeviceFingerprint, generateSessionToken, getDeviceRecord, upsertDeviceRecord, SESSION_DURATION_MS, TRUSTED_DURATION_MS } from './session';
+import {
+  generateState, parseState, generateDeviceFingerprint, generateSessionToken,
+  getDeviceRecord, upsertDeviceRecord, listDeviceRecords, deleteDeviceRecord,
+  SESSION_DURATION_MS, TRUSTED_DURATION_MS
+} from './session';
 import {
   isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE, checkCsrf, authenticate,
   buildSessionCookie, addSessionRenewalCookie, isAllowedFrontendUrl,
@@ -62,7 +66,8 @@ export default {
         if (env.DEVICES_KV) {
           const record = await getDeviceRecord(env.DEVICES_KV, deviceFingerprint);
           longLived = record.trusted;
-          await upsertDeviceRecord(env.DEVICES_KV, deviceFingerprint, Date.now(), longLived);
+          const ua = request.headers.get('User-Agent') || '';
+          await upsertDeviceRecord(env.DEVICES_KV, deviceFingerprint, Date.now(), longLived, ua || undefined);
         }
         const sessionTokenResult = await generateSessionToken(accessToken, env, deviceFingerprint, longLived);
         if (sessionTokenResult instanceof Response) {
@@ -99,16 +104,6 @@ export default {
         return addCorsHeaders(await addSessionRenewalCookie(response, authResult, env, isSecure), origin, env);
       }
 
-      // 设备名单：查询当前设备会话状态
-      if (url.pathname === '/api/auth/device' && request.method === 'GET') {
-        const authResult = await authenticate(request, env);
-        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
-        return addCorsHeaders(Response.json({
-          success: true,
-          data: { trusted: authResult.trusted, lastLoginAt: authResult.issuedAt }
-        }), origin, env);
-      }
-
       // 设备名单：切换信任（true=7 天续期，false=6 小时），并即时换发对应时长 token
       if (url.pathname === '/api/auth/device' && request.method === 'POST') {
         const authResult = await authenticate(request, env);
@@ -117,7 +112,8 @@ export default {
         const data = safeJsonParse(await request.text());
         const trusted = data.trusted === true;
         if (env.DEVICES_KV) {
-          await upsertDeviceRecord(env.DEVICES_KV, authResult.deviceFingerprint, Date.now(), trusted);
+          const ua = request.headers.get('User-Agent') || '';
+          await upsertDeviceRecord(env.DEVICES_KV, authResult.deviceFingerprint, Date.now(), trusted, ua || undefined);
         }
         const newToken = await generateSessionToken(authResult.githubToken, env, authResult.deviceFingerprint, trusted);
         if (typeof newToken !== 'string') {
@@ -127,6 +123,49 @@ export default {
         const resp = Response.json({ success: true, data: { trusted } });
         resp.headers.set('Set-Cookie', buildSessionCookie(newToken, maxAge, isSecure));
         return addCorsHeaders(resp, origin, env);
+      }
+
+      // 设备名单：列出所有已登录设备
+      if (url.pathname === '/api/auth/devices' && request.method === 'GET') {
+        const authResult = await authenticate(request, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+        if (!env.DEVICES_KV) {
+          return addCorsHeaders(Response.json({ success: true, data: [] }), origin, env);
+        }
+        const devices = await listDeviceRecords(env.DEVICES_KV);
+        return addCorsHeaders(Response.json({
+          success: true,
+          data: devices.map(d => ({
+            fingerprint: d.fingerprint,
+            trusted: d.trusted,
+            lastLoginAt: d.lastSeenAt,
+            ua: d.ua || null,
+            isCurrent: d.fingerprint === authResult.deviceFingerprint
+          }))
+        }), origin, env);
+      }
+
+      // 设备名单：删除指定设备记录（降级为未信任；不吊销已签发的会话 token）
+      if (url.pathname.startsWith('/api/auth/devices/') && request.method === 'DELETE') {
+        const authResult = await authenticate(request, env);
+        if (authResult instanceof Response) return addCorsHeaders(authResult, origin, env);
+
+        const fingerprint = decodeURIComponent(url.pathname.slice('/api/auth/devices/'.length));
+        if (!fingerprint || !/^[a-f0-9]{16}$/i.test(fingerprint)) {
+          return addCorsHeaders(Response.json({ success: false, error: '无效的设备标识' }, { status: 400 }), origin, env);
+        }
+        // 不允许删除当前设备（应使用登出）
+        if (fingerprint === authResult.deviceFingerprint) {
+          return addCorsHeaders(Response.json({ success: false, error: '不能删除当前设备，请使用登出' }, { status: 400 }), origin, env);
+        }
+        if (!env.DEVICES_KV) {
+          return addCorsHeaders(Response.json({ success: false, error: '设备管理未启用' }, { status: 400 }), origin, env);
+        }
+        const ok = await deleteDeviceRecord(env.DEVICES_KV, fingerprint);
+        if (!ok) {
+          return addCorsHeaders(Response.json({ success: false, error: '删除失败' }, { status: 500 }), origin, env);
+        }
+        return addCorsHeaders(new Response(null, { status: 204 }), origin, env);
       }
 
       // === 仓库路由 ===
@@ -329,8 +368,8 @@ export default {
         for (const op of ops) {
           const source = op.fromPath;
           if ((op.op !== 'write' && op.op !== 'move' && op.op !== 'delete') ||
-              !isSafePathParam(op.path, true) ||
-              (op.op === 'move' && (!source || !isSafePathParam(source, true)))) {
+            !isSafePathParam(op.path, true) ||
+            (op.op === 'move' && (!source || !isSafePathParam(source, true)))) {
             return addCorsHeaders(Response.json(
               { error: `非法操作项: op=${op.op}, path=${op.path}${source ? `, from=${source}` : ''}` },
               { status: 400 }
@@ -374,7 +413,7 @@ export default {
           return addCorsHeaders(Response.json({ error: 'Invalid owner, repo or branch' }, { status: 400 }), origin, env);
         }
         if (!Array.isArray(paths) || paths.length === 0 || paths.length > 100 ||
-            paths.some((p) => !isSafePathParam(p, true))) {
+          paths.some((p) => !isSafePathParam(p, true))) {
           return addCorsHeaders(Response.json({ error: 'paths 须为 1~100 个合法路径' }, { status: 400 }), origin, env);
         }
 
@@ -408,7 +447,7 @@ export default {
         };
 
         if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(ref) ||
-            typeof workflowId !== 'number') {
+          typeof workflowId !== 'number') {
           return addCorsHeaders(Response.json({ error: 'Invalid params' }, { status: 400 }), origin, env);
         }
 

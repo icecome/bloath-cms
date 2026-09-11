@@ -86,7 +86,8 @@ export async function authenticate(request: Request, env: Env): Promise<AuthResu
     const record = await getDeviceRecord(env.DEVICES_KV, currentFingerprint);
     trusted = record.trusted;
     lastSeenAt = record.lastSeenAt || result.issuedAt;
-    await upsertDeviceRecord(env.DEVICES_KV, currentFingerprint, Date.now(), trusted);
+    const ua = request.headers.get('User-Agent') || '';
+    await upsertDeviceRecord(env.DEVICES_KV, currentFingerprint, Date.now(), trusted, ua || undefined);
   }
 
   return {

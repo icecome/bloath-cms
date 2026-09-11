@@ -360,16 +360,30 @@ export async function logout(): Promise<void> {
   }, true);
 }
 
-export interface DeviceInfo {
-  /** 当前设备是否受信任（7 天续期） */
+/** 设备列表条目 */
+export interface DeviceEntry {
+  /** 设备指纹（哈希） */
+  fingerprint: string;
+  /** 是否受信任 */
   trusted: boolean;
-  /** 最近签发会话的时间戳 */
+  /** 最近活跃时间戳 */
   lastLoginAt: number;
+  /** UA 描述字符串（可能为空） */
+  ua: string | null;
+  /** 是否为当前访问设备 */
+  isCurrent: boolean;
 }
 
-/** 查询当前设备会话状态 */
-export async function getDeviceInfo(): Promise<DeviceInfo> {
-  return apiFetch<DeviceInfo>(`${API_BASE}/api/auth/device`);
+/** 列出所有已登录设备 */
+export async function listDevices(): Promise<DeviceEntry[]> {
+  return apiFetch<DeviceEntry[]>(`${API_BASE}/api/auth/devices`);
+}
+
+/** 删除指定设备（撤销信任） */
+export async function deleteDevice(fingerprint: string): Promise<void> {
+  await apiFetch<void>(`${API_BASE}/api/auth/devices/${encodeURIComponent(fingerprint)}`, {
+    method: 'DELETE'
+  }, true);
 }
 
 /** 设置当前设备是否受信任（true=7 天续期，false=6 小时） */
