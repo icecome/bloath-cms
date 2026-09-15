@@ -1,8 +1,9 @@
-// 生成 wrangler.deploy.jsonc：把模板中的 ${KV_NAMESPACE_ID} 和 ${D1_DATABASE_ID} 替换为真实 ID。
+// 生成 wrangler.deploy.jsonc：把模板中的 ${KV_NAMESPACE_ID} 替换为真实 ID。
 // 原因：wrangler 4 对 kv_namespaces.id 不支持 ${ENV} 插值，故在部署前用脚本注入真实 ID。
+// D1 database_id 已直接写入 wrangler.jsonc（非敏感信息），无需占位符。
 // ID 来源优先级：环境变量 > .dev.vars
 // 用法（在 cloudflare-worker 目录）：
-//   KV_NAMESPACE_ID=xxx D1_DATABASE_ID=yyy node scripts/fill-kv-namespace.mjs
+//   KV_NAMESPACE_ID=xxx node scripts/fill-kv-namespace.mjs
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -44,12 +45,6 @@ if (!template.includes('${KV_NAMESPACE_ID}')) {
   process.exit(1);
 }
 template = template.replaceAll('${KV_NAMESPACE_ID}', kvNamespaceId);
-
-// D1 database_id 已直接写入 wrangler.jsonc（非敏感信息），无需占位符替换
-const d1DatabaseId = await resolveId('D1_DATABASE_ID');
-if (d1DatabaseId && template.includes('${D1_DATABASE_ID}')) {
-  template = template.replaceAll('${D1_DATABASE_ID}', d1DatabaseId);
-}
 
 await writeFile(outputPath, template);
 console.log(`[fill-kv-namespace] 已生成 ${outputPath}（KV Namespace ID 已注入）。`);
