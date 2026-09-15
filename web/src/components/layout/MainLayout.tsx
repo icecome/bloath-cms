@@ -21,7 +21,8 @@ import {
   Menu,
   X,
   Search,
-  Loader2
+  Loader2,
+  MessageSquare
 } from 'lucide-react';
 
 // 导航配置（模块级常量，SidebarContent 和 Header 面包屑共用）
@@ -30,6 +31,7 @@ const NAV_ITEM_LABELS: Record<string, string> = {
   '/drafts': '草稿箱',
   '/trash': '回收站',
   '/media': '媒体库',
+  '/messages': '留言管理',
   '/settings': '设置',
 };
 
@@ -122,6 +124,7 @@ function SidebarContent({
     { path: '/drafts', label: '草稿箱', icon: <FilePlus2 className="w-4 h-4" /> },
     { path: '/trash', label: '回收站', icon: <Trash2 className="w-4 h-4" /> },
     { path: '/media', label: '媒体库', icon: <ImageIcon className="w-4 h-4" /> },
+    { path: '/messages', label: '留言管理', icon: <MessageSquare className="w-4 h-4" /> },
     { path: '/settings', label: '设置', icon: <Settings className="w-4 h-4" /> },
   ];
 

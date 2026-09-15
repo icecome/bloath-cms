@@ -12,4 +12,18 @@
       "id": "${KV_NAMESPACE_ID}"
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bloath-db",
+      "database_id": "${D1_DATABASE_ID}",
+      "migrations_dir": "src/db/migrations"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "CORS_ORIGIN": "https://blog.icecome.com",
+    "INBOUND_REPLY_DOMAIN": "mail.icecome.com",
+    "RESEND_FROM": "noreply@icecome.com"
+  }
 }

@@ -1,4 +1,5 @@
-export const API_BASE = import.meta.env.VITE_API_URL || '/api';
+// VITE_API_URL 生产环境指向 Worker 域名；本地开发不设置，走 Vite 代理（/api → localhost:8787）
+export const API_BASE = import.meta.env.VITE_API_URL || '';
 export const PAGE_SIZE = 20;
 
 export const DEFAULT_MEDIA_PATH = 'assets';

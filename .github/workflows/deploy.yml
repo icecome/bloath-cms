@@ -56,10 +56,11 @@ jobs:
         run: |
           npx wrangler pages deploy web/dist --project-name=bloath-cms-web
 
-      - name: 注入 KV Namespace 配置
+      - name: 注入 KV / D1 配置
         working-directory: cloudflare-worker
         env:
           KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
+          D1_DATABASE_ID: ${{ secrets.BLOATH_D1_DATABASE_ID }}
         run: node scripts/fill-kv-namespace.mjs
 
       - name: Deploy to Cloudflare Workers
@@ -78,6 +79,11 @@ jobs:
           SESSION_SECRET: ${{ secrets.BLOATH_SESSION_SECRET }}
           FRONTEND_URL: ${{ secrets.BLOATH_FRONTEND_URL }}
           PROD_ORIGINS: ${{ secrets.BLOATH_PROD_ORIGINS }}
+          RESEND_API_KEY: ${{ secrets.BLOATH_RESEND_API_KEY }}
+          RESEND_WEBHOOK_SECRET: ${{ secrets.BLOATH_RESEND_WEBHOOK_SECRET }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.BLOATH_TURNSTILE_SECRET_KEY }}
+          BLOGGER_EMAIL: ${{ secrets.BLOATH_BLOGGER_EMAIL }}
+          VECTREL_TOKEN: ${{ secrets.BLOATH_VECTREL_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         run: |
@@ -87,6 +93,11 @@ jobs:
           printf '%s' "$SESSION_SECRET" | npx wrangler secret put SESSION_SECRET --config wrangler.deploy.jsonc
           printf '%s' "$FRONTEND_URL" | npx wrangler secret put FRONTEND_URL --config wrangler.deploy.jsonc
           printf '%s' "$PROD_ORIGINS" | npx wrangler secret put PROD_ORIGINS --config wrangler.deploy.jsonc
+          printf '%s' "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY --config wrangler.deploy.jsonc
+          printf '%s' "$RESEND_WEBHOOK_SECRET" | npx wrangler secret put RESEND_WEBHOOK_SECRET --config wrangler.deploy.jsonc
+          printf '%s' "$TURNSTILE_SECRET_KEY" | npx wrangler secret put TURNSTILE_SECRET_KEY --config wrangler.deploy.jsonc
+          printf '%s' "$BLOGGER_EMAIL" | npx wrangler secret put BLOGGER_EMAIL --config wrangler.deploy.jsonc
+          printf '%s' "$VECTREL_TOKEN" | npx wrangler secret put VECTREL_TOKEN --config wrangler.deploy.jsonc
 
       - name: Verify Secrets
         working-directory: cloudflare-worker

@@ -11,6 +11,7 @@ import DashboardPage from './pages/DashboardPage';
 import DraftsPage from './pages/DraftsPage';
 import TrashPage from './pages/TrashPage';
 import MediaPage from './pages/MediaPage';
+import MessagesPage from './pages/MessagesPage';
 import SettingsPage from './pages/SettingsPage';
 import ToastContainer from './components/ui/ToastContainer';
 import './styles/globals.css';
@@ -69,6 +70,7 @@ export default function App() {
                   </Suspense>
                 } />
                 <Route path="media" element={<MediaPage />} />
+                <Route path="messages" element={<MessagesPage />} />
                 <Route path="settings" element={<SettingsPage />} />
               </Route>
             </Routes>

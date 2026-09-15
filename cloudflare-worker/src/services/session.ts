@@ -1,5 +1,5 @@
 // Session 管理：加密、签名、设备指纹、设备名单（KV）
-import type { Env } from './github';
+import type { Env } from '../env';
 
 // 会话有效期：普通设备 6 小时，受信任设备 7 天
 export const SESSION_DURATION_MS = 6 * 60 * 60 * 1000;
