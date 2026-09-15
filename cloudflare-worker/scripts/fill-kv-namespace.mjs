@@ -27,22 +27,12 @@ async function resolveId(envKey) {
 }
 
 const kvNamespaceId = await resolveId('KV_NAMESPACE_ID');
-const d1DatabaseId = await resolveId('D1_DATABASE_ID');
 
 if (!kvNamespaceId) {
   console.error(
     '[fill-kv-namespace] 缺少 KV_NAMESPACE_ID，无法注入 KV 绑定。\n' +
     '  CI 部署：把其 ID 设为 GitHub Secret KV_NAMESPACE_ID；\n' +
     '  本地：在 cloudflare-worker/.dev.vars 写 KV_NAMESPACE_ID=xxx。'
-  );
-  process.exit(1);
-}
-
-if (!d1DatabaseId) {
-  console.error(
-    '[fill-kv-namespace] 缺少 D1_DATABASE_ID，无法注入 D1 绑定。\n' +
-    '  CI 部署：把其 ID 设为 GitHub Secret BLOATH_D1_DATABASE_ID；\n' +
-    '  本地：在 cloudflare-worker/.dev.vars 写 D1_DATABASE_ID=xxx。'
   );
   process.exit(1);
 }
@@ -55,11 +45,11 @@ if (!template.includes('${KV_NAMESPACE_ID}')) {
 }
 template = template.replaceAll('${KV_NAMESPACE_ID}', kvNamespaceId);
 
-if (!template.includes('${D1_DATABASE_ID}')) {
-  console.error('[fill-kv-namespace] 模板 wrangler.jsonc 中未找到占位符 ${D1_DATABASE_ID}');
-  process.exit(1);
+// D1 database_id 已直接写入 wrangler.jsonc（非敏感信息），无需占位符替换
+const d1DatabaseId = await resolveId('D1_DATABASE_ID');
+if (d1DatabaseId && template.includes('${D1_DATABASE_ID}')) {
+  template = template.replaceAll('${D1_DATABASE_ID}', d1DatabaseId);
 }
-template = template.replaceAll('${D1_DATABASE_ID}', d1DatabaseId);
 
 await writeFile(outputPath, template);
-console.log(`[fill-kv-namespace] 已生成 ${outputPath}（KV Namespace ID + D1 Database ID 已注入）。`);
+console.log(`[fill-kv-namespace] 已生成 ${outputPath}（KV Namespace ID 已注入）。`);

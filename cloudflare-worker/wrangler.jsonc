@@ -16,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "bloath-db",
-      "database_id": "${D1_DATABASE_ID}",
+      "database_id": "a6379ed3-b052-440a-bb83-98bbad218077",
       "migrations_dir": "src/db/migrations"
     }
   ],
