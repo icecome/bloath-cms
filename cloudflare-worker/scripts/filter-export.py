@@ -1,7 +1,10 @@
 import re
 import os
 
-with open(r'C:\opt\workstations\project\apps\Bloath\cloudflare-worker\export.sql', 'r', encoding='utf-8') as f:
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+WORKER_DIR = os.path.dirname(SCRIPT_DIR)
+
+with open(os.path.join(WORKER_DIR, 'export.sql'), 'r', encoding='utf-8') as f:
     lines = f.readlines()
 
 filtered = []
@@ -15,7 +18,7 @@ for l in lines:
             continue
     filtered.append(l)
 
-outdir = r'C:\opt\workstations\project\apps\Bloath\cloudflare-worker\data_split'
+outdir = os.path.join(WORKER_DIR, 'data_split')
 os.makedirs(outdir, exist_ok=True)
 
 by_table = {}
