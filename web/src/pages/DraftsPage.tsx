@@ -24,10 +24,16 @@ import {
   Pencil
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useBuffer } from '../contexts/BufferContext';
+import { discardBufferPaths, readBufferFile } from '../lib/bufferApi';
+import { buildEditUrl } from '../lib/navigation';
+import { FilePen } from 'lucide-react';
 
 export default function DraftsPage() {
   const { user } = useAuth();
   const { selectedRepo } = useRepo();
+  const { config: bufferConfig, changes: bufferChanges, refreshChanges } = useBuffer();
+  const bufferEnabled = bufferConfig?.enabled === true;
   const { config } = useCollections();
   const navigate = useNavigate();
   const { addToast } = useToast();
@@ -66,10 +72,14 @@ export default function DraftsPage() {
   const handleEdit = (file: EnhancedFileItem) => {
     if (!selectedRepo) return;
     const relative = file.path.replace(draftPath + '/', '');
-    const slug = relative.replace('.md', '');
-    navigate(
-      `/editor/${slug}?owner=${selectedRepo.owner}&repo=${selectedRepo.repo}&branch=${selectedRepo.branch}&basePath=${draftPath}&returnTo=drafts`
-    );
+    navigate(buildEditUrl({
+      owner: selectedRepo.owner,
+      repo: selectedRepo.repo,
+      branch: selectedRepo.branch,
+      basePath: draftPath,
+      filePath: relative,
+      returnTo: 'drafts',
+    }));
   };
 
   const handleNew = () => {
@@ -93,11 +103,27 @@ export default function DraftsPage() {
       const filesToMove = files.filter((f) => selectedFiles.has(f.path));
       // 批量发布合并为单 commit：原子生效，CI 至多触发一次
       const targets = dedupeTargetPaths(filesToMove.map((file) => `${safeTarget}/${file.name}`));
-      const ops: CommitOp[] = filesToMove.map((file, i) => ({
-        op: 'move',
-        fromPath: file.path,
-        path: targets[i] ?? `${safeTarget}/${file.name}`
+      const bufferedWrites = new Set(
+        bufferChanges.filter((c) => c.op === 'write').map((c) => c.path)
+      );
+      // 有缓冲 write 的草稿：用缓冲内容发布，避免 GitHub 旧内容覆盖未发布编辑
+      const opGroups = await Promise.all(filesToMove.map(async (file, i) => {
+        const target = targets[i] ?? `${safeTarget}/${file.name}`;
+        if (bufferEnabled && bufferedWrites.has(file.path)) {
+          const { content } = await readBufferFile({
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            branch: selectedRepo.branch,
+            path: file.path,
+          });
+          return [
+            { op: 'write' as const, path: target, content },
+            { op: 'delete' as const, path: file.path },
+          ] satisfies CommitOp[];
+        }
+        return [{ op: 'move' as const, fromPath: file.path, path: target }] satisfies CommitOp[];
       }));
+      const ops: CommitOp[] = opGroups.flat();
       const names = filesToMove.map((f) => f.name).slice(0, 3).join(', ');
       await commitBatch({
         owner: selectedRepo.owner,
@@ -110,6 +136,16 @@ export default function DraftsPage() {
         userName: user?.login
       });
       addToast({ message: `成功发布 ${filesToMove.length} 篇草稿`, type: 'success' });
+      // 草稿箱直发布后同步清理对应缓冲，避免残留旧内容被下次统一发布覆盖
+      if (bufferEnabled) {
+        await discardBufferPaths({
+          owner: selectedRepo.owner,
+          repo: selectedRepo.repo,
+          branch: selectedRepo.branch,
+          paths: filesToMove.map((f) => f.path),
+        }).catch(() => undefined);
+        await refreshChanges();
+      }
       setSelectedFiles(new Set());
       setPublishTarget('');
       setShowPublishDropdown(false);
@@ -317,6 +353,52 @@ export default function DraftsPage() {
               className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
             />
           </div>
+
+          {/* 缓冲合并视图：草稿路径下的缓冲变更带「未发布」角标 */}
+          {bufferEnabled && bufferChanges.length > 0 && (() => {
+            const draftBufferItems = bufferChanges.filter(
+              (c) => c.path.startsWith(draftPath + '/') && c.op === 'write'
+            );
+            if (draftBufferItems.length === 0) return null;
+            return (
+              <div className="mt-3 border border-border rounded-sm bg-accent/40">
+                <div className="px-3 py-2 border-b border-border-subtle flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                  <FilePen className="w-3 h-3" />
+                  缓冲中的草稿（{draftBufferItems.length} 篇，未发布到仓库）
+                </div>
+                <div className="divide-y divide-border-subtle">
+                  {draftBufferItems.map((item) => {
+                    const name = item.path.split('/').pop() || item.path;
+                    const relative = item.path.replace(draftPath + '/', '');
+                    return (
+                      <button
+                        key={item.path}
+                        type="button"
+                        onClick={() => {
+                          if (!selectedRepo) return;
+                          navigate(buildEditUrl({
+                            owner: selectedRepo.owner,
+                            repo: selectedRepo.repo,
+                            branch: selectedRepo.branch,
+                            basePath: draftPath,
+                            filePath: relative,
+                            returnTo: 'drafts',
+                          }));
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-accent transition-colors"
+                      >
+                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 rounded-sm flex-shrink-0">未发布</span>
+                        <span className="text-sm text-foreground truncate flex-1">{name}</span>
+                        <span className="text-[10px] text-muted-foreground flex-shrink-0">
+                          {new Date(item.savedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {selectedFiles.size > 0 && (
             <div className="mt-3 flex items-center gap-2 flex-wrap">

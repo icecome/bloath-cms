@@ -1,6 +1,5 @@
-import fm from 'front-matter';
 import { readFile, extractBatch } from './api';
-import { parseFrontmatterBody, FRONTMATTER_TOML_REGEX } from './frontmatter';
+import { parseFrontmatterBody, FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } from './frontmatter';
 import type { ArticleFrontmatter, RepoInfo } from '../../../shared/types';
 
 /**
@@ -104,20 +103,13 @@ async function readSingleFrontmatter(
       branch: repoInfo.branch || 'main',
     }, options.timeoutMs);
 
-    // YAML 场景沿用 front-matter 库解析；TOML 交给 frontmatter.ts
+    // 与主路径共用 frontmatter.ts 解析，消除双 YAML 解析器差异
     const tomlMatch = content.match(FRONTMATTER_TOML_REGEX);
     if (tomlMatch) {
       return applyExtracted(file, tomlMatch[1] ?? '', 'toml');
     }
-
-    const header = content.slice(0, 8192);
-    const result = fm<ArticleFrontmatter>(header);
-    const attributes = result.attributes || {};
-    return {
-      ...file,
-      frontmatter: attributes,
-      sortDate: parseDateToTimestamp(attributes.date),
-    };
+    const yamlMatch = content.match(FRONTMATTER_YAML_REGEX);
+    return applyExtracted(file, yamlMatch?.[1] ?? '', 'yaml');
   } catch (err) {
     console.error(`[extractFrontMatter] 读取 ${file.name} 失败:`, err);
     if (retries < options.maxRetries) {

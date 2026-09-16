@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useCollections } from '../contexts/CollectionsContext';
 import { useRepo } from '../contexts/RepoContext';
 import { useAuth } from '../hooks/useAuth';
-import { Plus, Trash2, FileText, Image, Globe, UploadCloud } from 'lucide-react';
+import { Plus, Trash2, FileText, Image, Globe, UploadCloud, HardDrive } from 'lucide-react';
 import { MediaSettings } from '../components/settings/MediaSettings';
 import { SiteSettings } from '../components/settings/SiteSettings';
 import { DeviceSettings } from '../components/settings/DeviceSettings';
+import { BufferSettings } from '../components/settings/BufferSettings';
 import { pushRepoConfig } from '../lib/repoConfigSync';
 import { useToast } from '../contexts/ToastContext';
 
@@ -74,7 +75,7 @@ function RepoSyncSection() {
 export default function SettingsPage() {
   const { config, addPath, removePath } = useCollections();
   const [newPath, setNewPath] = useState('');
-  const [activeTab, setActiveTab] = useState<'content' | 'media' | 'site'>('content');
+  const [activeTab, setActiveTab] = useState<'content' | 'media' | 'site' | 'buffer'>('content');
 
   const handleAddPath = () => {
     if (newPath.trim()) {
@@ -128,6 +129,18 @@ export default function SettingsPage() {
         >
           <Globe className="w-3.5 h-3.5" />
           站点与部署
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('buffer')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-sm transition-colors ${
+            activeTab === 'buffer'
+              ? 'bg-foreground text-white'
+              : 'text-muted-foreground hover:bg-accent'
+          }`}
+        >
+          <HardDrive className="w-3.5 h-3.5" />
+          缓冲层
         </button>
       </div>
 
@@ -193,6 +206,8 @@ export default function SettingsPage() {
             <DeviceSettings />
           </div>
         </>}
+
+        {activeTab === 'buffer' && <BufferSettings />}
       </div>
     </div>
   );

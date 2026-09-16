@@ -9,6 +9,7 @@ import reposRoutes from './routes/repos';
 import messagesRoutes from './routes/messages';
 import adminRoutes from './routes/admin';
 import inboundRoutes from './routes/inbound';
+import bufferRoutes from './routes/buffer';
 import { isAllowedFrontendUrl } from './middleware/auth';
 
 const app = new Hono<HonoEnv>();
@@ -17,8 +18,16 @@ const app = new Hono<HonoEnv>();
 app.use('*', requestLog);
 app.use('*', corsMiddleware);
 
-// 管理面禁缓存
+// 管理面与缓冲层禁缓存: 响应被边缘缓存会让匿名请求命中登录态结果
+app.use('/admin/api/*', async (c, next) => {
+  await next();
+  c.header('Cache-Control', 'no-store');
+});
 app.use('/api/admin/*', async (c, next) => {
+  await next();
+  c.header('Cache-Control', 'no-store');
+});
+app.use('/api/buffer/*', async (c, next) => {
   await next();
   c.header('Cache-Control', 'no-store');
 });
@@ -44,6 +53,7 @@ app.route('/', reposRoutes);
 app.route('/', messagesRoutes);
 app.route('/', adminRoutes);
 app.route('/', inboundRoutes);
+app.route('/', bufferRoutes);
 
 // 非 API 请求：重定向到前端
 app.all('*', (c) => {

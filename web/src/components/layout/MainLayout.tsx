@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { detectFrameworks, type DetectedRepo } from '../../lib/detectFramework';
 import { pullRepoConfig } from '../../lib/repoConfigSync';
 import { filterValidDirs } from '../../lib/path';
+import { PublishButton } from './PublishButton';
 import {
   FilePlus2,
   Settings,
@@ -149,6 +150,8 @@ function SidebarContent({
           <span>新建文章</span>
         </button>
       </div>
+
+      <PublishButton />
 
       <div className="px-4 pb-2">
         <div className="relative">

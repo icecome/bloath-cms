@@ -15,6 +15,12 @@ export class GithubApiError extends Error {
   }
 }
 
+/** 构造 commit author；userName 非法时返回 undefined（沿用 token 默认身份） */
+export function buildCommitAuthor(userName?: string): { name: string; email: string } | undefined {
+  if (!userName || !/^[a-zA-Z0-9_-]+$/.test(userName)) return undefined;
+  return { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
+}
+
 // 统一 GitHub API 错误处理：解析响应体并抛�?GithubApiError
 // GitHub 403 通常来自速率限制（无 PAT 时每小时 60 次），用 503 向上传播而非 403（避免前端误判为认证过期�?
 async function throwGithubError(response: Response, context: string): Promise<never> {

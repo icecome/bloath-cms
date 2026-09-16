@@ -1,4 +1,6 @@
 // 统一环境变量类型（Bloath 编辑器 + 留言模块）
+import type { AuthResult } from './middleware/auth';
+
 export interface Env {
   // === Bloath 编辑器（GitHub）===
   GITHUB_CLIENT_ID: string;
@@ -27,4 +29,4 @@ export interface Env {
   INBOUND_REPLY_DOMAIN: string;
 }
 
-export type HonoEnv = { Bindings: Env; Variables: { auth: unknown } };
+export type HonoEnv = { Bindings: Env; Variables: { auth: AuthResult } };

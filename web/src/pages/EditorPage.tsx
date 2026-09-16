@@ -2,13 +2,13 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams, useMatch } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useCollections } from '../contexts/CollectionsContext';
-import { readFile, writeFile, commitBatch, formatTimestamp, type CommitOp } from '../lib/api';
+import { readFile, writeFile, commitBatch, formatTimestamp } from '../lib/api';
 import { buildCommitMessage } from '../lib/deploySettings';
-import { sanitizeSlug, sanitizePath, filterValidDirs, fileStemFromPath } from '../lib/path';
+import { sanitizeSlug, filterValidDirs, fileStemFromPath } from '../lib/path';
 import { resolvePathAndSlug } from '../lib/articleSlug';
 import VditorEditor from '../components/editor/VditorEditor';
 import SchemaFormPanel from '../components/editor/SchemaFormPanel';
-import { ArrowLeft, Save, Send, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import Vditor from 'vditor';
 import {
   parseFrontmatter, generateFrontmatter, normalizeFmForProfile, generateOptionsFromProfile,
@@ -17,6 +17,8 @@ import {
 import { getProfileForRepo } from '../lib/profileService';
 import { getProfile, type SiteProfile } from '../../../shared/profiles';
 import { useToast } from '../contexts/ToastContext';
+import { useBuffer } from '../contexts/BufferContext';
+import { writeBufferFile, readBufferFile } from '../lib/bufferApi';
 
 export default function EditorPage() {
   const match = useMatch('/editor/*');
@@ -25,6 +27,8 @@ export default function EditorPage() {
   const { user } = useAuth();
   const { config } = useCollections();
   const { addToast } = useToast();
+  const { config: bufferConfig, refreshChanges, configLoading: bufferConfigLoading } = useBuffer();
+  const bufferEnabled = bufferConfig?.enabled === true;
   const navigate = useNavigate();
   const vditorInstanceRef = useRef<Vditor | null>(null);
   const saveSeqRef = useRef(0);
@@ -36,11 +40,9 @@ export default function EditorPage() {
   const paramFilePath = searchParams.get('filePath');
   const returnTo = searchParams.get('returnTo') || '';
 
-  const isNew = slug === 'new' && !slug.includes('.');
+  const isNew = slug === 'new';
   const trashPath = config.trashPath || '.trash';
 
-  const [publishTarget, setPublishTarget] = useState('');
-  const [showPublishDialog, setShowPublishDialog] = useState(false);
   const availableDirs = filterValidDirs(config.paths || []);
 
   const [frontmatter, setFrontmatter] = useState<Frontmatter>({});
@@ -62,12 +64,6 @@ export default function EditorPage() {
     () => paramBasePath || (isNew ? (config.draftPath || '.draft') : (currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : '')),
     [paramBasePath, isNew, config.draftPath, currentFilePath]
   );
-
-  const defaultPublishTarget = currentFilePath
-    ? currentFilePath.split('/').slice(0, -1).join('/')
-    : '';
-
-  const isDraftArticle = returnTo === 'drafts';
 
   const handleBack = () => {
     if (returnTo === 'drafts') {
@@ -92,6 +88,8 @@ export default function EditorPage() {
 
   useEffect(() => {
     if (isNew || !user || !basePath || hasLoadedOnce) return;
+    // 缓冲配置未就绪时不读文件，避免先走 GitHub 后被 hasLoadedOnce 锁死
+    if (bufferConfigLoading) return;
     const relativePath = paramFilePath || slug;
     if (!relativePath) return;
 
@@ -99,7 +97,12 @@ export default function EditorPage() {
     setError('');
     const filePath = `${basePath}/${relativePath}.md`;
 
-    readFile({ owner, repo, path: filePath, branch })
+    // 缓冲启用时优先读缓冲（miss 自动回退 GitHub）
+    const loadFile = bufferEnabled
+      ? readBufferFile({ owner, repo, branch, path: filePath }).then((r) => ({ content: r.content, sha: r.sha }))
+      : readFile({ owner, repo, path: filePath, branch });
+
+    loadFile
       .then(async ({ content: fileContent, sha }) => {
         const { fm, body } = parseFrontmatter(fileContent);
         const resolvedProfile = await getProfileForRepo(owner, repo, branch);
@@ -126,7 +129,7 @@ export default function EditorPage() {
         setError(err.message || '加载失败');
       })
       .finally(() => setLoading(false));
-  }, [isNew, slug, user, basePath, owner, repo, branch, hasLoadedOnce]);
+  }, [isNew, slug, user, basePath, owner, repo, branch, hasLoadedOnce, bufferEnabled, bufferConfigLoading]);
 
   const handleVditorReady = useCallback((instance: Vditor) => {
     vditorInstanceRef.current = instance;
@@ -164,11 +167,6 @@ export default function EditorPage() {
     }
   };
 
-  const getDraftPath = (targetSlug: string): string => {
-    if (currentFilePath) return currentFilePath;
-    return `${config.draftPath || '.draft'}/${targetSlug}.md`;
-  };
-
   const handleSave = async () => {
     if (!user) return;
 
@@ -204,6 +202,34 @@ export default function EditorPage() {
       const saveBasePath = currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : '';
       const newPath = saveBasePath ? `${saveBasePath}/${targetSlug}.md` : `${config.draftPath || '.draft'}/${targetSlug}.md`;
       const urlChanged = !isNew && !!currentFilePath && newPath !== currentFilePath;
+
+      if (bufferEnabled) {
+        // 缓冲模式：写 S3，零 commit
+        if (urlChanged) {
+          await writeBufferFile({ owner, repo, branch, path: newPath, op: 'write', content: fullContent, baseSha: currentFileSha || undefined });
+          await writeBufferFile({ owner, repo, branch, path: currentFilePath, op: 'delete' });
+          if (seq === saveSeqRef.current) {
+            setCurrentFilePath(newPath);
+            setCurrentFileSha('');
+            syncUrlState(effectiveFm.url);
+            addToast({ message: '已存入缓冲（文件名已更新）', type: 'success' });
+            navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}${basePath ? `&basePath=${basePath}` : ''}`);
+          }
+        } else {
+          await writeBufferFile({ owner, repo, branch, path: targetPath, op: 'write', content: fullContent, baseSha: currentFileSha || undefined });
+          if (seq === saveSeqRef.current) {
+            syncUrlState(effectiveFm.url);
+            if (isNew) {
+              const draftDir = config.draftPath || '.draft';
+              setCurrentFilePath(`${draftDir}/${targetSlug}.md`);
+              navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}&basePath=${encodeURIComponent(draftDir)}`);
+            }
+            addToast({ message: '已存入缓冲', type: 'success' });
+          }
+        }
+        await refreshChanges();
+        return;
+      }
 
       if (urlChanged) {
         const oldPath = currentFilePath;
@@ -262,86 +288,6 @@ export default function EditorPage() {
     }
   };
 
-  const handlePublish = async () => {
-    if (!user || !owner || !repo) return;
-
-    const rawFm = { ...frontmatter };
-    const resolved = resolvePathAndSlug({
-      fm: rawFm,
-      profile,
-      isNew,
-      forceNew: true,
-      currentFilePath,
-      routeSlug: slug,
-      initialSlug: initialSlugRef.current,
-      defaultCoupledSlug: getDefaultSlug
-    });
-    const effectiveFm = applyResolvedSlug(rawFm, resolved);
-    let targetSlug: string;
-    try {
-      targetSlug = sanitizeSlug(resolved.fileStem);
-    } catch (err) {
-      addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'warning' });
-      return;
-    }
-    const editorContent = bodyContent || vditorInstanceRef.current?.getValue();
-
-    let resolvedTarget: string;
-    try {
-      resolvedTarget = sanitizePath(publishTarget || defaultPublishTarget);
-    } catch (err) {
-      addToast({ message: `发布目标校验失败: ${(err as Error).message}`, type: 'warning' });
-      return;
-    }
-    if (!resolvedTarget) {
-      addToast({ message: '请选择发布目标目录', type: 'warning' });
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const filePath = `${resolvedTarget}/${targetSlug}.md`;
-      const fullContent = `${generateFrontmatter(effectiveFm, generateOptionsFromProfile(profile))}\n\n${editorContent}`;
-      const timestamp = formatTimestamp();
-
-      const isContentLibraryAlreadyPublished = !isDraftArticle &&
-        currentFilePath &&
-        resolvedTarget === currentFilePath.split('/').slice(0, -1).join('/');
-
-      // 发布写入 + 草稿清理合并为单个 commit：原子生效，CI 至多触发一次
-      const ops: CommitOp[] = [];
-      if (!isContentLibraryAlreadyPublished) {
-        ops.push({ op: 'write', path: filePath, content: fullContent });
-      }
-      if (isDraftArticle && currentFileSha) {
-        const draftStem = currentFilePath ? fileStemFromPath(currentFilePath) : targetSlug;
-        // 草稿已持久化到仓库：移入回收站与发布同 commit 生效
-        ops.push({
-          op: 'move',
-          fromPath: getDraftPath(draftStem),
-          path: `${trashPath}/${draftStem}.md`
-        });
-      }
-
-      if (ops.length > 0) {
-        await commitBatch({
-          owner, repo, branch,
-          message: buildCommitMessage(`${targetSlug}.md-${timestamp}`),
-          ops, userName: user?.login
-        });
-      }
-
-      addToast({ message: '发布成功', type: 'success' });
-      setPublishTarget('');
-      handleBack();
-    } catch (err) {
-      console.error('Failed to publish:', err);
-      addToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleDeleteArticle = async () => {
     if (!user || !owner || !repo || !currentFilePath) return;
 
@@ -350,6 +296,13 @@ export default function EditorPage() {
 
     setSaving(true);
     try {
+      if (bufferEnabled) {
+        await writeBufferFile({ owner, repo, branch, path: trashFile, op: 'move', fromPath: currentFilePath });
+        addToast({ message: '已存入缓冲（移至回收站）', type: 'success' });
+        await refreshChanges();
+        handleBack();
+        return;
+      }
       await commitBatch({
         owner, repo, branch,
         message: buildCommitMessage(`移至回收站: ${targetSlug}`, { skipCi: true }),
@@ -453,16 +406,6 @@ export default function EditorPage() {
           >
             <Settings2 className="w-4 h-4" />
           </button>
-          {isNew || isDraftArticle ? (
-            <button
-              onClick={() => setShowPublishDialog(true)}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-green-500 text-white rounded-sm hover:bg-green-600 disabled:opacity-50 transition-colors"
-            >
-              <Send className="w-4 h-4" />
-              <span className="hidden md:inline">{saving ? '发布中...' : '发布'}</span>
-            </button>
-          ) : null}
           <button
             onClick={handleSave}
             disabled={saving}
@@ -500,50 +443,6 @@ export default function EditorPage() {
                         className="px-3 py-1.5 text-sm text-white bg-red-600 hover:bg-red-700 rounded-sm transition-colors disabled:opacity-40"
                       >
                         {saving ? '处理中...' : '确认删除'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {showPublishDialog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true" onClick={() => setShowPublishDialog(false)}>
-                  <div className="bg-white rounded-md shadow-sm p-4 w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-sm font-medium text-foreground mb-3">发布到目标目录</h3>
-                    <div className="space-y-1.5 mb-3">
-                      {availableDirs.map((dir) => (
-                        <button
-                          key={dir}
-                          onClick={() => setPublishTarget(dir)}
-                          className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-secondary transition-colors ${
-                            publishTarget === dir ? 'text-foreground font-medium' : 'text-muted-foreground'
-                          }`}
-                        >
-                          {publishTarget === dir && <span className="text-green-500">✓</span>}
-                          <span className="truncate">{dir}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <input
-                      type="text"
-                      value={publishTarget}
-                      onChange={(e) => setPublishTarget(e.target.value)}
-                      placeholder="或输入自定义路径"
-                      className="w-full px-2.5 py-1.5 text-xs border border-border bg-white text-foreground placeholder:text-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-3 transition-colors"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => setShowPublishDialog(false)}
-                        disabled={saving}
-                        className="px-3 py-1.5 text-sm border border-border text-muted-foreground hover:bg-secondary rounded-sm transition-colors disabled:opacity-40"
-                      >
-                        取消
-                      </button>
-                      <button
-                        onClick={() => { setShowPublishDialog(false); handlePublish(); }}
-                        disabled={!publishTarget.trim() || saving}
-                        className="px-3 py-1.5 text-sm text-white bg-green-500 hover:bg-green-600 rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {saving ? '发布中...' : '确认发布'}
                       </button>
                     </div>
                   </div>

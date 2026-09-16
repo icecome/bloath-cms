@@ -1,5 +1,6 @@
 // Session 管理：加密、签名、设备指纹、设备名单（KV）
 import type { Env } from '../env';
+import { openWithSecret, sealWithSecret } from './crypto.service';
 
 // 会话有效期：普通设备 6 小时，受信任设备 7 天
 export const SESSION_DURATION_MS = 6 * 60 * 60 * 1000;
@@ -51,30 +52,7 @@ export async function generateSessionToken(
     return Response.json({ error: 'Server configuration error' }, { status: 500 });
   }
 
-  const encoder = new TextEncoder();
-  const keyBytes = await crypto.subtle.digest('SHA-256', encoder.encode(secretKey));
-  const key = await crypto.subtle.importKey(
-    'raw',
-    keyBytes,
-    { name: 'AES-GCM' },
-    false,
-    ['encrypt']
-  );
-
-  const iv = new Uint8Array(12);
-  crypto.getRandomValues(iv);
-
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    encoder.encode(payload)
-  );
-
-  const combined = new Uint8Array(iv.length + encrypted.byteLength);
-  combined.set(iv, 0);
-  combined.set(new Uint8Array(encrypted), iv.length);
-
-  return btoa(String.fromCharCode(...combined));
+  return sealWithSecret(secretKey, payload);
 }
 
 // AES-GCM 解密验证 session token，返回验证结果、续期时长与设备信任标记
@@ -95,29 +73,8 @@ export async function validateSessionToken(
     const secretKey = env.SESSION_SECRET;
     if (!secretKey) return null;
 
-    const combined = Uint8Array.from(atob(sessionToken), c => c.charCodeAt(0));
-    if (combined.length < 12) return null;
-
-    const iv = combined.slice(0, 12);
-    const ciphertext = combined.slice(12);
-
-    const encoder = new TextEncoder();
-    const keyBytes = await crypto.subtle.digest('SHA-256', encoder.encode(secretKey));
-    const key = await crypto.subtle.importKey(
-      'raw',
-      keyBytes,
-      { name: 'AES-GCM' },
-      false,
-      ['decrypt']
-    );
-
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      ciphertext
-    );
-
-    const payload = JSON.parse(new TextDecoder().decode(decrypted)) as unknown;
+    const payloadJson = await openWithSecret(secretKey, sessionToken);
+    const payload = JSON.parse(payloadJson) as unknown;
     if (typeof payload !== 'object' || payload === null) return null;
 
     const sessionPayload = payload as Record<string, unknown>;

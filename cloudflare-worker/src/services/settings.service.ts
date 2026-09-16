@@ -7,14 +7,29 @@ export interface BlogPushSetting {
 const BLOG_PUSH_KEY = 'blog_push';
 const DEFAULT_SETTING: BlogPushSetting = { enabled: true, channelIds: [], emailEnabled: false };
 
+export async function getSettingRaw(db: D1Database, key: string): Promise<string | null> {
+  const row = await db
+    .prepare('SELECT value FROM app_settings WHERE key = ?')
+    .bind(key)
+    .first<{ value: string }>();
+  return row?.value ?? null;
+}
+
+export async function saveSettingRaw(db: D1Database, key: string, value: string): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+    )
+    .bind(key, value)
+    .run();
+}
+
 export async function getBlogPushSetting(db: D1Database): Promise<BlogPushSetting> {
   try {
-    const row = await db
-      .prepare('SELECT value FROM app_settings WHERE key = ?')
-      .bind(BLOG_PUSH_KEY)
-      .first<{ value: string }>();
-    if (!row) return { ...DEFAULT_SETTING };
-    const parsed = JSON.parse(row.value) as Partial<BlogPushSetting>;
+    const value = await getSettingRaw(db, BLOG_PUSH_KEY);
+    if (!value) return { ...DEFAULT_SETTING };
+    const parsed = JSON.parse(value) as Partial<BlogPushSetting>;
     return {
       enabled: parsed.enabled !== false,
       channelIds: Array.isArray(parsed.channelIds)
@@ -28,11 +43,5 @@ export async function getBlogPushSetting(db: D1Database): Promise<BlogPushSettin
 }
 
 export async function saveBlogPushSetting(db: D1Database, setting: BlogPushSetting): Promise<void> {
-  await db
-    .prepare(
-      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
-    )
-    .bind(BLOG_PUSH_KEY, JSON.stringify(setting))
-    .run();
+  await saveSettingRaw(db, BLOG_PUSH_KEY, JSON.stringify(setting));
 }

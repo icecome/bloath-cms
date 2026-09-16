@@ -37,6 +37,11 @@ jobs:
           cd web
           npx tsc --noEmit
 
+      - name: Test web
+        run: |
+          cd web
+          npm test
+
       - name: Type check worker
         run: |
           cd cloudflare-worker

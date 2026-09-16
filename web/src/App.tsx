@@ -5,6 +5,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { CollectionsProvider } from './contexts/CollectionsContext';
 import { RepoProvider } from './contexts/RepoContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { BufferProvider } from './contexts/BufferContext';
 import LoginPage from './pages/LoginPage';
 import MainLayout from './components/layout/MainLayout';
 import DashboardPage from './pages/DashboardPage';
@@ -52,6 +53,7 @@ export default function App() {
     <ToastProvider>
       <AuthProvider>
         <RepoProvider>
+          <BufferProvider>
           <CollectionsProvider>
             <ToastContainer />
             <Routes>
@@ -75,6 +77,7 @@ export default function App() {
               </Route>
             </Routes>
           </CollectionsProvider>
+          </BufferProvider>
         </RepoProvider>
       </AuthProvider>
     </ToastProvider>

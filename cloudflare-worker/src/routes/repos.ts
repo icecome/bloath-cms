@@ -4,26 +4,26 @@ import type { HonoEnv } from '../env';
 import {
   getUserRepos, readFile, writeFile, deleteFile, listDir,
   getRepoBranches, getTree, createBranch, batchCommit, extractFrontMatters,
-  listWorkflows, dispatchWorkflow, GithubApiError,
+  listWorkflows, dispatchWorkflow, buildCommitAuthor,
 } from '../services/github';
 import type { CommitOp } from '../services/github';
-import { isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE, authenticate } from '../middleware/auth';
-import type { AuthResult } from '../middleware/auth';
+import { requireAuth, isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE, type AuthResult } from '../middleware/auth';
 
 const reposApp = new Hono<HonoEnv>();
+reposApp.use('/api/repos/*', requireAuth);
+
+function auth(c: Context<HonoEnv>): AuthResult {
+  return c.get('auth') as AuthResult;
+}
 
 // GET /api/repos
 reposApp.get('/api/repos', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
-  const repos = await getUserRepos(authResult.githubToken);
+  const repos = await getUserRepos(auth(c).githubToken);
   return c.json({ success: true, data: repos.filter((repo) => repo.name !== '.github') });
 });
 
 // GET /api/repos/files
 reposApp.get('/api/repos/files', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const owner = c.req.query('owner');
   const repo = c.req.query('repo');
   const path = c.req.query('path') || '';
@@ -31,14 +31,12 @@ reposApp.get('/api/repos/files', async (c: Context<HonoEnv>) => {
   if (!isSafePathParam(owner) || !isSafePathParam(repo)) return c.json({ error: 'Invalid owner or repo' }, 400);
   if (path && !isSafePathParam(path, true)) return c.json({ error: 'Invalid path' }, 400);
   if (!isSafePathParam(branch)) return c.json({ error: 'Invalid branch' }, 400);
-  const files = await listDir(authResult.githubToken, owner, repo, path, branch);
+  const files = await listDir(auth(c).githubToken, owner, repo, path, branch);
   return c.json({ success: true, data: files });
 });
 
 // GET /api/repos/file
 reposApp.get('/api/repos/file', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const owner = c.req.query('owner');
   const repo = c.req.query('repo');
   const filePath = c.req.query('path');
@@ -46,14 +44,12 @@ reposApp.get('/api/repos/file', async (c: Context<HonoEnv>) => {
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath) return c.json({ error: 'Missing required params' }, 400);
   if (!isSafePathParam(filePath, true)) return c.json({ error: 'Invalid path' }, 400);
   if (!isSafePathParam(branch)) return c.json({ error: 'Invalid branch' }, 400);
-  const file = await readFile(authResult.githubToken, owner, repo, filePath, branch);
+  const file = await readFile(auth(c).githubToken, owner, repo, filePath, branch);
   return c.json({ success: true, data: file });
 });
 
 // PUT /api/repos/file
 reposApp.put('/api/repos/file', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const data = safeJsonParse(await c.req.raw.text());
   const { owner, repo, path: filePath, content, base64Content, message, sha, branch = 'main', userName } = data as {
     owner?: string; repo?: string; path?: string; content?: string; base64Content?: string;
@@ -63,32 +59,26 @@ reposApp.put('/api/repos/file', async (c: Context<HonoEnv>) => {
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath || !fileContent) return c.json({ error: 'Missing required fields' }, 400);
   if (typeof fileContent === 'string' && fileContent.length > MAX_CONTENT_SIZE) return c.json({ error: 'File too large (max 10MB encoded)' }, 400);
   if (!isSafePathParam(filePath, true) || !isSafePathParam(branch)) return c.json({ error: 'Invalid path or branch' }, 400);
-  let author: { name: string; email: string } | undefined;
-  if (userName && /^[a-zA-Z0-9_-]+$/.test(userName)) author = { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
-  await writeFile(authResult.githubToken, owner, repo, filePath, fileContent, message || 'update file', sha, branch, author, !!base64Content);
+  const author = buildCommitAuthor(userName);
+  await writeFile(auth(c).githubToken, owner, repo, filePath, fileContent, message || 'update file', sha, branch, author, !!base64Content);
   return c.json({ success: true, data: { path: filePath } });
 });
 
 // DELETE /api/repos/file
 reposApp.delete('/api/repos/file', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const data = safeJsonParse(await c.req.raw.text());
   const { owner, repo, path: filePath, sha, message, branch = 'main', userName } = data as {
     owner?: string; repo?: string; path?: string; sha?: string; message?: string; branch?: string; userName?: string;
   };
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath || !sha) return c.json({ error: 'Missing required fields' }, 400);
   if (!isSafePathParam(filePath, true) || !isSafePathParam(branch)) return c.json({ error: 'Invalid path or branch' }, 400);
-  let author: { name: string; email: string } | undefined;
-  if (userName && /^[a-zA-Z0-9_-]+$/.test(userName)) author = { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
-  await deleteFile(authResult.githubToken, owner, repo, filePath, sha, message || 'delete file', branch, author);
+  const author = buildCommitAuthor(userName);
+  await deleteFile(auth(c).githubToken, owner, repo, filePath, sha, message || 'delete file', branch, author);
   return c.json({ success: true });
 });
 
 // GET /api/repos/tree
 reposApp.get('/api/repos/tree', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const owner = c.req.query('owner');
   const repo = c.req.query('repo');
   const branch = c.req.query('branch') || 'main';
@@ -98,26 +88,22 @@ reposApp.get('/api/repos/tree', async (c: Context<HonoEnv>) => {
     modeParam === 'commits' ? 'commits' : undefined;
   if (!isSafePathParam(owner) || !isSafePathParam(repo)) return c.json({ error: 'Missing owner or repo' }, 400);
   if (!isSafePathParam(branch)) return c.json({ error: 'Invalid branch' }, 400);
-  const tree = await getTree(authResult.githubToken, owner, repo, branch, mode);
+  const tree = await getTree(auth(c).githubToken, owner, repo, branch, mode);
   return c.json({ success: true, data: tree });
 });
 
 // POST /api/repos/branch
 reposApp.post('/api/repos/branch', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const data = safeJsonParse(await c.req.raw.text());
   const { owner, repo, branchName, sourceBranch = 'main' } = data as { owner?: string; repo?: string; branchName?: string; sourceBranch?: string };
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branchName)) return c.json({ error: 'Missing or invalid params' }, 400);
   if (sourceBranch !== 'main' && !isSafePathParam(sourceBranch)) return c.json({ error: 'Invalid source branch' }, 400);
-  await createBranch(authResult.githubToken, owner, repo, branchName, sourceBranch);
+  await createBranch(auth(c).githubToken, owner, repo, branchName, sourceBranch);
   return c.json({ success: true });
 });
 
 // POST /api/repos/commit
 reposApp.post('/api/repos/commit', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const data = safeJsonParse(await c.req.raw.text());
   const { owner, repo, branch = 'main', message, userName, ops } = data as {
     owner?: string; repo?: string; branch?: string; message?: string; userName?: string; ops?: CommitOp[];
@@ -137,64 +123,50 @@ reposApp.post('/api/repos/commit', async (c: Context<HonoEnv>) => {
       if (len + b64len > MAX_CONTENT_SIZE) return c.json({ error: `文件过大（单文件上限 10MB）: ${op.path}` }, 400);
     }
   }
-  let author: { name: string; email: string } | undefined;
-  if (userName && /^[a-zA-Z0-9_-]+$/.test(userName)) author = { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
-  const result = await batchCommit(authResult.githubToken, owner!, repo!, branch, message, ops, author);
+  const author = buildCommitAuthor(userName);
+  const result = await batchCommit(auth(c).githubToken, owner!, repo!, branch, message, ops, author);
   return c.json({ success: true, data: result });
 });
 
 // POST /api/repos/extract
 reposApp.post('/api/repos/extract', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const data = safeJsonParse(await c.req.raw.text());
   const { owner, repo, branch = 'main', paths } = data as { owner?: string; repo?: string; branch?: string; paths?: string[] };
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branch)) return c.json({ error: 'Invalid owner, repo or branch' }, 400);
   if (!Array.isArray(paths) || paths.length === 0 || paths.length > 100 || paths.some((p) => !isSafePathParam(p, true))) {
     return c.json({ error: 'paths 须为 1~100 个合法路径' }, 400);
   }
-  const result = await extractFrontMatters(authResult.githubToken, owner!, repo!, branch, paths);
+  const result = await extractFrontMatters(auth(c).githubToken, owner!, repo!, branch, paths);
   return c.json({ success: true, data: result });
 });
 
 // GET /api/repos/workflows
 reposApp.get('/api/repos/workflows', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const owner = c.req.query('owner');
   const repo = c.req.query('repo');
   if (!isSafePathParam(owner) || !isSafePathParam(repo)) return c.json({ error: 'Missing owner or repo' }, 400);
-  const workflows = await listWorkflows(authResult.githubToken, owner!, repo!);
+  const workflows = await listWorkflows(auth(c).githubToken, owner!, repo!);
   return c.json({ success: true, data: workflows });
 });
 
 // POST /api/repos/deploy
 reposApp.post('/api/repos/deploy', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const data = safeJsonParse(await c.req.raw.text());
   const { owner, repo, workflowId, ref = 'main' } = data as { owner?: string; repo?: string; workflowId?: number; ref?: string };
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(ref) || typeof workflowId !== 'number') {
     return c.json({ error: 'Invalid params' }, 400);
   }
-  await dispatchWorkflow(authResult.githubToken, owner!, repo!, workflowId, ref);
+  await dispatchWorkflow(auth(c).githubToken, owner!, repo!, workflowId, ref);
   return c.json({ success: true });
 });
 
 // GET /api/repos/:owner/:repo/branches
 reposApp.get('/api/repos/:owner/:repo/branches', async (c: Context<HonoEnv>) => {
-  const authResult = await authenticateLocal(c);
-  if (authResult instanceof Response) return authResult;
   const owner = c.req.query('owner') || c.req.param('owner');
   const repo = c.req.query('repo') || c.req.param('repo');
   if (!isSafePathParam(owner) || !isSafePathParam(repo)) return c.json({ error: 'Missing owner or repo' }, 400);
-  const branches = await getRepoBranches(authResult.githubToken, owner, repo);
+  const branches = await getRepoBranches(auth(c).githubToken, owner, repo);
   return c.json({ success: true, data: branches });
 });
-
-// 辅助：复用 authenticate
-async function authenticateLocal(c: Context<HonoEnv>): Promise<AuthResult | Response> {
-  return authenticate(c.req.raw, c.env);
-}
 
 export default reposApp;

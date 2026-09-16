@@ -1,50 +1,11 @@
 // 留言模块 API 客户端（与 Worker 的 /api/admin/* 和 /api/messages 通信）
 import { API_BASE } from './constants';
+import { requestJson } from './http';
 
 const API_TIMEOUT_MS = 10000;
 
-interface CommentApiResponse<T> {
-  code: number;
-  message: string;
-  data: T | null;
-  timestamp: string;
-}
-
-async function commentFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const finalOptions: RequestInit = {
-    ...options,
-    credentials: 'include',
-    headers: {
-      ...options?.headers,
-      'X-Requested-With': 'XMLHttpRequest',
-    },
-  };
-
-  let res: Response;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-    res = await fetch(`${API_BASE}${url}`, { ...finalOptions, signal: controller.signal });
-    clearTimeout(timer);
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw new Error('请求超时');
-    throw new Error('网络连接失败');
-  }
-
-  if (res.status === 401) {
-    window.dispatchEvent(new CustomEvent('auth:expired'));
-    throw new Error('登录已过期，请重新登录');
-  }
-
-  let data: CommentApiResponse<T>;
-  try {
-    data = await res.json();
-  } catch {
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-  }
-
-  if (data.code !== 0) throw new Error(data.message || '请求失败');
-  return data.data as T;
+function commentFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  return requestJson<T>(url, { ...options, timeoutMs: API_TIMEOUT_MS }, API_BASE);
 }
 
 // ---------- 类型 ----------
