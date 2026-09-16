@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from './env';
-import { corsMiddleware, requestLog } from './middleware/auth';
+import { corsMiddleware } from './middleware/cors';
+import { requestLog } from './middleware/sessionAuth';
 import { errorHandler } from './middleware/errorHandler';
 import { success } from './comment/utils/response';
 
@@ -10,7 +11,7 @@ import messagesRoutes from './routes/messages';
 import adminRoutes from './routes/admin';
 import inboundRoutes from './routes/inbound';
 import bufferRoutes from './routes/buffer';
-import { isAllowedFrontendUrl } from './middleware/auth';
+import { isAllowedFrontendUrl } from './middleware/cors';
 
 const app = new Hono<HonoEnv>();
 

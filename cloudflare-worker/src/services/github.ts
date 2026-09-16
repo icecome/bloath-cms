@@ -1,5 +1,5 @@
 // Cloudflare Workers 后端 - GitHub API 封装
-// 用于�?Cloudflare Workers 中运�?
+// 用于在 Cloudflare Workers 中运行
 
 import type { FileInfo, Repo, User, CommitOp } from '../../../shared/types';
 import { FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } from '../../../shared/types';
@@ -21,8 +21,8 @@ export function buildCommitAuthor(userName?: string): { name: string; email: str
   return { name: `${userName} 来自 BloathCMS`, email: `${userName}@bloath.cms` };
 }
 
-// 统一 GitHub API 错误处理：解析响应体并抛�?GithubApiError
-// GitHub 403 通常来自速率限制（无 PAT 时每小时 60 次），用 503 向上传播而非 403（避免前端误判为认证过期�?
+// 统一 GitHub API 错误处理：解析响应体并抛出 GithubApiError
+// GitHub 403 通常来自速率限制（无 PAT 时每小时 60 次），用 503 向上传播而非 403（避免前端误判为认证过期）
 async function throwGithubError(response: Response, context: string): Promise<never> {
   let message = `${context}: ${response.status}`;
   let statusCode = response.status;
@@ -37,7 +37,7 @@ async function throwGithubError(response: Response, context: string): Promise<ne
   throw new GithubApiError(message, statusCode);
 }
 
-// UTF-8 字符串转 base64（替代已废弃�?unescape/encodeURIComponent 组合�?
+// UTF-8 字符串转 base64（替代已废弃的 unescape/encodeURIComponent 组合）
 function utf8ToBase64(str: string): string {
   const bytes = new TextEncoder().encode(str);
   let binary = '';
@@ -96,7 +96,7 @@ export async function getUserInfo(token: string): Promise<User> {
   return response.json() as Promise<User>;
 }
 
-// GitHub API 返回的仓库原始结�?
+// GitHub API 返回的仓库原始结构
 interface GHRepoResponse {
   name: string;
   full_name: string;
@@ -106,14 +106,14 @@ interface GHRepoResponse {
   default_branch: string;
 }
 
-// �?Link header 中解析下一�?URL
+// 从 Link header 中解析下一个 URL
 function parseNextPageUrl(linkHeader: string | null): string | null {
   if (!linkHeader) return null;
   const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
   return match ? match[1] : null;
 }
 
-// 获取用户仓库列表（自动分页，最�?5 �?= 500 仓库�?
+// 获取用户仓库列表（自动分页，最多 5 页 = 500 仓库）
 export async function getUserRepos(token: string): Promise<Repo[]> {
   const MAX_PAGES = 5;
   const allRepos: Repo[] = [];
@@ -173,8 +173,8 @@ export async function readFile(
   }
 
   const data = await response.json() as { content: string; sha: string };
-  // Cloudflare Workers �?Buffer，使�?atob 解码 base64
-  // GitHub API 返回�?content �?ASCII-safe base64，charCodeAt 取低 8 位不会丢失数�?
+  // Cloudflare Workers 无 Buffer，使用 atob 解码 base64
+  // GitHub API 返回的 content 是 ASCII-safe base64，charCodeAt 取低 8 位不会丢失数据
   const binaryString = atob(data.content);
   const bytes = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
@@ -187,7 +187,7 @@ export async function readFile(
   };
 }
 
-// 创建或更新文�?
+// 创建或更新文件
 export async function writeFile(
   token: string,
   owner: string,
@@ -200,7 +200,7 @@ export async function writeFile(
   author?: { name: string; email: string },
   isBase64 = false
 ): Promise<void> {
-  // 如果内容已经�?base64 编码（如图片），直接使用；否则进行编�?
+  // 如果内容已经是 base64 编码（如图片），直接使用；否则进行编码
   const base64Content = isBase64 ? content : utf8ToBase64(content);
 
   const payload: {
@@ -318,7 +318,7 @@ export async function listDir(
   }));
 }
 
-// 获取仓库分支列表（自动分页，最�?5 �?= 500 分支�?
+// 获取仓库分支列表（自动分页，最多 5 页 = 500 分支）
 export async function getRepoBranches(
   token: string,
   owner: string,
@@ -350,15 +350,15 @@ export async function getRepoBranches(
   return allBranches;
 }
 
-// Git ref 名称合法字符校验（字母、数字�?�?、_�?�?
+// Git ref 名称合法字符校验（字母、数字、-、_、/、.）
 function isValidGitRefName(name: string): boolean {
   if (!name || name.length > 200) return false;
-  // 禁止�?. �?/ 开头，禁止连续点，禁止�?.lock 结尾
+  // 禁止 . 或 / 开头，禁止连续点，禁止 .lock 结尾
   if (/^[./]/.test(name) || /\.\./.test(name) || /\.lock$/.test(name)) return false;
   return /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(name);
 }
 
-// 创建分支（基于源分支最�?commit�?
+// 创建分支（基于源分支最新 commit）
 export async function createBranch(
   token: string,
   owner: string,
@@ -370,7 +370,7 @@ export async function createBranch(
     throw new GithubApiError('分支名包含非法字符', 400);
   }
 
-  // 获取源分支最�?commit SHA
+  // 获取源分支最新 commit SHA
   const refResponse = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(sourceBranch)}`,
     { headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'Bloath-CMS' } }
@@ -381,7 +381,7 @@ export async function createBranch(
   const refData = await refResponse.json() as { object: { sha: string } };
   const sha = refData.object.sha;
 
-  // 创建新分支引�?
+  // 创建新分支引用
   const createResponse = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/refs`,
     {
@@ -435,9 +435,9 @@ async function githubApi<T>(url: string, token: string, init: GitHubRequestInit 
 }
 
 /**
- * 批量提交：把多个文件变更合并为单�?commit（Git Data API）�?
- * 步骤：get ref �?get commit/tree �?（必要时�?blob）→ create tree �?create commit �?update ref�?
- * update ref 前复查基�?sha，检测并发修改后返回 409，避免静默覆盖�?
+ * 批量提交：把多个文件变更合并为单个 commit（Git Data API）。
+ * 步骤：get ref → get commit/tree →（必要时建 blob）→ create tree → create commit → update ref。
+ * update ref 前复查基线 sha，检测并发修改后返回 409，避免静默覆盖。
  */
 export async function batchCommit(
   token: string,
@@ -450,7 +450,7 @@ export async function batchCommit(
 ): Promise<{ sha: string }> {
   const base = `https://api.github.com/repos/${owner}/${repo}/git`;
 
-  // 1. 基线 ref �?commit
+  // 1. 基线 ref 与 commit
   const refData = await githubApi<{ object: { sha: string } }>(
     `${base}/ref/heads/${encodeURIComponent(branch)}`, token
   );
@@ -461,7 +461,7 @@ export async function batchCommit(
   );
   const baseTreeSha = commitData.tree.sha;
 
-  // 2. move/delete 需要源 blob sha：一次全量树建立 path �?sha 映射
+  // 2. move/delete 需要源 blob sha：一次全量树建立 path → sha 映射
   const needSourceShas = ops.some((op) => op.op === 'move' || op.op === 'delete');
   const blobShaByPath = new Map<string, string>();
   if (needSourceShas) {
@@ -500,20 +500,20 @@ export async function batchCommit(
       const fromPath = op.fromPath;
       const srcSha = fromPath ? blobShaByPath.get(fromPath) : undefined;
       if (!fromPath || !srcSha) {
-        throw new GithubApiError(`移动源文件不存在或不可访�? ${op.fromPath}`, 400);
+        throw new GithubApiError(`移动源文件不存在或不可访问: ${op.fromPath}`, 400);
       }
       entries.push({ path: op.path, mode: '100644', type: 'blob', sha: srcSha });
       entries.push({ path: fromPath, mode: '100644', type: 'blob', sha: null });
     } else {
       const srcSha = blobShaByPath.get(op.path);
       if (!srcSha) {
-        throw new GithubApiError(`待删除文件不存在或不可访�? ${op.path}`, 400);
+        throw new GithubApiError(`待删除文件不存在或不可访问: ${op.path}`, 400);
       }
       entries.push({ path: op.path, mode: '100644', type: 'blob', sha: null });
     }
   }
 
-  // 4. �?tree �?commit �?更新 ref
+  // 4. 创建 tree、commit、更新 ref
   const newTree = await githubApi<{ sha: string }>(`${base}/trees`, token, {
     method: 'POST',
     body: { base_tree: baseTreeSha, tree: entries }
@@ -548,8 +548,8 @@ export async function batchCommit(
 }
 
 /**
- * 聚合提取 front-matter：一次请求内并发读取多个 md，仅返回 front-matter 原文�?
- * 把列表页�?N �?readFile 压缩�?1 次往返�?
+ * 聚合提取 front-matter：一次请求内并发读取多个 md，仅返回 front-matter 原文。
+ * 把列表页的 N 次 readFile 压缩为 1 次往返。
  */
 export interface ExtractedFrontmatter {
   path: string;
@@ -604,7 +604,7 @@ export async function extractFrontMatters(
   return { results, errors };
 }
 
-// ---------- 手动部署（workflow dispatch�?----------
+// ---------- 手动部署（workflow dispatch）----------
 
 export interface WorkflowInfo {
   id: number;
@@ -640,16 +640,16 @@ export async function dispatchWorkflow(
       body: JSON.stringify({ ref })
     }
   );
-  // GitHub 成功时返�?204（无响应体）
+  // GitHub 成功时返回 204（无响应体）
   if (!response.ok) {
     await throwGithubError(response, 'Failed to dispatch workflow');
   }
 }
 
 /**
- * 获取仓库目录树（recursive）。mode �?'filename' 时（媒体库）�?
- * 额外通过 commits API 填充每个文件的最后修改时间，供前端按最新优先排序�?
- * 其余模式不触�?commits 查询，避免拖慢内容库/框架扫描�?
+ * 获取仓库目录树（recursive）。mode 为 'filename' 时（媒体库）：
+ * 额外通过 commits API 填充每个文件的最后修改时间，供前端按最新优先排序。
+ * 其余模式不触发 commits 查询，避免拖慢内容库/框架扫描。
  */
 export async function getTree(
   token: string,
@@ -691,17 +691,17 @@ export async function getTree(
 
   const ghHeaders = { Authorization: `Bearer ${token}`, 'User-Agent': 'Bloath-CMS' };
 
-  // 通过 commits API 填充真实修改时间（仅媒体�?mode='filename'）�?
-  // 注意：GitHub 没有"一次请求返回所有文件最后修改时�?的接口，
-  // 逐文件查询（N 次）或�?commit 详情（最多数百次）都开销大�?
+  // 通过 commits API 填充真实修改时间（仅媒体库 mode='filename'）：
+  // 注意：GitHub 没有"一次请求返回所有文件最后修改时间"的接口，
+  // 逐文件查询（N 次）或拉 commit 详情（最多数百次）都开销大。
   // 这里限制详情请求数并并行拉取：仅覆盖最近的提交，未命中的旧文件
-  // 由前端回退到文件名时间戳（默认模板 `{Y}{m}{d}...` 已内嵌时间）�?
+  // 由前端回退到文件名时间戳（默认模板 `{Y}{m}{d}...` 已内嵌时间）。
   if (mode === 'filename') {
     try {
       const pending = new Set(fileItems.map((f) => f.path));
       const pathToTime = new Map<string, number>();
-      const MAX_DETAIL_CALLS = 30; // 单次调用最�?30 �?commit 详情请求（有授权令牌，远低于 5000/h 上限�?
-      const MAX_PAGES = 2;         // 列表接口每次 100 条，最�?2 个列表请�?
+      const MAX_DETAIL_CALLS = 30; // 单次调用最多 30 次 commit 详情请求（有授权令牌，远低于 5000/h 上限）
+      const MAX_PAGES = 2;         // 列表接口每次 100 条，最多 2 个列表请求
       let detailCalls = 0;
       let page = 1;
 
@@ -714,7 +714,7 @@ export async function getTree(
         const commits = await listResp.json() as unknown as Array<{ sha: string }>;
         if (!Array.isArray(commits) || commits.length === 0) break;
 
-        // 只对该页最新的一�?commit 并行拉取详情，总调用数不超�?MAX_DETAIL_CALLS
+        // 只对该页最新的一批 commit 并行拉取详情，总调用数不超过 MAX_DETAIL_CALLS
         const sliceCount = Math.max(0, Math.min(commits.length, MAX_DETAIL_CALLS - detailCalls));
         detailCalls += sliceCount;
         const batch = commits.slice(0, sliceCount);

@@ -38,9 +38,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return false;
       }
 
-      const data = await res.json();
-      if (data.success && data.user) {
-        setState(prev => ({ ...prev, user: data.user, loading: false }));
+      const data = await res.json() as { code?: number; data?: { user?: User }; message?: string };
+      if (data.code === 0 && data.data?.user) {
+        setState(prev => ({ ...prev, user: data.data!.user!, loading: false }));
         return true;
       }
 
@@ -86,9 +86,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         addToast({ message: '登录服务不可用，请稍后重试', type: 'warning' });
         return;
       }
-      const data = await res.json();
-      if (data.authUrl) {
-        window.location.href = data.authUrl;
+      const data = await res.json() as { code?: number; data?: { authUrl?: string } };
+      const authUrl = data.code === 0 ? data.data?.authUrl : undefined;
+      if (authUrl) {
+        window.location.href = authUrl;
       }
     } catch {
       addToast({ message: '登录请求失败，请稍后重试', type: 'error' });

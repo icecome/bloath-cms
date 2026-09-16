@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { HonoEnv } from '../env';
+import { ErrorCode } from '../comment/types';
+import { success, error } from '../comment/utils/response';
 import { exchangeCode, getUserInfo } from '../services/github';
 import {
   generateState, parseState, generateDeviceFingerprint, generateSessionToken,
@@ -10,9 +12,10 @@ import {
 } from '../services/session';
 import {
   authenticate, buildSessionCookie, addSessionRenewalCookie,
-  isAllowedFrontendUrl, safeJsonParse, checkCsrf, addSecurityHeaders, addCorsHeaders,
-  getSessionTokenFromCookie,
-} from '../middleware/auth';
+  checkCsrf, getSessionTokenFromCookie,
+} from '../middleware/sessionAuth';
+import { isAllowedFrontendUrl, addSecurityHeaders } from '../middleware/cors';
+import { safeJsonParse } from '../middleware/pathGuard';
 
 const authApp = new Hono<HonoEnv>();
 
@@ -52,7 +55,8 @@ authApp.get('/api/auth/login', async (c: Context<HonoEnv>) => {
     : (c.env.FRONTEND_URL || 'http://localhost:5173');
   const state = await generateState(frontendUrl, c.env);
   const authUrl = `https://github.com/login/oauth/authorize?client_id=${c.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=consent`;
-  return c.json({ authUrl });
+  const response = c.json(success({ authUrl }));
+  return response;
 });
 
 // GET /api/auth/callback
@@ -98,7 +102,7 @@ authApp.post('/api/auth/logout', async (c: Context<HonoEnv>) => {
   }
   const url = new URL(c.req.url);
   const isSecure = url.protocol === 'https:';
-  const response = c.json({ success: true });
+  const response = c.json(success(null));
   response.headers.set('Set-Cookie', buildSessionCookie('', 0, isSecure));
   return response;
 });
@@ -117,10 +121,7 @@ authApp.get('/api/me', async (c: Context<HonoEnv>) => {
   // dev 模式快捷路径：直接解密 token，若 githubToken 为占位值则跳过设备指纹校验
   const devResult = await validateSessionToken(sessionToken, c.env, undefined);
   if (devResult && devResult.githubToken === 'dev-local-no-github') {
-    return c.json({
-      success: true,
-      user: { login: 'dev-user', avatar_url: '', name: '本地开发' },
-    });
+    return c.json(success({ user: { login: 'dev-user', avatar_url: '', name: '本地开发' } }));
   }
   // 正常路径：完整 authenticate（含设备指纹校验）
   const authResult = await authenticate(c.req.raw, c.env);
@@ -128,10 +129,7 @@ authApp.get('/api/me', async (c: Context<HonoEnv>) => {
   const user = await getUserInfo(authResult.githubToken);
   const url = new URL(c.req.url);
   const isSecure = url.protocol === 'https:';
-  const response = c.json({
-    success: true,
-    user: { login: user.login, avatar_url: user.avatar_url, name: user.name },
-  });
+  const response = c.json(success({ user: { login: user.login, avatar_url: user.avatar_url, name: user.name } }));
   return await addSessionRenewalCookie(response, authResult, c.env, isSecure);
 });
 
@@ -146,11 +144,11 @@ authApp.post('/api/auth/device', async (c: Context<HonoEnv>) => {
     await upsertDeviceRecord(c.env.DEVICES_KV, authResult.deviceFingerprint, Date.now(), trusted, ua || undefined);
   }
   const newToken = await generateSessionToken(authResult.githubToken, c.env, authResult.deviceFingerprint, trusted);
-  if (typeof newToken !== 'string') return c.json({ success: false, error: '会话签发失败' }, 500);
+  if (typeof newToken !== 'string') return c.json(error(ErrorCode.INTERNAL_ERROR, '会话签发失败'), 500);
   const url = new URL(c.req.url);
   const isSecure = url.protocol === 'https:';
   const maxAge = trusted ? TRUSTED_DURATION_MS / 1000 : SESSION_DURATION_MS / 1000;
-  const resp = c.json({ success: true, data: { trusted } });
+  const resp = c.json(success({ trusted }));
   resp.headers.set('Set-Cookie', buildSessionCookie(newToken, maxAge, isSecure));
   return resp;
 });
@@ -159,15 +157,12 @@ authApp.post('/api/auth/device', async (c: Context<HonoEnv>) => {
 authApp.get('/api/auth/devices', async (c: Context<HonoEnv>) => {
   const authResult = await authenticate(c.req.raw, c.env);
   if (authResult instanceof Response) return authResult;
-  if (!c.env.DEVICES_KV) return c.json({ success: true, data: [] });
+  if (!c.env.DEVICES_KV) return c.json(success([]));
   const devices = await listDeviceRecords(c.env.DEVICES_KV);
-  return c.json({
-    success: true,
-    data: devices.map(d => ({
-      fingerprint: d.fingerprint, trusted: d.trusted, lastLoginAt: d.lastSeenAt,
-      ua: d.ua || null, isCurrent: d.fingerprint === authResult.deviceFingerprint,
-    })),
-  });
+  return c.json(success(devices.map(d => ({
+    fingerprint: d.fingerprint, trusted: d.trusted, lastLoginAt: d.lastSeenAt,
+    ua: d.ua || null, isCurrent: d.fingerprint === authResult.deviceFingerprint,
+  }))));
 });
 
 // DELETE /api/auth/devices/:fingerprint
@@ -175,11 +170,11 @@ authApp.delete('/api/auth/devices/:fingerprint', async (c: Context<HonoEnv>) => 
   const authResult = await authenticate(c.req.raw, c.env);
   if (authResult instanceof Response) return authResult;
   const fingerprint = decodeURIComponent(c.req.param('fingerprint') || '');
-  if (!fingerprint || !/^[a-f0-9]{16}$/i.test(fingerprint)) return c.json({ success: false, error: '无效的设备标识' }, 400);
-  if (fingerprint === authResult.deviceFingerprint) return c.json({ success: false, error: '不能删除当前设备，请使用登出' }, 400);
-  if (!c.env.DEVICES_KV) return c.json({ success: false, error: '设备管理未启用' }, 400);
+  if (!fingerprint || !/^[a-f0-9]{16}$/i.test(fingerprint)) return c.json(error(ErrorCode.VALIDATION_ERROR, '无效的设备标识'), 400);
+  if (fingerprint === authResult.deviceFingerprint) return c.json(error(ErrorCode.VALIDATION_ERROR, '不能删除当前设备，请使用登出'), 400);
+  if (!c.env.DEVICES_KV) return c.json(error(ErrorCode.VALIDATION_ERROR, '设备管理未启用'), 400);
   const ok = await deleteDeviceRecord(c.env.DEVICES_KV, fingerprint);
-  if (!ok) return c.json({ success: false, error: '删除失败' }, 500);
+  if (!ok) return c.json(error(ErrorCode.INTERNAL_ERROR, '删除失败'), 500);
   return c.body(null, 204);
 });
 

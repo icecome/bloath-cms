@@ -1,5 +1,6 @@
 import type { Repo, RepoInfo, CommitOp } from '../../../shared/types';
 import { API_BASE, MAX_TREE_ITEMS } from './constants';
+import { parseEnvelope } from './http.ts';
 
 export type { CommitOp };
 
@@ -58,22 +59,26 @@ async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = f
     throw new Error('GitHub API 暂不可用，请稍后重试');
   }
 
-  let data: { success: boolean; data?: T; error?: string };
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
+  let payload: unknown;
   try {
     const contentType = res.headers.get('content-type');
     if (!contentType?.includes('application/json')) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }
-    data = await res.json();
+    payload = await res.json();
   } catch {
     throw new Error(`HTTP ${res.status}: ${res.statusText}`);
   }
 
-  if (!data.success) throw new Error(data.error || '请求失败');
-  if (!skipDataCheck) {
-    if (data.data === undefined) throw new Error('响应数据为空');
+  const data = parseEnvelope<T>(payload as Parameters<typeof parseEnvelope>[0]);
+  if (!skipDataCheck && data === undefined) {
+    throw new Error('响应数据为空');
   }
-  return data.data as T;
+  return data;
 }
 
 interface FileReadResult {

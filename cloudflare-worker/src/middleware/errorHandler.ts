@@ -12,7 +12,7 @@ export const errorHandler = (err: Error, c: Context<HonoEnv>): Response => {
     return c.json(error(err.code, err.message), err.status as ContentfulStatusCode);
   }
   if (err instanceof GithubApiError) {
-    return c.json({ success: false, error: err.message }, err.statusCode as ContentfulStatusCode);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, err.message), err.statusCode as ContentfulStatusCode);
   }
   if (err instanceof ZodError) {
     const message = err.errors[0]?.message || '参数校验失败';

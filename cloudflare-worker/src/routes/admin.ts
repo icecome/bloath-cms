@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { HonoEnv } from '../env';
 import { success, error } from '../comment/utils/response';
 import { ErrorCode } from '../comment/types';
-import { requireAdminAuth } from '../middleware/auth';
+import { requireAdminAuth } from '../middleware/sessionAuth';
 import { upsertMessageReply, deleteMessageReply, attachReplies, ACTION_STATUS_MAP, updateMessageStatus, softDeleteMessage } from '../services/message.service';
 import { listAdminMessages, batchOperateMessages, writeBatchAuditLogs } from '../services/admin.service';
 import { getBlogPushSetting, saveBlogPushSetting } from '../services/settings.service';

@@ -27,7 +27,9 @@ import { useToast } from '../contexts/ToastContext';
 import { useBuffer } from '../contexts/BufferContext';
 import { discardBufferPaths, readBufferFile } from '../lib/bufferApi';
 import { buildEditUrl } from '../lib/navigation';
-import { FilePen } from 'lucide-react';
+import { DraftBufferPanel } from '../components/drafts/DraftBufferPanel';
+import { RenameDraftDialog } from '../components/drafts/RenameDraftDialog';
+import { PublishDraftDialog } from '../components/drafts/PublishDraftDialog';
 
 export default function DraftsPage() {
   const { user } = useAuth();
@@ -355,50 +357,13 @@ export default function DraftsPage() {
           </div>
 
           {/* 缓冲合并视图：草稿路径下的缓冲变更带「未发布」角标 */}
-          {bufferEnabled && bufferChanges.length > 0 && (() => {
-            const draftBufferItems = bufferChanges.filter(
-              (c) => c.path.startsWith(draftPath + '/') && c.op === 'write'
-            );
-            if (draftBufferItems.length === 0) return null;
-            return (
-              <div className="mt-3 border border-border rounded-sm bg-accent/40">
-                <div className="px-3 py-2 border-b border-border-subtle flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-                  <FilePen className="w-3 h-3" />
-                  缓冲中的草稿（{draftBufferItems.length} 篇，未发布到仓库）
-                </div>
-                <div className="divide-y divide-border-subtle">
-                  {draftBufferItems.map((item) => {
-                    const name = item.path.split('/').pop() || item.path;
-                    const relative = item.path.replace(draftPath + '/', '');
-                    return (
-                      <button
-                        key={item.path}
-                        type="button"
-                        onClick={() => {
-                          if (!selectedRepo) return;
-                          navigate(buildEditUrl({
-                            owner: selectedRepo.owner,
-                            repo: selectedRepo.repo,
-                            branch: selectedRepo.branch,
-                            basePath: draftPath,
-                            filePath: relative,
-                            returnTo: 'drafts',
-                          }));
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-accent transition-colors"
-                      >
-                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 rounded-sm flex-shrink-0">未发布</span>
-                        <span className="text-sm text-foreground truncate flex-1">{name}</span>
-                        <span className="text-[10px] text-muted-foreground flex-shrink-0">
-                          {new Date(item.savedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
+          {bufferEnabled && bufferChanges.length > 0 && (
+            <DraftBufferPanel
+              draftPath={draftPath}
+              items={bufferChanges}
+              selectedRepo={selectedRepo}
+            />
+          )}
 
           {selectedFiles.size > 0 && (
             <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -568,98 +533,26 @@ export default function DraftsPage() {
         onPageChange={(page) => setCurrentPage(page)}
       />
 
-      {/* 重命名对话框 */}
       {showRenameDialog && renameFile && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowRenameDialog(false)}>
-          <div className="bg-card rounded-lg p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-medium text-foreground mb-4">重命名草稿</h3>
-            <div className="mb-4">
-              <label className="block text-sm text-muted-foreground mb-2">新文件名（不含 .md）</label>
-              <input
-                type="text"
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary transition-colors"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleRename();
-                  if (e.key === 'Escape') setShowRenameDialog(false);
-                }}
-              />
-              <p className="text-xs text-muted-foreground mt-1">仅修改文件名，不修改 frontmatter</p>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowRenameDialog(false)}
-                className="px-4 py-2 text-sm text-muted-foreground hover:bg-accent rounded-sm transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleRename}
-                disabled={!renameValue.trim() || actionLoading}
-                className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                {actionLoading ? '处理中...' : '确认重命名'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <RenameDraftDialog
+          value={renameValue}
+          loading={actionLoading}
+          onChange={setRenameValue}
+          onConfirm={handleRename}
+          onClose={() => setShowRenameDialog(false)}
+        />
       )}
 
       {showPublishDropdown && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowPublishDropdown(false)}>
-          <div className="bg-card rounded-lg p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-medium text-foreground mb-4">
-              发布 {selectedFiles.size} 篇草稿
-            </h3>
-            <div className="mb-4">
-              <p className="text-sm text-muted-foreground mb-2">发布到目标目录：</p>
-              <div className="space-y-0.5 mb-3">
-                {availableDirs.length === 0 ? (
-                  <p className="text-xs text-muted-foreground px-1">暂无可用目录</p>
-                ) : (
-                  availableDirs.map((dir) => (
-                    <button
-                      key={dir}
-                      onClick={() => setPublishTarget(dir)}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-accent rounded-sm transition-colors ${
-                        publishTarget === dir ? 'text-foreground font-medium bg-accent' : 'text-muted-foreground'
-                      }`}
-                    >
-                      {publishTarget === dir && <span className="text-green-500">✓</span>}
-                      <span className="truncate">{dir}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-              <label className="block text-sm text-muted-foreground mb-1">或输入自定义路径</label>
-              <input
-                type="text"
-                value={publishTarget}
-                onChange={(e) => setPublishTarget(e.target.value)}
-                placeholder="如 content/posts/sub"
-                className="w-full px-3 py-2 text-sm border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary transition-colors"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowPublishDropdown(false)}
-                disabled={actionLoading}
-                className="px-4 py-2 text-sm text-muted-foreground hover:bg-accent rounded-sm transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => { setShowPublishDropdown(false); handlePublish(); }}
-                disabled={!publishTarget.trim() || actionLoading}
-                className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                {actionLoading ? '发布中...' : `确认发布`}
-              </button>
-            </div>
-          </div>
-        </div>
+        <PublishDraftDialog
+          selectedCount={selectedFiles.size}
+          availableDirs={availableDirs}
+          publishTarget={publishTarget}
+          loading={actionLoading}
+          onTargetChange={setPublishTarget}
+          onConfirm={handlePublish}
+          onClose={() => setShowPublishDropdown(false)}
+        />
       )}
     </div>
   );

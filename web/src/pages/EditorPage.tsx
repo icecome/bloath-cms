@@ -169,6 +169,11 @@ export default function EditorPage() {
 
   const handleSave = async () => {
     if (!user) return;
+    // 缓冲配置未就绪时禁止落盘：否则会静默走 GitHub，造成「S3 无文件却进了 .draft」
+    if (bufferConfigLoading) {
+      addToast({ message: '缓冲配置加载中，请稍候再保存', type: 'warning' });
+      return;
+    }
 
     const rawFm = { ...frontmatter };
     const resolved = resolvePathAndSlug({
@@ -290,6 +295,10 @@ export default function EditorPage() {
 
   const handleDeleteArticle = async () => {
     if (!user || !owner || !repo || !currentFilePath) return;
+    if (bufferConfigLoading) {
+      addToast({ message: '缓冲配置加载中，请稍候再操作', type: 'warning' });
+      return;
+    }
 
     const targetSlug = fileStemFromPath(currentFilePath);
     const trashFile = `${trashPath}/${targetSlug}.md`;
@@ -408,11 +417,13 @@ export default function EditorPage() {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || bufferConfigLoading}
             className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-foreground text-background rounded-sm hover:bg-foreground/90 disabled:opacity-50 transition-colors"
           >
             <Save className="w-4 h-4" />
-            <span className="hidden md:inline">{saving ? '保存中...' : '保存'}</span>
+            <span className="hidden md:inline">
+              {saving ? '保存中...' : bufferConfigLoading ? '缓冲就绪中...' : bufferEnabled ? '保存到缓冲' : '保存'}
+            </span>
           </button>
           {!isNew && (
             <>

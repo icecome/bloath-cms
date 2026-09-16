@@ -3,11 +3,12 @@ import type { Context } from 'hono';
 import type { HonoEnv } from '../env';
 import { ErrorCode } from '../comment/types';
 import { success, error } from '../comment/utils/response';
-import { requireAuth, isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE, type AuthResult } from '../middleware/auth';
+import { requireAuth, type AuthResult } from '../middleware/sessionAuth';
+import { isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE } from '../middleware/pathGuard';
 import {
   getBufferConfigPublic, saveBufferConfig, type BufferConfigInput,
 } from '../services/bufferConfig.service';
-import { putObject } from '../services/s3.client';
+import { headBucket, putObject } from '../services/s3.client';
 import { isBlockedS3Endpoint, S3Error } from '../services/s3.errors';
 import { getBufferConfig } from '../services/bufferConfig.service';
 import {
@@ -34,7 +35,7 @@ function respondBufferError(c: Context<HonoEnv>, err: unknown) {
     return c.json(error(ErrorCode.INTERNAL_ERROR, `对象存储操作失败 (${err.status})`), 502);
   }
   if (err instanceof GithubApiError) {
-    return c.json({ success: false, error: err.message }, err.statusCode as 400 | 404 | 409 | 500 | 503);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, err.message), err.statusCode as 400 | 404 | 409 | 500 | 503);
   }
   console.error('[buffer] 未预期异常:', err);
   return c.json(error(ErrorCode.INTERNAL_ERROR, '服务器内部错误'), 500);
@@ -82,8 +83,11 @@ bufferApp.put('/api/buffer/config', async (c: Context<HonoEnv>) => {
     try {
       const cfg = await getBufferConfig(c.env);
       if (cfg) {
-        const keepKey = `${cfg.prefix}/${cfg.rand}/.keep`;
-        await putObject(cfg, keepKey, '');
+        const existing = await headBucket(cfg);
+        if (!existing.ok) {
+          return c.json(error(ErrorCode.VALIDATION_ERROR, `S3 连接失败 (${existing.status})`), 400);
+        }
+        await putObject(cfg, `${cfg.prefix}/${cfg.rand}/.keep`, '');
       }
     } catch (err) {
       const msg = err instanceof S3Error ? err.message : 'S3 初始化失败';

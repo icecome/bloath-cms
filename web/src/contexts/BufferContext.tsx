@@ -38,7 +38,8 @@ export function BufferProvider({ children }: { children: ReactNode }) {
     try {
       const cfg = await getBufferConfig();
       setConfig(cfg);
-    } catch {
+    } catch (err) {
+      console.error('[buffer] 配置加载失败，本次会话将回退 GitHub 直写:', err);
       setConfig(null);
     } finally {
       setConfigLoading(false);
