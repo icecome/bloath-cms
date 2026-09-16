@@ -1,0 +1,1 @@
+INSERT INTO "app_settings" ("key","value","updated_at") VALUES('blog_push','{"enabled":false,"channelIds":[1],"emailEnabled":true,"templates":{"title":"博客新留言 - {{昵称}}","summary":"昵称：{{昵称}}\n\n内容：{{内容摘要}}\n\n来源：{{页面}}\n\n时间：{{时间}}","detail":"昵称：{{昵称}}\n\n内容：{{内容}}\n\n来源：{{页面}} ({{链接}})\n\n时间：{{时间}}\n\n邮箱：{{邮箱}}\n\n站点地址：{{链接}}\n\n留言IP：{{留言IP}}"}}','2026-09-01 14:08:34');

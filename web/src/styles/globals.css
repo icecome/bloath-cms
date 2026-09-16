@@ -492,4 +492,128 @@
     background: var(--vditor-code-bg);
     border-radius: var(--radius);
   }
+
+  /* ============================================
+     留言管理页面 · 三栏邮箱式布局样式
+     减少彩色：主色降低饱和度，状态色统一沉化
+     ============================================ */
+
+  /* 状态圆点 */
+  .msg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+  .msg-dot-pending { background: hsl(var(--warning) / 0.7); }
+  .msg-dot-approved { background: hsl(var(--primary) / 0.7); }
+  .msg-dot-featured { background: hsl(var(--success) / 0.7); }
+  .msg-dot-spam { background: hsl(var(--destructive) / 0.7); }
+
+  /* 会话列表行 */
+  .msg-conv-row {
+    @apply flex items-start gap-2.5 px-3.5 py-3 cursor-pointer border-b border-border-subtle transition-colors;
+    position: relative;
+  }
+  .msg-conv-row:hover { @apply bg-card/50; }
+  .msg-conv-selected { @apply bg-muted; }
+  .msg-conv-selected:hover { @apply bg-muted/80; }
+
+  /* 工具栏按钮 */
+  .msg-tb-btn {
+    @apply inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-sm border border-transparent cursor-pointer transition-colors whitespace-nowrap;
+  }
+  .msg-tb-btn:disabled { @apply opacity-40 cursor-not-allowed; }
+  .msg-btn-primary { @apply bg-foreground text-white hover:opacity-80; }
+  .msg-btn-gray { @apply bg-muted text-muted-foreground hover:bg-border; }
+  .msg-btn-blue { @apply bg-primary/10 text-primary hover:bg-primary/20; }
+
+  /* 线程消息块 */
+  .msg-part {
+    @apply px-4 py-3.5 rounded-md border border-border-subtle bg-secondary;
+  }
+  .msg-part.blogger { border-left: 3px solid hsl(var(--muted-foreground) / 0.4); }
+  .msg-part.inbound { border-left: 3px solid hsl(var(--muted-foreground) / 0.4); }
+  .msg-part.visitor { border-left: 3px solid hsl(var(--border)); }
+
+  .msg-part-label {
+    @apply inline-flex items-center px-2 py-0.5 text-[11px] font-semibold rounded-full flex-shrink-0;
+    @apply bg-muted text-muted-foreground;
+  }
+
+  /* Markdown prose 渲染 */
+  .msg-md-body { @apply flex flex-col gap-2; font-size: 13.5px; line-height: 1.6; color: hsl(var(--foreground)); }
+  .msg-md-body p { margin: 0; }
+  .msg-md-body p + p { margin-top: 6px; }
+  .msg-md-body strong { font-weight: 700; }
+  .msg-md-body em { font-style: italic; }
+  .msg-md-body a {
+    color: hsl(var(--primary));
+    text-decoration: none;
+    border-bottom: 1px solid hsl(var(--primary) / 0.3);
+    transition: border-color 150ms ease;
+  }
+  .msg-md-body a:hover { border-bottom-color: hsl(var(--primary)); }
+  .msg-md-body ul, .msg-md-body ol {
+    margin: 4px 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .msg-md-body ul { list-style: disc; }
+  .msg-md-body ol { list-style: decimal; }
+  .msg-md-body li { font-size: 13.5px; line-height: 1.6; }
+  .msg-md-body blockquote {
+    margin: 4px 0;
+    padding: 6px 12px;
+    border-left: 3px solid hsl(var(--border));
+    background: hsl(var(--muted) / 0.5);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    font-size: 13px;
+    color: hsl(var(--muted-foreground));
+  }
+  .msg-md-body blockquote p { margin: 0; }
+  .msg-md-body code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    padding: 1px 5px;
+    background: hsl(var(--muted));
+    border-radius: var(--radius);
+  }
+  .msg-md-body pre {
+    margin: 6px 0;
+    padding: 10px 14px;
+    background: hsl(var(--foreground) / 0.04);
+    border: 1px solid hsl(var(--border-subtle));
+    border-radius: var(--radius-lg);
+    overflow-x: auto;
+  }
+  .msg-md-body pre code { background: transparent; padding: 0; font-size: 12px; line-height: 1.5; }
+  .msg-md-body h1, .msg-md-body h2, .msg-md-body h3 { font-weight: 700; margin: 8px 0 4px; line-height: 1.4; }
+  .msg-md-body h1 { font-size: 16px; }
+  .msg-md-body h2 { font-size: 15px; }
+  .msg-md-body h3 { font-size: 14px; }
+  .msg-md-body hr { border: none; border-top: 1px solid hsl(var(--border-subtle)); margin: 8px 0; }
+
+  /* 邮件引用折叠 */
+  .msg-email-quote {
+    margin: 6px 0 0;
+    border-left: 3px solid hsl(var(--border));
+    border-radius: 0 var(--radius) var(--radius) 0;
+    overflow: hidden;
+  }
+  .msg-email-quote-toggle {
+    @apply flex items-center gap-1.5 w-full px-2.5 py-1.5 text-[11.5px] text-muted-foreground bg-muted/40 border-none cursor-pointer transition-colors;
+  }
+  .msg-email-quote-toggle:hover { @apply bg-muted/70; }
+  .msg-email-quote-toggle svg { width: 12px; height: 12px; flex-shrink: 0; transition: transform 150ms ease; }
+  .msg-email-quote.expanded .msg-email-quote-toggle svg { transform: rotate(90deg); }
+  .msg-email-quote-meta {
+    @apply flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground;
+  }
+  .msg-email-quote-body { display: none; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; color: hsl(var(--secondary-foreground)); }
+  .msg-email-quote.expanded .msg-email-quote-body { display: block; }
+
+  /* 回复工具栏按钮 */
+  .msg-rt-btn {
+    @apply inline-flex items-center justify-center w-7 h-7 border-none bg-transparent text-secondary-foreground cursor-pointer rounded-sm transition-colors text-xs font-semibold;
+  }
+  .msg-rt-btn:hover { @apply bg-muted text-foreground; }
+  .msg-rt-btn svg { width: 15px; height: 15px; }
 }
