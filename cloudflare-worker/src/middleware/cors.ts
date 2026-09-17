@@ -25,6 +25,7 @@ export function corsHeaders(origin: string, env: HonoEnv['Bindings']): Headers |
   headers.set('Access-Control-Allow-Origin', allowedOrigin);
   headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With, X-Frontend-Url');
+  // credentials:include 模式下 CORS 不允许通配符，必须回显具体 origin
   headers.set('Access-Control-Allow-Credentials', 'true');
   headers.set('Access-Control-Max-Age', '86400');
   return headers;
@@ -34,7 +35,10 @@ export function addSecurityHeaders(response: Response, env: HonoEnv['Bindings'])
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  const csp = env.CONTENT_SECURITY_POLICY || "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' https://api.github.com https://github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+  // connect-src 纳入 PROD_ORIGINS，避免跨站部署时浏览器拦截前端→Worker 的 fetch
+  const prodConnect = (env.PROD_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean).join(' ');
+  const csp = env.CONTENT_SECURITY_POLICY
+    || `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' ${prodConnect} https://api.github.com https://github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`;
   response.headers.set('Content-Security-Policy', csp);
   return response;
 }

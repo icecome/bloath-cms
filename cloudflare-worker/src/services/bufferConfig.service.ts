@@ -44,7 +44,10 @@ export async function getBufferConfig(env: Env): Promise<BufferConfig | null> {
     const value = await getSettingRaw(env.DB, CONFIG_KEY);
     if (!value) return null;
     const parsed = JSON.parse(value) as StoredConfig;
-    if (!parsed.enabled || !parsed.endpoint || !parsed.bucket || !parsed.secretAccessKeyEnc) return null;
+    // enabled 不作为配置是否"存在/可读"的硬条件：否则用户首次未勾选启用保存的配置（enabled:false 且无密钥）
+    // 会在后续"启用 + 留空密钥沿用"场景被当作不存在，导致 saveBufferConfig 拿不到 prev 永远报「缺少 secretAccessKey」。
+    // 只要求存储字段齐全即可返回；启用与否由 requireBufferConfig 在业务层判断。
+    if (!parsed.endpoint || !parsed.bucket || !parsed.secretAccessKeyEnc) return null;
     let secretAccessKey: string;
     try {
       secretAccessKey = await openWithSecret(env.SESSION_SECRET, parsed.secretAccessKeyEnc, CRYPTO_DOMAIN);

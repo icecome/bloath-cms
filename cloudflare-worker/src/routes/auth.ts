@@ -49,10 +49,12 @@ location.href = '/';
 authApp.get('/api/auth/login', async (c: Context<HonoEnv>) => {
   const url = new URL(c.req.url);
   const workerUrl = url.origin.startsWith('http://localhost') ? 'http://localhost:8787' : url.origin;
-  const headerFrontendUrl = c.req.header('X-Frontend-Url');
-  const frontendUrl = (headerFrontendUrl && isAllowedFrontendUrl(headerFrontendUrl, c.env))
-    ? headerFrontendUrl
-    : (c.env.FRONTEND_URL || 'http://localhost:5173');
+  // 前端跨站访问 Worker 时（bloath.icecome.com → *.api.icecome.com），
+  // 回调完成后跳回前端域名；这里把实际前端 Origin 透传给 state，供 callback 复用。
+  const headerFrontendUrl = c.req.header('X-Frontend-Url')
+    || (c.req.header('Origin') && isAllowedFrontendUrl(c.req.header('Origin')!, c.env) ? c.req.header('Origin')! : undefined);
+  const frontendUrl = headerFrontendUrl
+    || (c.env.FRONTEND_URL || 'http://localhost:5173');
   const state = await generateState(frontendUrl, c.env);
   const authUrl = `https://github.com/login/oauth/authorize?client_id=${c.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=consent`;
   const response = c.json(success({ authUrl }));

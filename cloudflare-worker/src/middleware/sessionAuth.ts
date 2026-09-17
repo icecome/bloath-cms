@@ -20,7 +20,10 @@ export function getSessionTokenFromCookie(request: Request): string | null {
 }
 
 export function buildSessionCookie(token: string, maxAge: number, isSecure: boolean): string {
-  const parts = [`session=${encodeURIComponent(token)}`, 'Path=/api', `Max-Age=${maxAge}`, 'HttpOnly', 'SameSite=Lax'];
+  // 生产 https 下用 SameSite=None; Secure，允许 bloath.icecome.com 跨站 fetch 带 cookie 访问 *.api.icecome.com。
+  // 本地 http 保持 Lax。CSRF 由 checkCsrf（X-Requested-With）防护。
+  const sameSite = isSecure ? 'None' : 'Lax';
+  const parts = [`session=${encodeURIComponent(token)}`, 'Path=/api', `Max-Age=${maxAge}`, 'HttpOnly', `SameSite=${sameSite}`];
   if (isSecure) parts.push('Secure');
   return parts.join('; ');
 }

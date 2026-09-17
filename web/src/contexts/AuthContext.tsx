@@ -80,7 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         credentials: 'include',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-Frontend-Url': window.location.origin,
+        }
       });
       if (!res.ok) {
         addToast({ message: '登录服务不可用，请稍后重试', type: 'warning' });

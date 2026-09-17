@@ -21,14 +21,6 @@ function client(cfg: BufferConfig): AwsClient {
   });
 }
 
-export async function headBucket(cfg: BufferConfig): Promise<{ ok: boolean; status: number; error?: string }> {
-  const aws = client(cfg);
-  const res = await aws.fetch(baseUrl(cfg), { method: 'HEAD' });
-  if (res.ok) return { ok: true, status: res.status };
-  const text = await res.text().catch(() => '');
-  return { ok: false, status: res.status, error: text.slice(0, 120) || `HTTP ${res.status}` };
-}
-
 export async function putObject(cfg: BufferConfig, key: string, body: string): Promise<void> {
   const aws = client(cfg);
   const res = await aws.fetch(`${baseUrl(cfg)}/${encodeKey(key)}`, {

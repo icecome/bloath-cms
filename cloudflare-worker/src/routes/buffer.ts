@@ -8,7 +8,7 @@ import { isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE } from '../middleware/
 import {
   getBufferConfigPublic, saveBufferConfig, type BufferConfigInput,
 } from '../services/bufferConfig.service';
-import { headBucket, putObject } from '../services/s3.client';
+import { putObject } from '../services/s3.client';
 import { isBlockedS3Endpoint, S3Error } from '../services/s3.errors';
 import { getBufferConfig } from '../services/bufferConfig.service';
 import {
@@ -78,15 +78,12 @@ bufferApp.put('/api/buffer/config', async (c: Context<HonoEnv>) => {
   } catch (err) {
     return c.json(error(ErrorCode.INTERNAL_ERROR, '配置保存失败'), 500);
   }
-  // 启用后写入 .keep 完成 tmp/blog/{rand}/ 目录初始化
+  // 启用后用实际会执行的动作（PutObject 写 .keep）探测，与「测试连接」一致。
+  // HeadBucket 对仅授予对象级权限的凭证（如 R2 细粒度 token）会误判为连接失败。
   if (enabled) {
     try {
       const cfg = await getBufferConfig(c.env);
       if (cfg) {
-        const existing = await headBucket(cfg);
-        if (!existing.ok) {
-          return c.json(error(ErrorCode.VALIDATION_ERROR, `S3 连接失败 (${existing.status})`), 400);
-        }
         await putObject(cfg, `${cfg.prefix}/${cfg.rand}/.keep`, '');
       }
     } catch (err) {
