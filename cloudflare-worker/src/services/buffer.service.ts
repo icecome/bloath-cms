@@ -4,6 +4,7 @@ import type { BufferConfig } from './bufferConfig.service';
 import { getBufferConfig } from './bufferConfig.service';
 import { putObject, getObject, deleteObject, listObjects } from './s3.client';
 import { readFile } from './github';
+import { mapLimit } from '../lib/concurrency';
 
 export type BufferOp = 'write' | 'delete' | 'move';
 
@@ -54,19 +55,6 @@ export function pathFromKey(prefix: string, key: string): string | null {
 }
 
 const S3_CONCURRENCY = 20;
-
-async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor++;
-      results[index] = await fn(items[index] as T, index);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
 
 export async function writeBufferEntry(
   env: Env, owner: string, repo: string, branch: string, path: string, entry: BufferEntry

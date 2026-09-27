@@ -51,11 +51,13 @@ function LoadingFallback() {
 export default function App() {
   return (
     <ToastProvider>
+      {/* ToastContainer 只消费 useToast：挂在 ToastProvider 直接子级，
+          避免订阅内层 Provider（Auth/Repo/Buffer/Collections）的 value 变更而重渲染 */}
+      <ToastContainer />
       <AuthProvider>
         <RepoProvider>
           <BufferProvider>
           <CollectionsProvider>
-            <ToastContainer />
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={

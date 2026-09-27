@@ -4,6 +4,7 @@
 import type { FileInfo, Repo, User, CommitOp } from '../../../shared/types';
 import { FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } from '../../../shared/types';
 import type { Env } from '../env';
+import { mapLimit } from '../lib/concurrency';
 
 export type { CommitOp };
 
@@ -13,6 +14,23 @@ export class GithubApiError extends Error {
     super(message);
     this.name = 'GithubApiError';
   }
+}
+
+/** 批量 blob 上传的并发上限，与 front-matter 批量读取一致 */
+const BLOB_UPLOAD_CONCURRENCY = 8;
+
+/**
+ * GitHub API 请求头（Authorization + User-Agent），全文件统一来源。
+ * withJson 附加 Content-Type；withAccept 附加 GitHub 版本化 Accept 头。
+ * 两个开关默认关闭，以保持各调用点原有的头部组合不变。
+ */
+function ghHeaders(token: string, withJson = false, withAccept = false): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    'User-Agent': 'Bloath-CMS',
+    ...(withAccept ? { Accept: 'application/vnd.github+json' } : {}),
+    ...(withJson ? { 'Content-Type': 'application/json' } : {}),
+  };
 }
 
 /** 构造 commit author；userName 非法时返回 undefined（沿用 token 默认身份） */
@@ -83,10 +101,7 @@ export async function getUserInfo(token: string): Promise<User> {
     throw new Error('Empty access token');
   }
   const response = await fetch('https://api.github.com/user', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'User-Agent': 'Bloath-CMS'
-    }
+    headers: ghHeaders(token)
   });
 
   if (!response.ok) {
@@ -121,10 +136,7 @@ export async function getUserRepos(token: string): Promise<Repo[]> {
 
   for (let page = 0; page < MAX_PAGES && url; page++) {
     const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'User-Agent': 'Bloath-CMS'
-      }
+      headers: ghHeaders(token)
     });
 
     if (!response.ok) {
@@ -160,10 +172,7 @@ export async function readFile(
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`,
     {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'User-Agent': 'Bloath-CMS'
-      }
+      headers: ghHeaders(token)
     }
   );
 
@@ -227,11 +236,7 @@ export async function writeFile(
     `https://api.github.com/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
     {
       method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'User-Agent': 'Bloath-CMS',
-        'Content-Type': 'application/json'
-      },
+      headers: ghHeaders(token, true),
       body: JSON.stringify(payload)
     }
   );
@@ -270,11 +275,7 @@ export async function deleteFile(
     `https://api.github.com/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
     {
       method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'User-Agent': 'Bloath-CMS',
-        'Content-Type': 'application/json'
-      },
+      headers: ghHeaders(token, true),
       body: JSON.stringify(payload)
     }
   );
@@ -298,10 +299,7 @@ export async function listDir(
     : `https://api.github.com/repos/${owner}/${repo}/contents?ref=${encodeURIComponent(branch)}`;
 
   const response = await fetch(apiUrl, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'User-Agent': 'Bloath-CMS'
-    }
+    headers: ghHeaders(token)
   });
 
   if (!response.ok) {
@@ -330,10 +328,7 @@ export async function getRepoBranches(
 
   for (let page = 0; page < MAX_PAGES && url; page++) {
     const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'User-Agent': 'Bloath-CMS'
-      }
+      headers: ghHeaders(token)
     });
 
     if (!response.ok) {
@@ -373,7 +368,7 @@ export async function createBranch(
   // 获取源分支最新 commit SHA
   const refResponse = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(sourceBranch)}`,
-    { headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'Bloath-CMS' } }
+    { headers: ghHeaders(token) }
   );
   if (!refResponse.ok) {
     await throwGithubError(refResponse, 'Failed to get source branch ref');
@@ -386,11 +381,7 @@ export async function createBranch(
     `https://api.github.com/repos/${owner}/${repo}/git/refs`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'User-Agent': 'Bloath-CMS',
-        'Content-Type': 'application/json'
-      },
+      headers: ghHeaders(token, true),
       body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha })
     }
   );
@@ -420,12 +411,7 @@ interface GitHubRequestInit {
 async function githubApi<T>(url: string, token: string, init: GitHubRequestInit = {}): Promise<T> {
   const response = await fetch(url, {
     method: init.method || 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'User-Agent': 'Bloath-CMS',
-      Accept: 'application/vnd.github+json',
-      ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {})
-    },
+    headers: ghHeaders(token, init.body !== undefined, true),
     ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {})
   });
   if (!response.ok) {
@@ -474,16 +460,17 @@ export async function batchCommit(
   }
 
   // 3. 并行创建所有二进制 blob（仅 base64 需上传），再按 path 组装 entries
+  // 限制并发上限：ops 最多 200 项（repos.ts 校验），无上限并发会同时打满 GitHub 连接
   const binaryOps = ops.filter((op) => op.op === 'write' && op.base64Content);
   const blobShaByTarget = new Map<string, string>();
   if (binaryOps.length > 0) {
-    await Promise.all(binaryOps.map(async (op) => {
+    await mapLimit(binaryOps, BLOB_UPLOAD_CONCURRENCY, async (op) => {
       const blob = await githubApi<{ sha: string }>(`${base}/blobs`, token, {
         method: 'POST',
         body: { content: op.base64Content, encoding: 'base64' }
       });
       blobShaByTarget.set(op.path, blob.sha);
-    }));
+    });
   }
 
   const entries: GHTreeEntry[] = [];
@@ -575,29 +562,27 @@ export async function extractFrontMatters(
   branch: string,
   paths: string[]
 ): Promise<{ results: ExtractedFrontmatter[]; errors: Array<{ path: string; error: string }> }> {
-  const results: ExtractedFrontmatter[] = [];
-  const errors: Array<{ path: string; error: string }> = [];
   const CONCURRENCY = 8;
 
-  for (let i = 0; i < paths.length; i += CONCURRENCY) {
-    const chunk = paths.slice(i, i + CONCURRENCY);
-    type ExtractItem = { path: string; format: 'yaml' | 'toml'; raw: string } | { path: string; error: string };
-    const settled: ExtractItem[] = await Promise.all(
-      chunk.map(async (path): Promise<ExtractItem> => {
-        try {
-          const { content } = await readFile(token, owner, repo, path, branch);
-          return { path, ...sliceFrontmatter(content) };
-        } catch (err) {
-          return { path, error: err instanceof Error ? err.message : 'read failed' };
-        }
-      })
-    );
-    for (const item of settled) {
-      if ('error' in item) {
-        errors.push({ path: item.path, error: item.error });
-      } else {
-        results.push({ path: item.path, format: item.format, raw: item.raw });
-      }
+  // 逐个文件读取失败不中断整批：在 fn 内捕获并返回错误项，
+  // 避免 mapLimit 的"任一失败即抛出"语义影响批量的部分成功结果。
+  type ExtractItem = { path: string; format: 'yaml' | 'toml'; raw: string } | { path: string; error: string };
+  const settled = await mapLimit(paths, CONCURRENCY, async (path): Promise<ExtractItem> => {
+    try {
+      const { content } = await readFile(token, owner, repo, path, branch);
+      return { path, ...sliceFrontmatter(content) };
+    } catch (err) {
+      return { path, error: err instanceof Error ? err.message : 'read failed' };
+    }
+  });
+
+  const results: ExtractedFrontmatter[] = [];
+  const errors: Array<{ path: string; error: string }> = [];
+  for (const item of settled) {
+    if ('error' in item) {
+      errors.push({ path: item.path, error: item.error });
+    } else {
+      results.push({ path: item.path, format: item.format, raw: item.raw });
     }
   }
 
@@ -631,12 +616,7 @@ export async function dispatchWorkflow(
     `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'User-Agent': 'Bloath-CMS',
-        Accept: 'application/vnd.github+json',
-        'Content-Type': 'application/json'
-      },
+      headers: ghHeaders(token, true, true),
       body: JSON.stringify({ ref })
     }
   );
@@ -656,15 +636,12 @@ export async function getTree(
   owner: string,
   repo: string,
   branch: string = 'main',
-  mode?: 'filename' | 'commits'
+  mode?: 'filename'
 ): Promise<FileInfo[]> {
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
     {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'User-Agent': 'Bloath-CMS'
-      }
+      headers: ghHeaders(token)
     }
   );
 
@@ -689,7 +666,7 @@ export async function getTree(
 
   if (fileItems.length === 0) return fileItems;
 
-  const ghHeaders = { Authorization: `Bearer ${token}`, 'User-Agent': 'Bloath-CMS' };
+  const headers = ghHeaders(token);
 
   // 通过 commits API 填充真实修改时间（仅媒体库 mode='filename'）：
   // 注意：GitHub 没有"一次请求返回所有文件最后修改时间"的接口，
@@ -708,7 +685,7 @@ export async function getTree(
       while (pending.size > 0 && page <= MAX_PAGES && detailCalls < MAX_DETAIL_CALLS) {
         const listResp = await fetch(
           `https://api.github.com/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=100&page=${page}`,
-          { headers: ghHeaders }
+          { headers }
         );
         if (!listResp.ok) break;
         const commits = await listResp.json() as unknown as Array<{ sha: string }>;
@@ -720,7 +697,7 @@ export async function getTree(
         const batch = commits.slice(0, sliceCount);
         const details = await Promise.all(
           batch.map((commit) =>
-            fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${commit.sha}`, { headers: ghHeaders })
+            fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${commit.sha}`, { headers })
               .then((r) => (r.ok ? r.json() : null))
               .catch(() => null)
           )

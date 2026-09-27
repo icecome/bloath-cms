@@ -25,6 +25,23 @@ function auth(c: Context<HonoEnv>): AuthResult {
   return c.get('auth') as AuthResult;
 }
 
+/**
+ * 校验 owner/repo/branch 三个通用参数。
+ * owner 与 repo 不允许含斜杠；branch 同样按单段路径处理。
+ */
+function areRepoParamsValid(owner: unknown, repo: unknown, branch: unknown): boolean {
+  return isSafePathParam(owner as string | null | undefined)
+    && isSafePathParam(repo as string | null | undefined)
+    && isSafePathParam(branch as string | null | undefined);
+}
+
+/** 校验仓库参数 + 必填且允许斜杠的路径参数 */
+function areRepoAndPathValid(owner: unknown, repo: unknown, branch: unknown, path: unknown): boolean {
+  return areRepoParamsValid(owner, repo, branch)
+    && !!path
+    && isSafePathParam(path as string, true);
+}
+
 function respondBufferError(c: Context<HonoEnv>, err: unknown) {
   if (err instanceof BufferUnavailableError) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, err.message), 400);
@@ -149,14 +166,11 @@ bufferApp.get('/api/buffer/file', async (c: Context<HonoEnv>) => {
   const repo = c.req.query('repo');
   const branch = c.req.query('branch') || 'main';
   const path = c.req.query('path');
-  if (!isSafePathParam(owner) || !isSafePathParam(repo) || !path) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '缺少 owner/repo/path'), 400);
-  }
-  if (!isSafePathParam(path, true) || !isSafePathParam(branch)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '非法 path 或 branch'), 400);
+  if (!areRepoAndPathValid(owner, repo, branch, path)) {
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
   }
   try {
-    const result = await readFileWithBuffer(c.env, auth(c).githubToken, owner!, repo!, branch, path);
+    const result = await readFileWithBuffer(c.env, auth(c).githubToken, owner!, repo!, branch, path!);
     return c.json(success(result));
   } catch (err) {
     return respondBufferError(c, err);
@@ -170,11 +184,8 @@ bufferApp.put('/api/buffer/file', async (c: Context<HonoEnv>) => {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
   }
   const { owner, repo, branch = 'main', path, op, content, fromPath, baseSha, publishTarget } = body;
-  if (!isSafePathParam(owner) || !isSafePathParam(repo) || !path) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '缺少 owner/repo/path'), 400);
-  }
-  if (!isSafePathParam(path, true) || !isSafePathParam(branch)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '非法 path 或 branch'), 400);
+  if (!areRepoAndPathValid(owner, repo, branch, path)) {
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
   }
   if (op !== 'write' && op !== 'delete' && op !== 'move') {
     return c.json(error(ErrorCode.VALIDATION_ERROR, 'op 须为 write/delete/move'), 400);
@@ -196,7 +207,7 @@ bufferApp.put('/api/buffer/file', async (c: Context<HonoEnv>) => {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '非法 publishTarget'), 400);
   }
   try {
-    await writeBufferEntry(c.env, owner!, repo!, branch, path, {
+    await writeBufferEntry(c.env, owner!, repo!, branch, path!, {
       op: op as 'write' | 'delete' | 'move',
       content: op === 'write' ? content : undefined,
       fromPath: op === 'move' ? fromPath : undefined,
@@ -216,14 +227,11 @@ bufferApp.delete('/api/buffer/file', async (c: Context<HonoEnv>) => {
   const repo = c.req.query('repo');
   const branch = c.req.query('branch') || 'main';
   const path = c.req.query('path');
-  if (
-    !isSafePathParam(owner) || !isSafePathParam(repo) || !path ||
-    !isSafePathParam(path, true) || !isSafePathParam(branch)
-  ) {
+  if (!areRepoAndPathValid(owner, repo, branch, path)) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
   }
   try {
-    await deleteBufferEntry(c.env, owner!, repo!, branch, path);
+    await deleteBufferEntry(c.env, owner!, repo!, branch, path!);
     return c.json(success(null, '已放弃该缓冲变更'));
   } catch (err) {
     return respondBufferError(c, err);
@@ -235,7 +243,7 @@ bufferApp.get('/api/buffer/changes', async (c: Context<HonoEnv>) => {
   const owner = c.req.query('owner');
   const repo = c.req.query('repo');
   const branch = c.req.query('branch') || 'main';
-  if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branch)) {
+  if (!areRepoParamsValid(owner, repo, branch)) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
   }
   try {
@@ -256,7 +264,7 @@ bufferApp.post('/api/buffer/publish', async (c: Context<HonoEnv>) => {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
   }
   const { owner, repo, branch = 'main', userName, items } = body;
-  if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branch)) {
+  if (!areRepoParamsValid(owner, repo, branch)) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
   }
   if (items !== undefined) {
@@ -287,17 +295,14 @@ bufferApp.put('/api/buffer/target', async (c: Context<HonoEnv>) => {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
   }
   const { owner, repo, branch = 'main', path, publishTarget } = body;
-  if (
-    !isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branch) ||
-    !path || !isSafePathParam(path, true)
-  ) {
+  if (!areRepoAndPathValid(owner, repo, branch, path)) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
   }
   if (publishTarget !== null && publishTarget !== undefined && !isSafePathParam(publishTarget, true)) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '非法 publishTarget'), 400);
   }
   try {
-    const updated = await setBufferPublishTarget(c.env, owner!, repo!, branch, path, publishTarget ?? null);
+    const updated = await setBufferPublishTarget(c.env, owner!, repo!, branch, path!, publishTarget ?? null);
     if (!updated) {
       return c.json(error(ErrorCode.VALIDATION_ERROR, '缓冲中不存在该文件'), 404);
     }

@@ -1,5 +1,5 @@
 import type { Env } from '../env';
-import type { CreateMessageInput, MessageRow, ReplyRow, MessageWithReplies, ListParams, PaginatedResult } from '../comment/types';
+import type { MessageRow, ReplyRow, MessageWithReplies, ListParams, PaginatedResult } from '../comment/types';
 import { ErrorCode } from '../comment/types';
 import { ApiError } from '../comment/utils/errors';
 import { validateCreateMessage } from '../comment/utils/validators';
@@ -17,7 +17,7 @@ import {
 export async function createMessage(
   env: Env, input: unknown, ip: string, ua: string
 ): Promise<{ id: number; notifications?: Promise<void[]> }> {
-  const data = validateCreateMessage(input) as CreateMessageInput;
+  const data = validateCreateMessage(input);
   if (data.cf_verified) {
     if (!data.turnstile_token || data.turnstile_token.trim() === '') {
       throw new ApiError(ErrorCode.TURNSTILE_FAILED, '人机验证Token不能为空', 400);

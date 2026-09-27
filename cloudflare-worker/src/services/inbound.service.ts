@@ -107,9 +107,8 @@ export function extractReplyText(raw: string): string {
 }
 
 export async function claimWebhookEvent(db: D1Database, svixId: string): Promise<boolean> {
-  await db
-    .prepare("CREATE TABLE IF NOT EXISTS webhook_events (svix_id TEXT PRIMARY KEY, created_at TEXT DEFAULT (datetime('now')))")
-    .run();
+  // 表结构由 0007_music_sources.sql 迁移建立，此处不再执行运行时 DDL：
+  // 每次 webhook 请求都跑 CREATE TABLE IF NOT EXISTS 会走 schema 锁，属热路径开销。
   const result = await db
     .prepare('INSERT OR IGNORE INTO webhook_events (svix_id) VALUES (?)')
     .bind(svixId)

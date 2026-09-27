@@ -7,6 +7,8 @@ export type Envelope =
 
 export interface HttpRequestOptions extends RequestInit {
   timeoutMs?: number;
+  /** 跳过"响应数据为空"校验，用于 204/void 响应 */
+  skipDataCheck?: boolean;
 }
 
 /**
@@ -45,7 +47,7 @@ export async function requestJson<T>(
   options: HttpRequestOptions = {},
   baseUrl = ''
 ): Promise<T> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, headers, signal, ...rest } = options;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, headers, signal, skipDataCheck = false, ...rest } = options;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   if (signal) {
@@ -71,14 +73,37 @@ export async function requestJson<T>(
 
   if (res.status === 401) {
     window.dispatchEvent(new CustomEvent('auth:expired'));
-    throw new Error('登录已过期，请重新登录');
+    throw new HttpError(401, '登录已过期，请重新登录');
+  }
+
+  if (res.status === 503) {
+    throw new HttpError(503, 'GitHub API 暂不可用，请稍后重试');
+  }
+
+  if (res.status === 204) {
+    return undefined as T;
   }
 
   let payload: Envelope;
   try {
+    const contentType = res.headers.get('content-type');
+    if (!contentType?.includes('application/json')) throw new Error('not json');
     payload = (await res.json()) as Envelope;
   } catch {
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    throw new HttpError(res.status, `HTTP ${res.status}: ${res.statusText}`);
   }
-  return parseEnvelope<T>(payload);
+
+  // 信封内的业务错误带上 HTTP 状态码，供调用方按 status 判断（详见 HttpError 注释）
+  try {
+    const data = parseEnvelope<T>(payload);
+    if (!skipDataCheck && data === undefined) {
+      throw new Error('响应数据为空');
+    }
+    return data;
+  } catch (err) {
+    if (err instanceof Error && !res.ok) {
+      throw new HttpError(res.status, err.message);
+    }
+    throw err;
+  }
 }

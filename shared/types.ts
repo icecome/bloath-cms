@@ -160,3 +160,48 @@ export interface CommitOp {
 // front-matter 定界正则：--- → YAML，+++ → TOML（前后端共用，解析规则保持一致）
 export const FRONTMATTER_YAML_REGEX = /^---\r?\n([\s\S]*?)\r?\n---/;
 export const FRONTMATTER_TOML_REGEX = /^\+\+\+\r?\n([\s\S]*?)\r?\n\+\+\+/;
+
+// ---------- 留言模块（前后端共用）----------
+//
+// 此前 MessageRow（worker）与 AdminMessage（web）各自定义了一遍同一张表的行结构，
+// 字段漂移需两处同步修改。此处下沉为单一真源，两侧用 Pick/Omit 派生各自视图。
+
+export type MessageStatus = 'pending' | 'approved' | 'featured' | 'spam';
+
+/** replies 表行结构 */
+export interface MessageReplyRow {
+  id: number;
+  message_id: number;
+  reply_content: string;
+  reply_type: '博主' | '邮箱回信';
+  reply_from_email: string;
+  created_at: string;
+}
+
+/** messages 表完整行结构（含仅后端可见的字段） */
+export interface MessageRecord {
+  id: number;
+  visitor_name: string;
+  visitor_email: string;
+  visitor_website: string;
+  visitor_ip: string;
+  user_agent: string;
+  client_hash: string;
+  content: string;
+  quoted_text: string;
+  page_url: string;
+  page_title: string;
+  status: MessageStatus;
+  is_deleted: number;
+  needs_review: number;
+  reply_content: string;
+  reply_at: string | null;
+  reply_token: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 管理面返回给前端的留言视图：剔除仅服务端使用的字段，附带回复列表 */
+export type MessageAdminView = Omit<MessageRecord, 'user_agent' | 'client_hash' | 'reply_token'> & {
+  replies: MessageReplyRow[];
+};

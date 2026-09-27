@@ -9,53 +9,14 @@ export enum ErrorCode {
   TURNSTILE_FAILED = 50001,
 }
 
-// messages 表行结构
-export interface MessageRow {
-  id: number;
-  visitor_name: string;
-  visitor_email: string;
-  visitor_website: string;
-  visitor_ip: string;
-  user_agent: string;
-  client_hash: string;
-  content: string;
-  quoted_text: string;
-  page_url: string;
-  page_title: string;
-  status: 'pending' | 'approved' | 'featured' | 'spam';
-  is_deleted: number;
-  needs_review: number;
-  reply_content: string;
-  reply_at: string | null;
-  reply_token: string;
-  created_at: string;
-  updated_at: string;
-}
+// 行结构定义在 shared/types.ts，前后端共用一份，避免字段漂移需两处同步修改
+export type { MessageRecord as MessageRow, MessageReplyRow as ReplyRow, MessageStatus } from '../../../shared/types';
+import type { MessageRecord, MessageReplyRow } from '../../../shared/types';
 
-// replies 表行结构
-export interface ReplyRow {
-  id: number;
-  message_id: number;
-  reply_content: string;
-  reply_type: '博主' | '邮箱回信';
-  reply_from_email: string;
-  created_at: string;
-}
+export type MessageWithReplies = MessageRecord & { replies: MessageReplyRow[] };
 
-export type MessageWithReplies = MessageRow & { replies: ReplyRow[] };
-
-// POST /api/message 请求体
-export interface CreateMessageInput {
-  visitor_name: string;
-  visitor_email: string;
-  visitor_website: string;
-  content: string;
-  quoted_text: string;
-  page_url: string;
-  page_title: string;
-  turnstile_token: string;
-  cf_verified: boolean;
-}
+// POST /api/message 请求体的类型由 comment/utils/validators.ts 的 Zod schema 推断
+// （单一真源：schema 同时承担运行时校验与类型导出，避免手写 interface 与 schema 不一致）
 
 // GET /api/messages 查询参数
 export interface ListParams {

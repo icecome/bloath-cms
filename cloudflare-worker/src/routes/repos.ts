@@ -90,9 +90,7 @@ reposApp.get('/api/repos/tree', async (c: Context<HonoEnv>) => {
   const repo = c.req.query('repo');
   const branch = c.req.query('branch') || 'main';
   const modeParam = c.req.query('mode');
-  const mode: 'filename' | 'commits' | undefined =
-    modeParam === 'filename' ? 'filename' :
-    modeParam === 'commits' ? 'commits' : undefined;
+  const mode: 'filename' | undefined = modeParam === 'filename' ? 'filename' : undefined;
   if (!isSafePathParam(owner) || !isSafePathParam(repo)) return c.json(badRequest('Missing owner or repo'), 400);
   if (!isSafePathParam(branch)) return c.json(badRequest('Invalid branch'), 400);
   const tree = await getTree(auth(c).githubToken, owner, repo, branch, mode);

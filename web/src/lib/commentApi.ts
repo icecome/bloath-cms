@@ -1,6 +1,7 @@
 // 留言模块 API 客户端（与 Worker 的 /api/admin/* 和 /api/messages 通信）
 import { API_BASE } from './constants';
 import { requestJson } from './http';
+import type { MessageAdminView, MessageReplyRow } from '../../../shared/types';
 
 const API_TIMEOUT_MS = 10000;
 
@@ -9,35 +10,10 @@ function commentFetch<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 // ---------- 类型 ----------
+// 行结构复用 shared/types.ts 的单一真源，不再本地重复定义
 
-export interface MessageReply {
-  id: number;
-  message_id: number;
-  reply_content: string;
-  reply_type: string;
-  reply_from_email: string;
-  created_at: string;
-}
-
-export interface AdminMessage {
-  id: number;
-  visitor_name: string;
-  visitor_email: string;
-  visitor_website: string;
-  visitor_ip: string;
-  content: string;
-  quoted_text: string;
-  page_url: string;
-  page_title: string;
-  status: 'pending' | 'approved' | 'featured' | 'spam';
-  is_deleted: number;
-  needs_review: number;
-  reply_content: string;
-  reply_at: string | null;
-  created_at: string;
-  updated_at: string;
-  replies: MessageReply[];
-}
+export type MessageReply = MessageReplyRow;
+export type AdminMessage = MessageAdminView;
 
 export interface AdminListResult {
   items: AdminMessage[];

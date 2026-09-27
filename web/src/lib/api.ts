@@ -1,6 +1,6 @@
 import type { Repo, RepoInfo, CommitOp } from '../../../shared/types';
 import { API_BASE, MAX_TREE_ITEMS } from './constants';
-import { parseEnvelope, HttpError } from './http.ts';
+import { requestJson, type HttpRequestOptions } from './http.ts';
 
 export type { CommitOp };
 
@@ -30,64 +30,14 @@ export function formatTimestamp(): string {
   return `${y}${m}${d}T${h}${min}${s}`;
 }
 
-async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = false): Promise<T> {
-  const finalOptions: RequestInit = {
-    ...options,
-    credentials: 'include',
-    headers: {
-      ...options?.headers,
-      'X-Requested-With': 'XMLHttpRequest'
-    }
-  };
-
-  let res: Response;
-  try {
-    res = await fetch(url, finalOptions);
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error('请求超时');
-    }
-    throw new Error('网络连接失败');
-  }
-
-  if (res.status === 401) {
-    window.dispatchEvent(new CustomEvent('auth:expired'));
-    throw new HttpError(401, '登录已过期，请重新登录');
-  }
-
-  if (res.status === 503) {
-    throw new HttpError(503, 'GitHub API 暂不可用，请稍后重试');
-  }
-
-  if (res.status === 204) {
-    return undefined as T;
-  }
-
-  let payload: unknown;
-  try {
-    const contentType = res.headers.get('content-type');
-    if (!contentType?.includes('application/json')) {
-      throw new Error('not json');
-    }
-    payload = await res.json();
-  } catch {
-    throw new HttpError(res.status, `HTTP ${res.status}: ${res.statusText}`);
-  }
-
-  // 信封内的业务错误也要带上 HTTP 状态码：否则调用方拿到的是纯业务 message，
-  // 无法按状态判断（如"目录不存在"的 404），只能退化为文本匹配。
-  try {
-    const data = parseEnvelope<T>(payload as Parameters<typeof parseEnvelope>[0]);
-    if (!skipDataCheck && data === undefined) {
-      throw new Error('响应数据为空');
-    }
-    return data;
-  } catch (err) {
-    if (err instanceof Error && !res.ok) {
-      throw new HttpError(res.status, err.message);
-    }
-    throw err;
-  }
+/**
+ * 本模块的统一请求入口。
+ * 超时 / 401 事件 / 503 / 204 / 双信封解析 / 结构化错误码统一由 requestJson 提供，
+ * 此处只负责补上默认超时与 skipDataCheck 的语义透传。
+ */
+async function apiFetch<T>(url: string, options?: HttpRequestOptions, skipDataCheck = false): Promise<T> {
+  const { timeoutMs = API_TIMEOUT_MS, ...rest } = options ?? {};
+  return requestJson<T>(url, { ...rest, timeoutMs, skipDataCheck });
 }
 
 interface FileReadResult {
@@ -131,30 +81,18 @@ export async function readFile(params: RepoInfo & { path: string }, timeoutMs?: 
     branch: params.branch || 'main'
   });
 
-  const controller = new AbortController();
-  const effectiveTimeout = timeoutMs ?? API_TIMEOUT_MS;
-  const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
-
-  try {
-    return await apiFetch<FileReadResult>(`${API_BASE}/api/repos/file?${searchParams}`, {
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return apiFetch<FileReadResult>(`${API_BASE}/api/repos/file?${searchParams}`, {
+    timeoutMs: timeoutMs ?? API_TIMEOUT_MS,
+  });
 }
 
 export async function writeFile(
   params: RepoInfo & { path: string; content: string; message?: string; branch?: string; sha?: string; userName?: string }
 ): Promise<WriteResult> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
-  try {
-    return await apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
+  return apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         owner: params.owner,
@@ -166,38 +104,26 @@ export async function writeFile(
         sha: params.sha,
         userName: params.userName
       }),
-      signal: controller.signal
     });
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
 
 export async function deleteFile(
   params: RepoInfo & { path: string; sha: string; message?: string; userName?: string }
 ): Promise<void> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
-  try {
-    await apiFetch<void>(`${API_BASE}/api/repos/file`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        owner: params.owner,
-        repo: params.repo,
-        path: params.path,
-        sha: params.sha,
-        message: params.message || '[skip ci]',
-        userName: params.userName
-      }),
-      signal: controller.signal
-    }, true);
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  await apiFetch<void>(`${API_BASE}/api/repos/file`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      owner: params.owner,
+      repo: params.repo,
+      path: params.path,
+      sha: params.sha,
+      message: params.message || '[skip ci]',
+      userName: params.userName
+    }),
+  }, true);
 }
 
 /**
@@ -298,28 +224,21 @@ export async function createBranch(params: {
   branchName: string;
   sourceBranch?: string;
 }): Promise<void> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
-  try {
-    await apiFetch<void>(`${API_BASE}/api/repos/branch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-      signal: controller.signal
-    }, true);
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  await apiFetch<void>(`${API_BASE}/api/repos/branch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  }, true);
 }
 
 /**
  * 使用 GitHub Trees API 一次性获取整个目录树（替代递归扫描）
- * mode: 'commits' = 通过 commits API 获取时间（内容库/草稿箱/回收站）
- *       'filename' = 优先从文件名提取时间，回退到 commits API（媒体库）
+ * mode: 'filename' = 额外通过 commits API 填充 lastModified（媒体库按最新排序用）
+ *       省略      = 不查询 commits，lastModified 保持 0；内容库/草稿箱/回收站
+ *                   的排序依赖 front-matter 的 date，不需要该字段
  * 限制：单次最多返回 800 个文件，超限则抛出错误（GitHub API 上限 1000）
  */
-export async function getTree(params: RepoInfo & { mode?: 'commits' | 'filename' }): Promise<TreeItem[]> {
+export async function getTree(params: RepoInfo & { mode?: 'filename' }): Promise<TreeItem[]> {
   const searchParams = new URLSearchParams({
     owner: params.owner,
     repo: params.repo,
@@ -342,30 +261,22 @@ export async function getTree(params: RepoInfo & { mode?: 'commits' | 'filename'
 export async function uploadImage(
   params: RepoInfo & { path: string; base64Content: string; message?: string; branch?: string; userName?: string; sha?: string }
 ): Promise<WriteResult> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
-  try {
-    return await apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        owner: params.owner,
-        repo: params.repo,
-        path: params.path,
-        base64Content: params.base64Content,
-        message: params.message || formatTimestamp(),
-        branch: params.branch || 'main',
-        userName: params.userName,
-        sha: params.sha
-      }),
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      owner: params.owner,
+      repo: params.repo,
+      path: params.path,
+      base64Content: params.base64Content,
+      message: params.message || formatTimestamp(),
+      branch: params.branch || 'main',
+      userName: params.userName,
+      sha: params.sha
+    }),
+  });
 }
 
 export async function logout(): Promise<void> {
@@ -418,26 +329,20 @@ export async function setDeviceTrusted(trusted: boolean): Promise<void> {
 export async function commitBatch(
   params: RepoInfo & { message: string; ops: CommitOp[]; userName?: string }
 ): Promise<{ sha: string }> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    return await apiFetch<{ sha: string }>(`${API_BASE}/api/repos/commit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        owner: params.owner,
-        repo: params.repo,
-        branch: params.branch || 'main',
-        message: params.message,
-        ops: params.ops,
-        userName: params.userName
-      }),
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return apiFetch<{ sha: string }>(`${API_BASE}/api/repos/commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      owner: params.owner,
+      repo: params.repo,
+      branch: params.branch || 'main',
+      message: params.message,
+      ops: params.ops,
+      userName: params.userName
+    }),
+    // 批量提交需走 Git Data API 多次往返，超时高于默认值
+    timeoutMs: 30000,
+  });
 }
 
 // ---------- front-matter 聚合提取 ----------
