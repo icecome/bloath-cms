@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, type CSSProperties } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { useCollections } from '../contexts/CollectionsContext';
 import { useRepo } from '../contexts/RepoContext';
 import { useAuth } from '../hooks/useAuth';
@@ -54,6 +54,27 @@ export default function MediaPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteConfirm, setDeleteConfirm] = useState<MediaFile | null>(null);
+  // 复制提示的清除定时器：组件卸载时需清理，否则会在已卸载组件上调用 setState，
+  // 且快速连续复制时旧定时器会提前清掉新提示
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  /** 显示"已复制"态 2 秒；重复调用会重置计时 */
+  const flashCopied = useCallback((sha: string, type: 'url' | 'markdown') => {
+    setCopiedId(sha);
+    setCopiedType(type);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => {
+      setCopiedId(null);
+      setCopiedType(null);
+      copyTimerRef.current = null;
+    }, 2000);
+  }, []);
 
   const isConfigured = source.configured;
 
@@ -231,9 +252,7 @@ export default function MediaPage() {
   const handleCopy = async (file: MediaFile) => {
     try {
       await navigator.clipboard.writeText(file.url);
-      setCopiedId(file.sha);
-      setCopiedType('url');
-      setTimeout(() => { setCopiedId(null); setCopiedType(null); }, 2000);
+      flashCopied(file.sha, 'url');
     } catch {
       setError('复制失败');
     }
@@ -243,9 +262,7 @@ export default function MediaPage() {
     const markdownLink = `![${file.name}](${file.url})`;
     try {
       await navigator.clipboard.writeText(markdownLink);
-      setCopiedId(file.sha);
-      setCopiedType('markdown');
-      setTimeout(() => { setCopiedId(null); setCopiedType(null); }, 2000);
+      flashCopied(file.sha, 'markdown');
     } catch {
       setError('复制失败');
     }

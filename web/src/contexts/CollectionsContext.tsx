@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import type { MediaConfig } from '../../../shared/types';
 import { DEFAULT_MEDIA_PATH, DEFAULT_BRANCH_NAME } from '../lib/constants';
 
@@ -117,31 +117,37 @@ export function CollectionsProvider({ children }: { children: ReactNode }) {
     saveMediaConfig(mediaConfig);
   }, [mediaConfig]);
 
-  const updateConfig = (updates: Partial<CollectionConfig>) => {
+  const updateConfig = useCallback((updates: Partial<CollectionConfig>) => {
     setConfig((prev) => ({ ...prev, ...updates }));
-  };
+  }, []);
 
-  const addPath = (path: string) => {
+  const addPath = useCallback((path: string) => {
     const trimmedPath = path.trim();
     setConfig((prev) => {
       if (prev.paths.includes(trimmedPath)) return prev;
       return { ...prev, paths: [...prev.paths, trimmedPath] };
     });
-  };
+  }, []);
 
-  const removePath = (path: string) => {
+  const removePath = useCallback((path: string) => {
     setConfig((prev) => {
       if (prev.paths.length <= 1) return prev;
       return { ...prev, paths: prev.paths.filter((p) => p !== path) };
     });
-  };
+  }, []);
 
-  const updateMediaConfig = (updates: Partial<MediaConfig>) => {
+  const updateMediaConfig = useCallback((updates: Partial<MediaConfig>) => {
     setMediaConfig((prev) => ({ ...prev, ...updates }));
-  };
+  }, []);
+
+  // value 用 useMemo 包装：updateConfig/updateMediaConfig 被 MainLayout 的
+  // 配置同步 effect 依赖，引用不稳定会让该 effect 每次渲染都重跑
+  const value = useMemo<CollectionsContextType>(() => ({
+    config, updateConfig, addPath, removePath, mediaConfig, updateMediaConfig,
+  }), [config, updateConfig, addPath, removePath, mediaConfig, updateMediaConfig]);
 
   return (
-    <CollectionsContext.Provider value={{ config, updateConfig, addPath, removePath, mediaConfig, updateMediaConfig }}>
+    <CollectionsContext.Provider value={value}>
       {children}
     </CollectionsContext.Provider>
   );

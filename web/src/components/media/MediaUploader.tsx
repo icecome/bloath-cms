@@ -13,6 +13,9 @@ export function MediaUploader({ uploading, quality, onUpload }: MediaUploaderPro
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label="上传图片：点击选择或拖拽文件到此处"
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => {
@@ -21,7 +24,14 @@ export function MediaUploader({ uploading, quality, onUpload }: MediaUploaderPro
         if (e.dataTransfer.files.length > 0) onUpload(e.dataTransfer.files);
       }}
       onClick={() => fileInputRef.current?.click()}
-      className={`border-2 border-dashed rounded-sm p-8 text-center cursor-pointer transition-colors ${
+      onKeyDown={(e) => {
+        // 内层 input 为 display:none 无法聚焦，键盘用户通过外层触发文件选择
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          fileInputRef.current?.click();
+        }
+      }}
+      className={`border-2 border-dashed rounded-sm p-8 text-center cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
         dragOver
           ? 'border-primary bg-blue-50'
           : 'border-border hover:border-border hover:bg-accent'

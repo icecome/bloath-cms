@@ -8,29 +8,6 @@ export interface SelectedRepo extends RepoInfo {
   branch: string;
 }
 
-export interface ContentEntry {
-  id: string;
-  title: string;
-  slug: string;
-  collection: string;
-  path: string;
-  frontmatter: Record<string, unknown>;
-  body: string;
-  createdAt: string;
-  updatedAt: string;
-  status: 'published' | 'draft';
-}
-
-export interface Collection {
-  name: string;
-  label: string;
-  description?: string;
-  path: string;
-  fileExtension: 'md' | 'mdx';
-  filenamePattern?: string;
-  fields: FieldConfig[];
-}
-
 // 字段分组（schema 驱动表单按组折叠展示）
 export type FieldGroup = 'basic' | 'advanced' | 'special' | 'seo' | 'custom';
 
@@ -90,13 +67,6 @@ export interface FileInfo {
   type: 'file' | 'dir';
   size?: number;
   lastModified?: number;
-}
-
-export interface ContentListParams {
-  owner: string;
-  repo: string;
-  path: string;
-  branch?: string;
 }
 
 // CDN 提供商

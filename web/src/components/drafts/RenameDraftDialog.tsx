@@ -28,12 +28,14 @@ export function RenameDraftDialog({ value, loading, onChange, onConfirm, onClose
         </div>
         <div className="flex justify-end gap-2">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2 text-sm text-muted-foreground hover:bg-accent rounded-sm transition-colors"
           >
             取消
           </button>
           <button
+            type="button"
             onClick={onConfirm}
             disabled={!value.trim() || loading}
             className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"

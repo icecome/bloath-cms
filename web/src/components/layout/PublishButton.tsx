@@ -23,7 +23,7 @@ function PublishDialog() {
       <div className="bg-card border border-border rounded-sm w-full max-w-lg mx-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-medium text-foreground">发布 {changesCount} 项变更</h3>
-          <button type="button" onClick={() => setShowPublishDialog(false)} className="text-muted-foreground hover:text-foreground">
+          <button type="button" onClick={() => setShowPublishDialog(false)} aria-label="关闭发布对话框" className="text-muted-foreground hover:text-foreground">
             <X className="w-4 h-4" />
           </button>
         </div>

@@ -56,10 +56,8 @@ export async function handleReceivedEmail(
     }
 
     const fromEmail = (event.from as string | undefined) || '';
-    const { alert } = await appendEmailReply(env, message.id, content, fromEmail);
-    if (alert) {
-      await alert.catch(() => undefined);
-    }
+    // appendEmailReply 返回的 alert 内部已做 .catch() 兜底，此处无需再次捕获
+    await appendEmailReply(env, message.id, content, fromEmail);
     console.log(`[inbound] 留言 #${message.id} 收到回信, 已落库`);
   } catch (err) {
     console.error('[inbound] 处理回信异常:', err);

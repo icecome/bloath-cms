@@ -35,20 +35,11 @@ export function setCachedFiles(repo: RepoInfo, basePath: string, files: Enhanced
   cache.set(key, { files, timestamp: Date.now() });
 }
 
-export function clearCache(repo: RepoInfo, basePath?: string): void {
-  if (basePath) {
-    const key = getCacheKey(repo, basePath);
-    cache.delete(key);
-  } else {
-    const prefix = `${repo.owner}/${repo.repo}/${repo.branch || 'main'}/`;
-    for (const key of cache.keys()) {
-      if (key.startsWith(prefix)) {
-        cache.delete(key);
-      }
+export function clearCache(repo: RepoInfo): void {
+  const prefix = `${repo.owner}/${repo.repo}/${repo.branch || 'main'}/`;
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) {
+      cache.delete(key);
     }
   }
-}
-
-export function clearAllCache(): void {
-  cache.clear();
 }

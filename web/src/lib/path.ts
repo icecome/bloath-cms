@@ -20,7 +20,8 @@ export function sanitizeSlug(slug: string): string {
   return cleaned;
 }
 
-function pad2(n: number): string {
+/** 两位补零，供日期/时间片段格式化复用 */
+export function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 

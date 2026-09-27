@@ -6,6 +6,20 @@ async function deriveKey(secret: string, domainPrefix: string, usages: ('encrypt
   return crypto.subtle.importKey('raw', material, { name: 'AES-GCM' }, false, usages);
 }
 
+/**
+ * 字节数组转 base64。
+ * 不用 String.fromCharCode(...bytes) 展开写法：参数数量受栈限制（约 65k），
+ * 虽然当前调用面远小于该量级，逐段转换可避免将来扩大输入时的隐性崩溃。
+ */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const CHUNK = 8192;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
 export async function sealWithSecret(secret: string, plain: string, domainPrefix = ''): Promise<string> {
   const key = await deriveKey(secret, domainPrefix, ['encrypt']);
   const iv = new Uint8Array(12);
@@ -14,7 +28,7 @@ export async function sealWithSecret(secret: string, plain: string, domainPrefix
   const combined = new Uint8Array(iv.length + cipher.byteLength);
   combined.set(iv, 0);
   combined.set(new Uint8Array(cipher), iv.length);
-  return btoa(String.fromCharCode(...combined));
+  return bytesToBase64(combined);
 }
 
 export async function openWithSecret(secret: string, encoded: string, domainPrefix = ''): Promise<string> {

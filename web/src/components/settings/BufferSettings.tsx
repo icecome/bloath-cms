@@ -93,28 +93,28 @@ export function BufferSettings() {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <label className={labelCls}>Endpoint（S3 兼容端点）</label>
-          <input className={inputCls} value={form.endpoint} onChange={(e) => update({ endpoint: e.target.value })} placeholder="https://s3.example.com" />
+          <label htmlFor="buffer-endpoint" className={labelCls}>Endpoint（S3 兼容端点）</label>
+          <input id="buffer-endpoint" className={inputCls} value={form.endpoint} onChange={(e) => update({ endpoint: e.target.value })} placeholder="https://s3.example.com" />
         </div>
         <div>
-          <label className={labelCls}>Region</label>
-          <input className={inputCls} value={form.region} onChange={(e) => update({ region: e.target.value })} placeholder="auto" />
+          <label htmlFor="buffer-region" className={labelCls}>Region</label>
+          <input id="buffer-region" className={inputCls} value={form.region} onChange={(e) => update({ region: e.target.value })} placeholder="auto" />
         </div>
         <div>
-          <label className={labelCls}>Bucket</label>
-          <input className={inputCls} value={form.bucket} onChange={(e) => update({ bucket: e.target.value })} placeholder="my-bucket" />
+          <label htmlFor="buffer-bucket" className={labelCls}>Bucket</label>
+          <input id="buffer-bucket" className={inputCls} value={form.bucket} onChange={(e) => update({ bucket: e.target.value })} placeholder="my-bucket" />
         </div>
         <div>
-          <label className={labelCls}>Access Key ID</label>
-          <input className={inputCls} value={form.accessKeyId} onChange={(e) => update({ accessKeyId: e.target.value })} />
+          <label htmlFor="buffer-access-key" className={labelCls}>Access Key ID</label>
+          <input id="buffer-access-key" className={inputCls} value={form.accessKeyId} onChange={(e) => update({ accessKeyId: e.target.value })} />
         </div>
         <div>
-          <label className={labelCls}>Secret Access Key{config?.secretAccessKeyMasked ? `（已存 ${config.secretAccessKeyMasked}，留空沿用）` : ''}</label>
-          <input className={inputCls} type="password" value={form.secretAccessKey} onChange={(e) => update({ secretAccessKey: e.target.value })} autoComplete="new-password" />
+          <label htmlFor="buffer-secret-key" className={labelCls}>Secret Access Key{config?.secretAccessKeyMasked ? `（已存 ${config.secretAccessKeyMasked}，留空沿用）` : ''}</label>
+          <input id="buffer-secret-key" className={inputCls} type="password" value={form.secretAccessKey} onChange={(e) => update({ secretAccessKey: e.target.value })} autoComplete="new-password" />
         </div>
         <div className="col-span-2">
-          <label className={labelCls}>路径前缀</label>
-          <input className={inputCls} value={form.prefix} onChange={(e) => update({ prefix: e.target.value })} placeholder="tmp/blog" />
+          <label htmlFor="buffer-prefix" className={labelCls}>路径前缀</label>
+          <input id="buffer-prefix" className={inputCls} value={form.prefix} onChange={(e) => update({ prefix: e.target.value })} placeholder="tmp/blog" />
         </div>
       </div>
 

@@ -39,8 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await res.json() as { code?: number; data?: { user?: User }; message?: string };
-      if (data.code === 0 && data.data?.user) {
-        setState(prev => ({ ...prev, user: data.data!.user!, loading: false }));
+      const user = data.code === 0 ? data.data?.user : undefined;
+      if (user) {
+        setState(prev => ({ ...prev, user, loading: false }));
         return true;
       }
 

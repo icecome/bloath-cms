@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { getBranches } from '../lib/api';
 import type { SelectedRepo } from '../../../shared/types';
@@ -64,8 +64,14 @@ export function RepoProvider({ children }: { children: ReactNode }) {
     }
   }, [selectedRepo, user, loadBranches]);
 
+  // value 用 useMemo 包装：否则每次 Provider 渲染都新建对象引用，
+  // 导致所有 useRepo() 消费者（9 处）随 branches/loadingBranches 变化而重渲染
+  const value = useMemo<RepoContextType>(() => ({
+    selectedRepo, setSelectedRepo, branches, loadingBranches, loadBranches,
+  }), [selectedRepo, setSelectedRepo, branches, loadingBranches, loadBranches]);
+
   return (
-    <RepoContext.Provider value={{ selectedRepo, setSelectedRepo, branches, loadingBranches, loadBranches }}>
+    <RepoContext.Provider value={value}>
       {children}
     </RepoContext.Provider>
   );

@@ -149,6 +149,7 @@ export function PublishDraftDialog({
 
         <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-border">
           <button
+            type="button"
             onClick={onClose}
             disabled={loading}
             className="px-4 py-2 text-sm text-muted-foreground hover:bg-accent rounded-sm transition-colors"
@@ -156,6 +157,7 @@ export function PublishDraftDialog({
             取消
           </button>
           <button
+            type="button"
             onClick={handleConfirm}
             disabled={loading}
             className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"

@@ -1,6 +1,7 @@
 // 路径参数与安全 JSON 解析（独立于会话/CORS）
-const PATH_SAFE_PATTERN = /^[a-zA-Z0-9一-鿿._\-]+$/;
-const PATH_SAFE_PATTERN_WITH_SLASH = /^[a-zA-Z0-9一-鿿._/\-]+$/;
+// \u4e00-\u9fff 为 CJK 统一表意文字基本区（用转义写法避免字面量在不同编辑器/编码下显示异常）
+const PATH_SAFE_PATTERN = /^[a-zA-Z0-9\u4e00-\u9fff._\-]+$/;
+const PATH_SAFE_PATTERN_WITH_SLASH = /^[a-zA-Z0-9\u4e00-\u9fff._/\-]+$/;
 
 export const MAX_CONTENT_SIZE = 10 * 1024 * 1024;
 

@@ -153,6 +153,7 @@ function SchemaField({
       return (
         <FieldShell field={field}>
           <input
+            id={fieldControlId(field)}
             type="text"
             value={typeof rawValue === 'string' ? rawValue : ''}
             onChange={(e) => setValue(e.target.value)}
@@ -167,6 +168,7 @@ function SchemaField({
       return (
         <FieldShell field={field}>
           <input
+            id={fieldControlId(field)}
             type="text"
             value={typeof rawValue === 'string' ? rawValue : ''}
             onChange={(e) => setValue(e.target.value)}
@@ -180,6 +182,7 @@ function SchemaField({
       return (
         <FieldShell field={field}>
           <textarea
+            id={fieldControlId(field)}
             value={typeof rawValue === 'string' ? rawValue : ''}
             onChange={(e) => setValue(e.target.value)}
             rows={2}
@@ -193,6 +196,7 @@ function SchemaField({
       return (
         <FieldShell field={field}>
           <input
+            id={fieldControlId(field)}
             type="number"
             value={typeof rawValue === 'number' ? rawValue : ''}
             onChange={(e) => setValue(e.target.value ? Number(e.target.value) : undefined)}
@@ -308,13 +312,25 @@ function SchemaField({
 
 const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-white text-foreground placeholder:text-muted-foreground';
 
+/**
+ * 字段外壳：label + 控件。
+ * 用 field.name 生成 id 并以 htmlFor 关联 label：
+ * 屏幕阅读器点击 label 可聚焦控件（field.name 在同一 profile 内唯一）。
+ */
 function FieldShell({ field, children }: { field: FieldConfig; children: ReactNode }) {
   return (
     <div>
-      <label className="block text-xs text-muted-foreground mb-1.5">{field.label}</label>
+      <label htmlFor={`field-${field.name}`} className="block text-xs text-muted-foreground mb-1.5">
+        {field.label}
+      </label>
       {children}
     </div>
   );
+}
+
+/** 与 FieldShell 的 label 对应的控件 id，供各字段类型的 input 使用 */
+function fieldControlId(field: FieldConfig): string {
+  return `field-${field.name}`;
 }
 
 function ToggleSwitch({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: () => void }) {
@@ -484,7 +500,7 @@ function ImageListField({
 
 interface CustomFieldRow {
   /** 稳定行 id，作为渲染 key，避免删除中间行时输入焦点错乱 */
-  id: number;
+  id: string;
   key: string;
   value: string;
   type: 'string' | 'number' | 'boolean';
@@ -493,10 +509,14 @@ interface CustomFieldRow {
   dirty: boolean;
 }
 
-let nextFieldRowId = 0;
-function makeFieldRowId(): number {
-  nextFieldRowId += 1;
-  return nextFieldRowId;
+/**
+ * 自定义字段行的稳定 ID。
+ * 此前用模块级自增计数器，跨组件实例共享且不随卸载重置；
+ * 改用 crypto.randomUUID 消除模块级可变状态，且天然避免 StrictMode 双调用下的跳号。
+ * （id 仅用于 React key 与行内查找，无需可读或有序）
+ */
+function makeFieldRowId(): string {
+  return crypto.randomUUID();
 }
 
 function rowFromValue(key: string, value: unknown): CustomFieldRow {

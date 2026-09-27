@@ -1,6 +1,4 @@
-function padZero(n: number, len = 2): string {
-  return String(n).padStart(len, '0');
-}
+import { pad2 as padZero } from './path';
 
 function randomString(length: number): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
