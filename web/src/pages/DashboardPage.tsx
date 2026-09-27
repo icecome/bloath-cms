@@ -18,14 +18,18 @@ import { FileText, Search, Trash2, Pencil, Folder } from 'lucide-react';
 import { PAGE_SIZE, UNDO_STORAGE_PREFIX, UNDO_TTL_MS } from '../lib/constants';
 import { useToast } from '../contexts/ToastContext';
 
-function getUndoKey(repo: { owner: string; repo: string }) {
-  return `${UNDO_STORAGE_PREFIX}_${repo.owner}_${repo.repo}`;
+// 撤销键必须含 branch：否则在 main 删除后切到 dev，撤销会在 dev 上执行 main 的路径移动，
+// 导致移动到错误分支或误覆盖同名文件。
+function getUndoKey(repo: { owner: string; repo: string; branch?: string }) {
+  return `${UNDO_STORAGE_PREFIX}_${repo.owner}_${repo.repo}_${repo.branch || 'main'}`;
 }
 
 interface UndoRecord {
   file: EnhancedFileItem;
   originalPath: string;
   deletedAt: number;
+  /** 删除发生时的分支，恢复前二次比对，防止跨分支误操作 */
+  branch?: string;
 }
 
 export default function DashboardPage() {
@@ -93,6 +97,18 @@ if (!currentDir) {
       const record: UndoRecord = JSON.parse(raw);
       const elapsed = Date.now() - record.deletedAt;
       if (elapsed > UNDO_TTL_MS) {
+        sessionStorage.removeItem(key);
+        return;
+      }
+      // 二次比对分支：旧格式记录（无 branch 字段）或分支不匹配时一律丢弃，
+      // 避免用别的分支的路径执行 move。
+      const currentBranch = selectedRepo.branch || 'main';
+      if (record.branch !== undefined && record.branch !== currentBranch) {
+        sessionStorage.removeItem(key);
+        return;
+      }
+      if (record.branch === undefined) {
+        // 旧格式记录无法确认分支来源，直接清理，不提供撤销
         sessionStorage.removeItem(key);
         return;
       }
@@ -233,7 +249,8 @@ if (!selectedRepo || !currentDir) return;
           sessionStorage.setItem(key, JSON.stringify({
             file,
             originalPath: file.path,
-            deletedAt: Date.now()
+            deletedAt: Date.now(),
+            branch: selectedRepo.branch || 'main',
           }));
         } catch {
         }

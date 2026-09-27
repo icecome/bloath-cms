@@ -306,8 +306,16 @@ export default function EditorPage() {
     setSaving(true);
     try {
       if (bufferEnabled) {
-        await writeBufferFile({ owner, repo, branch, path: trashFile, op: 'move', fromPath: currentFilePath });
-        addToast({ message: '已存入缓冲（移至回收站）', type: 'success' });
+        // currentFileSha 为空说明该文件只在缓冲、尚未进仓库：
+        // 直接丢弃缓冲记录即可，无需产生任何 commit
+        const onlyInBuffer = !currentFileSha;
+        if (onlyInBuffer) {
+          await writeBufferFile({ owner, repo, branch, path: currentFilePath, op: 'delete' });
+          addToast({ message: '已删除（未提交到仓库）', type: 'success' });
+        } else {
+          await writeBufferFile({ owner, repo, branch, path: trashFile, op: 'move', fromPath: currentFilePath });
+          addToast({ message: '已存入缓冲（移至回收站）', type: 'success' });
+        }
         await refreshChanges();
         handleBack();
         return;

@@ -1,6 +1,6 @@
 import type { Repo, RepoInfo, CommitOp } from '../../../shared/types';
 import { API_BASE, MAX_TREE_ITEMS } from './constants';
-import { parseEnvelope } from './http.ts';
+import { parseEnvelope, HttpError } from './http.ts';
 
 export type { CommitOp };
 
@@ -52,11 +52,11 @@ async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = f
 
   if (res.status === 401) {
     window.dispatchEvent(new CustomEvent('auth:expired'));
-    throw new Error('登录已过期，请重新登录');
+    throw new HttpError(401, '登录已过期，请重新登录');
   }
 
   if (res.status === 503) {
-    throw new Error('GitHub API 暂不可用，请稍后重试');
+    throw new HttpError(503, 'GitHub API 暂不可用，请稍后重试');
   }
 
   if (res.status === 204) {
@@ -67,18 +67,27 @@ async function apiFetch<T>(url: string, options?: RequestInit, skipDataCheck = f
   try {
     const contentType = res.headers.get('content-type');
     if (!contentType?.includes('application/json')) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      throw new Error('not json');
     }
     payload = await res.json();
   } catch {
-    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    throw new HttpError(res.status, `HTTP ${res.status}: ${res.statusText}`);
   }
 
-  const data = parseEnvelope<T>(payload as Parameters<typeof parseEnvelope>[0]);
-  if (!skipDataCheck && data === undefined) {
-    throw new Error('响应数据为空');
+  // 信封内的业务错误也要带上 HTTP 状态码：否则调用方拿到的是纯业务 message，
+  // 无法按状态判断（如"目录不存在"的 404），只能退化为文本匹配。
+  try {
+    const data = parseEnvelope<T>(payload as Parameters<typeof parseEnvelope>[0]);
+    if (!skipDataCheck && data === undefined) {
+      throw new Error('响应数据为空');
+    }
+    return data;
+  } catch (err) {
+    if (err instanceof Error && !res.ok) {
+      throw new HttpError(res.status, err.message);
+    }
+    throw err;
   }
-  return data;
 }
 
 interface FileReadResult {

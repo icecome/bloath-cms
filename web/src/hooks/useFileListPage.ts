@@ -44,13 +44,19 @@ export function useFileListPage({
       setLoading(true);
     }
 
+    // 扫描含 getTree + 分批提取，大仓库耗时可达数秒。
+    // 期间若切换仓库/路径，旧响应必须丢弃：否则会用上一个仓库的数据覆盖当前列表，
+    // 并把陈旧结果写进新仓库的缓存键。
+    let cancelled = false;
     scanMdFiles(selectedRepo, basePath)
       .then((scannedFiles) => {
+        if (cancelled) return;
         sortByFrontMatterDate(scannedFiles);
         setCachedFiles(selectedRepo, basePath, scannedFiles);
         setFiles(scannedFiles);
       })
       .catch((err: Error) => {
+        if (cancelled) return;
         if (onErrorRef.current) {
           onErrorRef.current(err);
         } else {
@@ -58,7 +64,11 @@ export function useFileListPage({
         }
         if (!cached) setFiles([]);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
   }, [selectedRepo, user, basePath, enabled]);
 
   const filteredFiles = useMemo(() =>

@@ -1,6 +1,7 @@
 // 配置仓库化同步：集合路径 / 图床配置存入仓库 .bloath/config.json
 // 策略：切换仓库时自动拉取（仓库为准），本地修改后由设置页手动推送，避免写入回环
 import { readFile, writeFile } from './api';
+import { HttpError } from './http';
 import type { MediaConfig } from '../../../shared/types';
 
 export const REPO_CONFIG_PATH = '.bloath/config.json';
@@ -16,9 +17,9 @@ export interface RepoSyncedConfig {
   media?: MediaConfig;
 }
 
+/** 按状态码判断"文件不存在"，不匹配 message 文本 */
 function isNotFound(err: unknown): boolean {
-  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return msg.includes('404') || msg.includes('not found');
+  return err instanceof HttpError && err.status === 404;
 }
 
 /** 拉取仓库配置；不存在或非法时返回 null */

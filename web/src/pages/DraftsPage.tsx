@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useBuffer } from '../contexts/BufferContext';
-import { readBufferFile, writeBufferFile } from '../lib/bufferApi';
+import { readBufferFile, writeBufferFile, discardBufferFile } from '../lib/bufferApi';
 import { buildEditUrl } from '../lib/navigation';
 import { mergeDraftList } from '../lib/draftMerge';
 import { fetchDirTree, type DirNode } from '../lib/dirTree';
@@ -64,8 +64,22 @@ export default function DraftsPage() {
   const [publishTargets, setPublishTargets] = useState<Record<string, string>>({});
   const [moveTarget, setMoveTarget] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  // 同步动作锁：actionLoading 是 state，同一事件循环内的第二次点击读到的仍是旧值，
+  // 无法阻止双击重复提交（第二次 commitBatch 会因源文件已不存在而报错，
+  // 用户看到"失败"但操作实际已生效）。ref 的读写是同步的，可堵住该窗口。
+  const actionLockRef = useRef(false);
   const [dirNodes, setDirNodes] = useState<DirNode[]>([]);
   const lastDeletedRef = useRef<{ files: EnhancedFileItem[]; originalPaths: string[] } | null>(null);
+
+  /** 获取动作锁；已被占用时返回 false，调用方应立即返回 */
+  const acquireActionLock = useCallback((): boolean => {
+    if (actionLockRef.current) return false;
+    actionLockRef.current = true;
+    return true;
+  }, []);
+  const releaseActionLock = useCallback((): void => {
+    actionLockRef.current = false;
+  }, []);
 
   const availableDirs = useMemo(() => filterValidDirs(config.paths || []), [config.paths]);
 
@@ -133,6 +147,7 @@ export default function DraftsPage() {
   // 统一发布：仓库草稿走 commit，缓冲项走逐项发布接口
   const handlePublish = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0) return;
+    if (!acquireActionLock()) return;
     setActionLoading(true);
     try {
       const selectedItems = mergedFiles.filter((f) => selectedFiles.has(f.path));
@@ -197,6 +212,7 @@ export default function DraftsPage() {
       addToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      releaseActionLock();
     }
   };
 
@@ -209,6 +225,8 @@ export default function DraftsPage() {
       addToast({ message: (err as Error).message, type: 'error' });
       return;
     }
+    // 锁在参数校验之后获取：校验失败路径直接返回，不会持有锁
+    if (!acquireActionLock()) return;
     setActionLoading(true);
     try {
       // 仅仓库草稿可移动；缓冲项尚未落到仓库，需先发布
@@ -247,59 +265,108 @@ export default function DraftsPage() {
       addToast({ message: `移动失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      releaseActionLock();
     }
   };
 
   const handleDelete = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0) return;
+    if (!acquireActionLock()) return;
 
-    const filesToDelete = files.filter((f) => selectedFiles.has(f.path));
+    const selectedItems = mergedFiles.filter((f) => selectedFiles.has(f.path));
+    const repoItems = selectedItems.filter((f) => !f.source || f.source === 'repo');
+    const bufferItems = selectedItems.filter((f) => f.source && f.source !== 'repo');
 
     setActionLoading(true);
     try {
-      if (filesToDelete.length === 0) {
-        addToast({ message: '选中的都是缓存中的文章，请在编辑器中删除', type: 'warning' });
-        return;
+      // 缓冲项：零 commit。仅在缓冲的直接丢弃记录；
+      // 仓库有旧版的写 delete 墓碑，留待发布时一并删除
+      for (const file of bufferItems) {
+        if (file.source === 'buffer-modified') {
+          await writeBufferFile({
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            branch: selectedRepo.branch,
+            path: file.path,
+            op: 'delete',
+          });
+        } else {
+          await discardBufferFile({
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            branch: selectedRepo.branch,
+            path: file.path,
+          });
+        }
       }
-      const targets = dedupeTargetPaths(filesToDelete.map((file) => `${trashPath}/${file.name}`));
-      await commitBatch({
-        owner: selectedRepo.owner,
-        repo: selectedRepo.repo,
-        branch: selectedRepo.branch,
-        message: buildCommitMessage(`移至回收站: ${filesToDelete.length} 篇草稿`, { skipCi: true }),
-        ops: filesToDelete.map((file, i) => ({
-          op: 'move',
-          fromPath: file.path,
-          path: targets[i] ?? `${trashPath}/${file.name}`
-        })),
-        userName: user?.login
-      });
 
-      lastDeletedRef.current = { files: filesToDelete, originalPaths: filesToDelete.map(f => f.path) };
+      if (repoItems.length > 0) {
+        const targets = dedupeTargetPaths(repoItems.map((file) => `${trashPath}/${file.name}`));
+        await commitBatch({
+          owner: selectedRepo.owner,
+          repo: selectedRepo.repo,
+          branch: selectedRepo.branch,
+          message: buildCommitMessage(`移至回收站: ${repoItems.length} 篇草稿`, { skipCi: true }),
+          ops: repoItems.map((file, i) => ({
+            op: 'move',
+            fromPath: file.path,
+            path: targets[i] ?? `${trashPath}/${file.name}`
+          })),
+          userName: user?.login
+        });
+        lastDeletedRef.current = { files: repoItems, originalPaths: repoItems.map(f => f.path) };
+        setFiles(prev => prev.filter(f => !selectedFiles.has(f.path)));
+      }
 
-      setFiles(prev => prev.filter(f => !selectedFiles.has(f.path)));
+      if (bufferItems.length > 0) await refreshChanges();
       clearCache(selectedRepo);
 
-      addToast({
-        message: `已将 ${filesToDelete.length} 篇草稿移至回收站`,
-        type: 'success'
-      });
+      const parts: string[] = [];
+      if (repoItems.length > 0) parts.push(`${repoItems.length} 篇已移至回收站`);
+      if (bufferItems.length > 0) parts.push(`${bufferItems.length} 篇缓存已删除`);
+      addToast({ message: parts.join('，') || '未删除任何文件', type: 'success' });
 
       setSelectedFiles(new Set());
     } catch (err) {
       addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      releaseActionLock();
     }
   };
 
   const handleSingleDelete = async (file: EnhancedFileItem) => {
     if (!selectedRepo || !user) return;
+    if (!acquireActionLock()) return;
     setActionLoading(true);
 
     const trashFile = `${trashPath}/${file.name}`;
+    const isBuffered = !!file.source && file.source !== 'repo';
 
     try {
+      // 缓冲项：零 commit，与批量删除保持一致
+      if (bufferEnabled && isBuffered) {
+        if (file.source === 'buffer-modified') {
+          await writeBufferFile({
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            branch: selectedRepo.branch,
+            path: file.path,
+            op: 'delete',
+          });
+        } else {
+          await discardBufferFile({
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            branch: selectedRepo.branch,
+            path: file.path,
+          });
+        }
+        await refreshChanges();
+        addToast({ message: `已删除 ${file.name}（缓存，未提交到仓库）`, type: 'success' });
+        return;
+      }
+
       await commitBatch({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
@@ -343,11 +410,13 @@ export default function DraftsPage() {
       addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      releaseActionLock();
     }
   };
 
   const handleRename = async () => {
     if (!selectedRepo || !user || !renameFile || !renameValue.trim()) return;
+    if (!acquireActionLock()) return;
     setActionLoading(true);
     try {
       const oldName = renameFile.name;
@@ -415,6 +484,7 @@ export default function DraftsPage() {
       addToast({ message: `重命名失败: ${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      releaseActionLock();
     }
   };
 
@@ -517,7 +587,7 @@ export default function DraftsPage() {
 
               <button
                 onClick={() => {
-                  const selected = files.filter(f => selectedFiles.has(f.path));
+                  const selected = mergedFiles.filter(f => selectedFiles.has(f.path));
                   if (selected.length === 1) {
                     const file = selected[0];
                     if (file) openRenameDialog(file);
@@ -555,6 +625,7 @@ export default function DraftsPage() {
             nameColumnWidth="w-[35%]"
             pathColumnWidth="w-[35%]"
             showSource={bufferEnabled}
+            draftPath={draftPath}
             renderDesktopActions={(file) => (
               <>
                 <button

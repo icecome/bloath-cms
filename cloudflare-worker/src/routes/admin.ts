@@ -6,7 +6,7 @@ import { success, error } from '../comment/utils/response';
 import { ErrorCode } from '../comment/types';
 import { requireAdminAuth } from '../middleware/sessionAuth';
 import { upsertMessageReply, deleteMessageReply, attachReplies, ACTION_STATUS_MAP, updateMessageStatus, softDeleteMessage } from '../services/message.service';
-import { listAdminMessages, batchOperateMessages, writeBatchAuditLogs } from '../services/admin.service';
+import { listAdminMessages, batchOperateMessages } from '../services/admin.service';
 import { getBlogPushSetting, saveBlogPushSetting } from '../services/settings.service';
 import { ADMIN_SINGLE_ACTIONS, ADMIN_BATCH_ACTIONS } from '../comment/config';
 
@@ -92,12 +92,10 @@ adminApp.post('/api/admin/batch', async (c: Context<HonoEnv>) => {
   if (!ADMIN_BATCH_ACTIONS.includes(action)) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '无效的操作'), 400);
   }
+  // 状态变更与审计日志由 service 在同一批次提交，此处不再单独写入
   const { missingIds } = await batchOperateMessages(c.env.DB, ids, action);
   if (missingIds.length > 0) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, `以下留言不存在: ${missingIds.join(', ')}`), 404);
-  }
-  try { await writeBatchAuditLogs(c.env.DB, ids, action); } catch (logErr) {
-    console.warn('[admin] 审计日志写入失败:', logErr);
   }
   return c.json(success(null, `已批量${action === 'delete' ? '删除' : ACTION_STATUS_MAP[action] || action} ${ids.length} 条`));
 });

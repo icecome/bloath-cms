@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
 import { commitBatch } from '../lib/api';
+import { HttpError } from '../lib/http';
 import { buildCommitMessage } from '../lib/deploySettings';
 import { scanMdFiles } from '../lib/scanner';
 import { useFileListPage } from '../hooks/useFileListPage';
@@ -45,7 +46,9 @@ export default function TrashPage() {
     selectedRepo,
     user,
     onError: (err) => {
-      if (err.message.includes('404')) {
+      // 按状态码判断，不用 message 文本：JSON 信封响应的 404 抛的是业务 message（不含 "404"），
+      // 文本匹配分支会永久失效，反而把"目录未创建"降级成错误日志。
+      if (err instanceof HttpError && err.status === 404) {
         console.info(`回收站目录 ${trashPath} 尚未创建`);
       } else {
         console.error(`扫描路径 ${trashPath} 失败:`, err);

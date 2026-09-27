@@ -88,11 +88,15 @@ export async function publishBuffer(
       keysToClear.push(key);
     } else if (entry.op === 'move') {
       const from = entry.fromPath;
-      const toPath = targetPath === path ? resolvePublishPath(from ?? path, target) : targetPath;
-      if (from && remoteShas.has(from)) {
+      // move 条目写入缓冲时，path 存的已是目标路径（见 EditorPage 的移入回收站调用）。
+      // 因此仅当显式指定 publishTarget 时才重写目标；否则沿用 path 本身。
+      // 若此处对无 target 的情况再调 resolvePublishPath，会把目标解析回源路径，
+      // 产生 fromPath === path 的移动，最终在 Git tree 中同路径写成「先写后删」→ 文件丢失。
+      const toPath = target ? resolvePublishPath(path, target) : path;
+      if (from && from !== toPath && remoteShas.has(from)) {
         ops.push({ op: 'move', fromPath: from, path: toPath });
       } else {
-        skipped++; // 源已不存在（上次已移动），幂等跳过
+        skipped++; // 源已不存在（上次已移动）或源目标同一路径，幂等跳过
       }
       keysToClear.push(key);
     }

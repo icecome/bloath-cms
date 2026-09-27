@@ -18,6 +18,14 @@ function SourceBadge({ file }: { file: EnhancedFileItem }) {
   );
 }
 
+// 缓冲文件不在仓库中，不展示仓库草稿目录前缀，避免误读为已存在于仓库
+function displayPath(file: EnhancedFileItem, draftPath: string): string {
+  const isBuffered = !!file.source && file.source !== 'repo';
+  if (!isBuffered || !draftPath) return file.path;
+  const prefix = draftPath.replace(/\/+$/, '') + '/';
+  return file.path.startsWith(prefix) ? file.path.slice(prefix.length) : file.path;
+}
+
 interface FileTableProps {
   files: EnhancedFileItem[];
   selectedFiles: Set<string>;
@@ -30,6 +38,8 @@ interface FileTableProps {
   pathColumnWidth: string;
   /** 是否显示来源列 */
   showSource?: boolean;
+  /** 草稿目录前缀，用于缓冲项路径的去前缀展示 */
+  draftPath?: string;
   renderDesktopActions: (file: EnhancedFileItem) => ReactNode;
   renderMobileActions: (file: EnhancedFileItem) => ReactNode;
 }
@@ -45,6 +55,7 @@ export default function FileTable({
   nameColumnWidth,
   pathColumnWidth,
   showSource = false,
+  draftPath = '',
   renderDesktopActions,
   renderMobileActions,
 }: FileTableProps) {
@@ -93,7 +104,9 @@ export default function FileTable({
             </span>
           </div>
           <div className={`hidden md:block ${pathColumnWidth} px-3`}>
-            <span className="text-sm text-muted-foreground truncate block">{file.path}</span>
+            <span className="text-sm text-muted-foreground truncate block">
+              {displayPath(file, draftPath)}
+            </span>
           </div>
           {showSource && (
             <div className="hidden md:flex w-[12%] items-center px-3">
@@ -117,7 +130,7 @@ export default function FileTable({
                 {file.name.replace('.md', '')}
               </div>
               <div className="text-xs text-muted-foreground truncate mt-0.5">
-                {file.path}
+                {displayPath(file, draftPath)}
               </div>
             </div>
             {showSource && <SourceBadge file={file} />}
