@@ -379,6 +379,7 @@ export default function DraftsPage() {
           branch: selectedRepo.branch,
           path: renameFile.path,
           op: 'delete',
+          publishTarget: renameFile.publishTarget,
         });
         await refreshChanges();
       } else {
