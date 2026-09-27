@@ -38,6 +38,7 @@ export async function generateDeviceFingerprint(request: Request): Promise<strin
 // AES-GCM 加密生成 session token（longLived=true 时有效期 7 天，否则 6 小时）
 export async function generateSessionToken(
   githubToken: string,
+  githubLogin: string,
   env: Env,
   deviceFingerprint?: string,
   longLived = false
@@ -45,7 +46,7 @@ export async function generateSessionToken(
   const issuedAt = Date.now();
   const duration = longLived ? TRUSTED_DURATION_MS : SESSION_DURATION_MS;
   const expiresAt = issuedAt + duration;
-  const payload = JSON.stringify({ githubToken, expiresAt, deviceFingerprint, longLived, issuedAt });
+  const payload = JSON.stringify({ githubToken, githubLogin, expiresAt, deviceFingerprint, longLived, issuedAt });
 
   const secretKey = env.SESSION_SECRET;
   if (!secretKey) {
@@ -58,6 +59,8 @@ export async function generateSessionToken(
 // AES-GCM 解密验证 session token，返回验证结果、续期时长与设备信任标记
 export interface SessionPayload {
   githubToken: string;
+  /** 签发该会话的 GitHub 用户名，用于管理接口身份白名单校验 */
+  githubLogin: string;
   needsRenewal: boolean;
   /** token 快照中的信任标记（最终以 KV 名单为准，见 middleware） */
   longLived: boolean;
@@ -81,6 +84,10 @@ export async function validateSessionToken(
     if (typeof sessionPayload.githubToken !== 'string' ||
         typeof sessionPayload.expiresAt !== 'number') return null;
 
+    // 无 githubLogin 的 token 一律作废：该字段是管理接口身份白名单的唯一凭据，
+    // 容忍缺失等同于允许旧 token 绕过校验。存量会话需重新登录。
+    if (typeof sessionPayload.githubLogin !== 'string' || !sessionPayload.githubLogin) return null;
+
     const deviceFingerprint = typeof sessionPayload.deviceFingerprint === 'string'
       ? sessionPayload.deviceFingerprint
       : undefined;
@@ -102,6 +109,7 @@ export async function validateSessionToken(
 
     return {
       githubToken: sessionPayload.githubToken,
+      githubLogin: sessionPayload.githubLogin,
       needsRenewal,
       longLived,
       issuedAt

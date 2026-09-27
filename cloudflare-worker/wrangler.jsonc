@@ -22,6 +22,8 @@
   ],
   "vars": {
     "ENVIRONMENT": "production",
+    "FRONTEND_URL": "https://blog.icecome.com",
+    "PROD_ORIGINS": "https://blog.icecome.com",
     "CORS_ORIGIN": "https://blog.icecome.com",
     "INBOUND_REPLY_DOMAIN": "mail.icecome.com",
     "RESEND_FROM": "noreply@icecome.com"

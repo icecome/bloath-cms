@@ -14,7 +14,7 @@ import {
   authenticate, buildSessionCookie, addSessionRenewalCookie,
   checkCsrf, getSessionTokenFromCookie,
 } from '../middleware/sessionAuth';
-import { isAllowedFrontendUrl, addSecurityHeaders } from '../middleware/cors';
+import { isAllowedFrontendUrl, resolveFrontendUrl, addSecurityHeaders } from '../middleware/cors';
 import { safeJsonParse } from '../middleware/pathGuard';
 
 const authApp = new Hono<HonoEnv>();
@@ -22,12 +22,14 @@ const authApp = new Hono<HonoEnv>();
 // GET /api/auth/dev-login — 仅本地开发：跳过 GitHub OAuth 直接签发会话
 // 返回 200 HTML，Cookie 由 JS 在当前域写入（避免 Vite 代理转发 302 时丢失 Set-Cookie）
 // 不绑定设备指纹：浏览器导航与后续 fetch 的请求头可能经 Vite 代理后不一致，导致指纹校验失败
+// 注入的 login 复用 ADMIN_GITHUB_LOGIN 首项（若配置），使本地也能访问管理接口
 authApp.get('/api/auth/dev-login', async (c: Context<HonoEnv>) => {
   if (c.env.ENVIRONMENT === 'production') {
     return c.json({ error: 'Not found' }, 404);
   }
   const fakeToken = 'dev-local-no-github';
-  const sessionToken = await generateSessionToken(fakeToken, c.env, undefined, true);
+  const devLogin = (c.env.ADMIN_GITHUB_LOGIN || 'dev-user').split(',')[0]?.trim() || 'dev-user';
+  const sessionToken = await generateSessionToken(fakeToken, devLogin, c.env, undefined, true);
   if (typeof sessionToken !== 'string') {
     return c.json({ error: 'Session generation failed' }, 500);
   }
@@ -49,12 +51,14 @@ location.href = '/';
 authApp.get('/api/auth/login', async (c: Context<HonoEnv>) => {
   const url = new URL(c.req.url);
   const workerUrl = url.origin.startsWith('http://localhost') ? 'http://localhost:8787' : url.origin;
-  // 前端跨站访问 Worker 时（bloath.icecome.com → *.api.icecome.com），
-  // 回调完成后跳回前端域名；这里把实际前端 Origin 透传给 state，供 callback 复用。
-  const headerFrontendUrl = c.req.header('X-Frontend-Url')
-    || (c.req.header('Origin') && isAllowedFrontendUrl(c.req.header('Origin')!, c.env) ? c.req.header('Origin')! : undefined);
-  const frontendUrl = headerFrontendUrl
-    || (c.env.FRONTEND_URL || 'http://localhost:5173');
+  // 回调跳转目标只取服务端配置。不接受请求头（X-Frontend-Url / Origin）指定：
+  // 头部由调用方控制，即便过白名单也只是把可选目标限制在白名单集合内，
+  // 而本应用的合法前端只有一个，没有多目标选择的需求。
+  const frontendUrl = resolveFrontendUrl(c.env);
+  if (!frontendUrl) {
+    console.error('[auth] FRONTEND_URL 未配置，无法发起登录');
+    return c.json(error(ErrorCode.INTERNAL_ERROR, '服务端未配置前端地址'), 500);
+  }
   const state = await generateState(frontendUrl, c.env);
   const authUrl = `https://github.com/login/oauth/authorize?client_id=${c.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(workerUrl + '/api/auth/callback')}&scope=repo%20user:email&state=${state}&prompt=consent`;
   const response = c.json(success({ authUrl }));
@@ -65,21 +69,37 @@ authApp.get('/api/auth/login', async (c: Context<HonoEnv>) => {
 authApp.get('/api/auth/callback', async (c: Context<HonoEnv>) => {
   const url = new URL(c.req.url);
   const workerUrl = url.origin.startsWith('http://localhost') ? 'http://localhost:8787' : url.origin;
-  const headerFrontendUrl = c.req.header('X-Frontend-Url');
-  const frontendUrl = (headerFrontendUrl && isAllowedFrontendUrl(headerFrontendUrl, c.env))
-    ? headerFrontendUrl
-    : (c.env.FRONTEND_URL || 'http://localhost:5173');
   const isSecure = url.protocol === 'https:';
+  // 重定向目标只来自 state（HMAC 签名 + 10 分钟有效期 + 协议白名单），
+  // 不再读取请求头：头部由调用方完全控制，是开放重定向的入口。
+  const fallbackFrontendUrl = resolveFrontendUrl(c.env);
 
   const code = c.req.query('code');
   const state = c.req.query('state');
-  if (!code || !state) return c.redirect(`${frontendUrl}/login?error=invalid_request`, 302);
+  if (!code || !state) {
+    if (!fallbackFrontendUrl) return c.json(error(ErrorCode.INTERNAL_ERROR, '服务端未配置前端地址'), 500);
+    return c.redirect(`${fallbackFrontendUrl}/login?error=invalid_request`, 302);
+  }
 
   const stateData = await parseState(state, c.env);
-  if (!stateData.valid) return c.redirect(`${frontendUrl}/login?error=invalid_state`, 302);
+  if (!stateData.valid) {
+    if (!fallbackFrontendUrl) return c.json(error(ErrorCode.INTERNAL_ERROR, '服务端未配置前端地址'), 500);
+    return c.redirect(`${fallbackFrontendUrl}/login?error=invalid_state`, 302);
+  }
 
-  const storedFrontendUrl = stateData.frontendUrl || frontendUrl;
+  // state 内的 frontendUrl 已验签，但仍需过白名单：签发时用的是当时的配置，
+  // 配置收敛后旧 state 不应成为绕过白名单的通道。
+  const storedFrontendUrl = stateData.frontendUrl && isAllowedFrontendUrl(stateData.frontendUrl, c.env)
+    ? stateData.frontendUrl
+    : fallbackFrontendUrl;
+  if (!storedFrontendUrl) {
+    console.error('[auth] FRONTEND_URL 未配置且 state 内地址未通过白名单');
+    return c.json(error(ErrorCode.INTERNAL_ERROR, '服务端未配置前端地址'), 500);
+  }
+
   const accessToken = await exchangeCode(code, c.env.GITHUB_CLIENT_SECRET, c.env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
+  // 取登录名：既是会话身份凭据（管理接口白名单依赖它），也用于 /api/me 回显
+  const user = await getUserInfo(accessToken);
   const deviceFingerprint = await generateDeviceFingerprint(c.req.raw);
   let longLived = false;
   if (c.env.DEVICES_KV) {
@@ -88,8 +108,8 @@ authApp.get('/api/auth/callback', async (c: Context<HonoEnv>) => {
     const ua = c.req.header('User-Agent') || '';
     await upsertDeviceRecord(c.env.DEVICES_KV, deviceFingerprint, Date.now(), longLived, ua || undefined);
   }
-  const sessionTokenResult = await generateSessionToken(accessToken, c.env, deviceFingerprint, longLived);
-  if (sessionTokenResult instanceof Response) return c.redirect(`${frontendUrl}/login?error=server_error`, 302);
+  const sessionTokenResult = await generateSessionToken(accessToken, user.login, c.env, deviceFingerprint, longLived);
+  if (sessionTokenResult instanceof Response) return c.redirect(`${storedFrontendUrl}/login?error=server_error`, 302);
 
   const response = new Response(null, { status: 302, headers: { 'Location': storedFrontendUrl + '/' } });
   const maxAge = longLived ? TRUSTED_DURATION_MS / 1000 : SESSION_DURATION_MS / 1000;
@@ -120,10 +140,14 @@ authApp.get('/api/me', async (c: Context<HonoEnv>) => {
   if (!sessionToken) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
-  // dev 模式快捷路径：直接解密 token，若 githubToken 为占位值则跳过设备指纹校验
-  const devResult = await validateSessionToken(sessionToken, c.env, undefined);
-  if (devResult && devResult.githubToken === 'dev-local-no-github') {
-    return c.json(success({ user: { login: 'dev-user', avatar_url: '', name: '本地开发' } }));
+  // dev 模式快捷路径：直接解密 token，若 githubToken 为占位值则跳过设备指纹校验。
+  // 必须显式限定非生产环境：dev-login 本身已有 404 守卫，此处是第二道独立防线，
+  // 避免仅靠单一配置变量决定该路径是否可达。
+  if (c.env.ENVIRONMENT !== 'production') {
+    const devResult = await validateSessionToken(sessionToken, c.env, undefined);
+    if (devResult && devResult.githubToken === 'dev-local-no-github') {
+      return c.json(success({ user: { login: devResult.githubLogin, avatar_url: '', name: '本地开发' } }));
+    }
   }
   // 正常路径：完整 authenticate（含设备指纹校验）
   const authResult = await authenticate(c.req.raw, c.env);
@@ -145,7 +169,9 @@ authApp.post('/api/auth/device', async (c: Context<HonoEnv>) => {
     const ua = c.req.header('User-Agent') || '';
     await upsertDeviceRecord(c.env.DEVICES_KV, authResult.deviceFingerprint, Date.now(), trusted, ua || undefined);
   }
-  const newToken = await generateSessionToken(authResult.githubToken, c.env, authResult.deviceFingerprint, trusted);
+  const newToken = await generateSessionToken(
+    authResult.githubToken, authResult.githubLogin, c.env, authResult.deviceFingerprint, trusted
+  );
   if (typeof newToken !== 'string') return c.json(error(ErrorCode.INTERNAL_ERROR, '会话签发失败'), 500);
   const url = new URL(c.req.url);
   const isSecure = url.protocol === 'https:';

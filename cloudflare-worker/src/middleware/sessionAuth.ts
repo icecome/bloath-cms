@@ -30,6 +30,8 @@ export function buildSessionCookie(token: string, maxAge: number, isSecure: bool
 
 export interface AuthResult {
   githubToken: string;
+  /** 签发该会话的 GitHub 用户名（小写原样，比对时统一小写） */
+  githubLogin: string;
   needsRenewal: boolean;
   trusted: boolean;
   longLived: boolean;
@@ -55,12 +57,21 @@ export async function authenticate(request: Request, env: HonoEnv['Bindings']): 
   }
   return {
     githubToken: result.githubToken,
+    githubLogin: result.githubLogin,
     needsRenewal: result.needsRenewal,
     trusted,
     longLived: trusted,
     issuedAt: lastSeenAt,
     deviceFingerprint: currentFingerprint
   };
+}
+
+/** 解析 ADMIN_GITHUB_LOGIN 白名单为小写数组 */
+function getAdminLogins(env: HonoEnv['Bindings']): string[] {
+  return (env.ADMIN_GITHUB_LOGIN || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export const requireAuth: MiddlewareHandler<HonoEnv> = async (c: Context<HonoEnv>, next: Next) => {
@@ -83,6 +94,17 @@ export const requireAdminAuth: MiddlewareHandler<HonoEnv> = async (c: Context<Ho
   if (!result) {
     return c.json(errorResp(ErrorCode.UNAUTHORIZED, '未登录或会话已过期'), 401);
   }
+  // 身份白名单：GitHub OAuth 对任意账号开放，仅校验会话有效性等同于把管理面公开。
+  // 未配置白名单时一律拒绝，避免"忘记配置即全开"。
+  const admins = getAdminLogins(c.env);
+  if (admins.length === 0) {
+    console.error('[auth] ADMIN_GITHUB_LOGIN 未配置，管理接口已拒绝访问');
+    return c.json(errorResp(ErrorCode.UNAUTHORIZED, '管理功能未启用'), 403);
+  }
+  if (!admins.includes(result.githubLogin.toLowerCase())) {
+    console.warn('[auth] 非管理员账号尝试访问管理接口:', result.githubLogin);
+    return c.json(errorResp(ErrorCode.UNAUTHORIZED, '无管理权限'), 403);
+  }
   await next();
 };
 
@@ -93,7 +115,11 @@ export async function addSessionRenewalCookie(
   isSecure: boolean
 ): Promise<Response> {
   if (authResult.needsRenewal) {
-    const newToken = await generateSessionToken(authResult.githubToken, env, authResult.deviceFingerprint, authResult.trusted);
+    // 续期时必须带上 githubLogin，否则新 token 会因缺少身份凭据而在下一次请求被判失效
+    const newToken = await generateSessionToken(
+      authResult.githubToken, authResult.githubLogin, env,
+      authResult.deviceFingerprint, authResult.trusted
+    );
     if (typeof newToken === 'string') {
       const maxAge = authResult.trusted ? TRUSTED_DURATION_MS / 1000 : SESSION_DURATION_MS / 1000;
       response.headers.set('Set-Cookie', buildSessionCookie(newToken, maxAge, isSecure));

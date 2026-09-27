@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { HonoEnv } from './env';
-import { corsMiddleware } from './middleware/cors';
+import { corsMiddleware, resolveFrontendUrl } from './middleware/cors';
 import { requestLog } from './middleware/sessionAuth';
 import { errorHandler } from './middleware/errorHandler';
 import { success } from './comment/utils/response';
@@ -11,7 +11,6 @@ import messagesRoutes from './routes/messages';
 import adminRoutes from './routes/admin';
 import inboundRoutes from './routes/inbound';
 import bufferRoutes from './routes/buffer';
-import { isAllowedFrontendUrl } from './middleware/cors';
 
 const app = new Hono<HonoEnv>();
 
@@ -59,10 +58,13 @@ app.route('/', bufferRoutes);
 // 非 API 请求：重定向到前端
 app.all('*', (c) => {
   const url = new URL(c.req.url);
-  const headerFrontendUrl = c.req.header('X-Frontend-Url');
-  const frontendUrl = (headerFrontendUrl && isAllowedFrontendUrl(headerFrontendUrl, c.env))
-    ? headerFrontendUrl
-    : (c.env.FRONTEND_URL || 'http://localhost:5173');
+  // 重定向目标只取服务端配置（或非生产环境的 localhost 回退）。
+  // 不接受请求头指定目标：那会让任意调用方把用户导向自选地址。
+  const frontendUrl = resolveFrontendUrl(c.env);
+  if (!frontendUrl) {
+    console.error('[index] FRONTEND_URL 未配置，无法重定向非 API 请求');
+    return c.json({ error: '服务端未配置前端地址' }, 500);
+  }
   return c.redirect(frontendUrl + url.pathname + url.search, 301);
 });
 

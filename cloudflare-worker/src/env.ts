@@ -7,6 +7,11 @@ export interface Env {
   GITHUB_CLIENT_SECRET: string;
   SESSION_SECRET: string;
   FRONTEND_URL: string;
+  /**
+   * 管理员 GitHub 用户名白名单（逗号分隔，大小写不敏感）。
+   * 未配置时管理接口一律拒绝访问，避免"忘记配置即全开"的失效模式。
+   */
+  ADMIN_GITHUB_LOGIN?: string;
   ALLOWED_ORIGINS?: string;
   PROD_ORIGINS?: string;
   CONTENT_SECURITY_POLICY?: string;

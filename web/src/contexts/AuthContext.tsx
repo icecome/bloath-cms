@@ -78,11 +78,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async () => {
     try {
+      // 不再发送 X-Frontend-Url：回调跳转目标由服务端 FRONTEND_URL 决定，
+      // 客户端指定重定向目标会构成开放重定向面。
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         credentials: 'include',
         headers: {
           'X-Requested-With': 'XMLHttpRequest',
-          'X-Frontend-Url': window.location.origin,
         }
       });
       if (!res.ok) {
