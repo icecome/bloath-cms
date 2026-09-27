@@ -274,3 +274,49 @@
 - [ ] R-9 执行后，需跑 `npm run typecheck` 双向确认（web 与 worker 的 tsconfig 都 include 了 `shared/`）
 - [ ] R-10 执行后，需验证 `batchCommit` 的失败语义不变：任一二进制 blob 上传失败必须导致整个 commit 中止，而非部分成功
 - [ ] **R-1 + R-8 的合并重构**，需独立验证 `apiFetch` 的 503 分支（`api.ts:58-60`）与 `skipDataCheck` 语义在迁移后完整保留 —— 这两项是 `apiFetch` 独有的，`requestJson` 原本没有
+
+---
+
+## 2026-09 · 第 3 轮：修复实施（复用建议的执行结果）
+
+> 本节记录在修复批次中对本日志各项建议的实际执行情况与结果。
+
+### 已执行的复用建议
+
+| 条目 | 建议 | 执行结果 | 提交 |
+|------|------|---------|------|
+| R-1（HTTP 客户端） | `apiFetch` 复用 `requestJson` | **已执行**。采用"能力下沉"而非直接替换：为 `requestJson` 补 503/204/`skipDataCheck`，`apiFetch` 退化为 3 行包装，18 处调用点零改动。删除 6 处 `AbortController` 样板 | `04996a9` |
+| R-2（留言类型） | 提取到 `shared/types.ts` | **已执行**。新增 `MessageRecord`/`MessageReplyRow`/`MessageStatus`；worker 的 `MessageRow` 与 web 的 `AdminMessage` 改为派生；同时删除 `CreateMessageInput` 的重复 interface 与 `as` 断言 | `04996a9` |
+| R-3（并发分块） | 提取共享 `mapLimit` | **已执行**。新建 `cloudflare-worker/src/lib/concurrency.ts`；`buffer.service` 与 `github.extractFrontMatters` 改用它；`batchCommit` 的 blob 上传从无上限并发改为限流 8（即 R-10） | `04996a9` |
+| R-5（死代码） | 删除 | **已执行**。`clearAllCache`、`clearCache` 的未用参数、`sanitizeInput` 均已删除 | `9389fcb` |
+| R-7（githubApi 封装） | 8 处改走 `githubApi` | **部分执行（保守方案）**。经评估，统一改用 `githubApi` 会改变对外错误消息（从语义化文案变为 `GitHub API GET <url>`），属行为变更。改为**提取 `ghHeaders()` 统一下 12 处裸 header 构造**，保留各自错误文案 | `04996a9` |
+| R-9（shared 死类型） | 删除 | **已执行**。`ContentEntry`、`Collection`、`ContentListParams` 三个死类型已删除（删除前再次确认引用数为 0） | `9389fcb` |
+| R-8（结构化 HTTP 错误） | 引入 `HttpError` | **已执行**。定义于 `http.ts`（共享位置），`apiFetch`/`requestJson` 的错误全部携带 status；`TrashPage` 与 `repoConfigSync` 改用 `err.status === 404` 判断 | `61184cf`、`04996a9` |
+| R-4（日期格式化） | 合并 `pad2`/`padZero` | **部分执行**。`path.ts` 导出 `pad2`，`rename.ts` 改为导入；语义不同的 4 个格式化函数按分析保留 | `9389fcb` |
+| R-6（Markdown 渲染器） | 前端复用 markdown-it 或改名 | **未执行**。属权衡决策而非缺陷，前端引入 markdown-it 会增加约 30KB gzip；改名同样触及 MessagesPage 的 3 处引用。列入后续 | — |
+
+### 执行中的关键发现
+
+**R-1 的"能力下沉"模式值得记入惯例**：两个同语义模块合并时，若双方各有独有能力，直接替换会丢失功能。正确做法是把能力**下沉到被复用的那一方**，再让另一方退化为包装——这样所有调用点零改动，且下游模块（`bufferApi`/`commentApi`）顺带受益。
+
+**R-8 在实施中触发了一个测试失败**：`HttpError` 最初用 TS 参数属性（`constructor(public status: number)`）编写，而 web 侧测试以 `node --experimental-strip-types` 运行（strip-only 模式不支持该语法），导致测试文件加载失败。改为显式属性赋值后恢复。**教训：共享模块若被测试链路引入，需注意 strip-only 模式的语法限制。**
+
+### 复用收益量化
+
+| 指标 | 修复前 | 修复后 | 变化 |
+|------|-------|-------|------|
+| `Authorization` 裸构造（`github.ts`） | 12 处 | 1 处（`ghHeaders` 定义） | -11 |
+| `AbortController` 超时样板（`api.ts`） | 6 处 | 0 | -6 |
+| `buffer.ts` 路径校验样板 | 6 组 | 2 个辅助函数 | -4 组 |
+| 留言类型定义 | 3 处 | 1 处（`shared/types.ts`） | -2 |
+| 并发分块实现 | 4 处 | 1 处（`lib/concurrency.ts`） | -3 |
+| 死代码函数/类型 | 6 个 | 0 | -6 |
+| B3 批次净行数 | — | — | **-90 行** |
+
+**结论：两轮复用审计的建议中，7 条已执行、2 条部分执行（保守方案）、1 条未执行（权衡决策）。累计消除约 30 处重复实现，净减少 90 行代码。**
+
+### 后续跟踪（第 3 轮追加）
+
+- [ ] R-6 的决策待定：若前端包体积允许，用 markdown-it 替换自研渲染器可消除两套 Markdown 语义（当前站内与邮件的渲染结果不同）
+- [ ] R-7 的完整方案（统一走 `githubApi`）需先确定对外错误消息是否允许变更，属产品决策
+- [ ] `lib/concurrency.ts` 的 `mapLimit` 目前仅 worker 侧使用；web 的 `extractFrontMatter.batchFetchFallback` 仍是 `for` 分块实现，可考虑跨包共享（需评估构建链路成本）
