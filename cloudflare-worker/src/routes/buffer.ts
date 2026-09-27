@@ -165,11 +165,11 @@ bufferApp.get('/api/buffer/file', async (c: Context<HonoEnv>) => {
 
 // PUT /api/buffer/file — 写入缓冲（write/delete/move）
 bufferApp.put('/api/buffer/file', async (c: Context<HonoEnv>) => {
-  let body: { owner?: string; repo?: string; branch?: string; path?: string; op?: string; content?: string; fromPath?: string; baseSha?: string };
+  let body: { owner?: string; repo?: string; branch?: string; path?: string; op?: string; content?: string; fromPath?: string; baseSha?: string; publishTarget?: string };
   try { body = safeJsonParse(await c.req.raw.text()) as typeof body; } catch {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
   }
-  const { owner, repo, branch = 'main', path, op, content, fromPath, baseSha } = body;
+  const { owner, repo, branch = 'main', path, op, content, fromPath, baseSha, publishTarget } = body;
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !path) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '缺少 owner/repo/path'), 400);
   }
@@ -192,6 +192,9 @@ bufferApp.put('/api/buffer/file', async (c: Context<HonoEnv>) => {
       return c.json(error(ErrorCode.VALIDATION_ERROR, 'move 操作需合法 fromPath'), 400);
     }
   }
+  if (publishTarget !== undefined && !isSafePathParam(publishTarget, true)) {
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '非法 publishTarget'), 400);
+  }
   try {
     await writeBufferEntry(c.env, owner!, repo!, branch, path, {
       op: op as 'write' | 'delete' | 'move',
@@ -199,6 +202,7 @@ bufferApp.put('/api/buffer/file', async (c: Context<HonoEnv>) => {
       fromPath: op === 'move' ? fromPath : undefined,
       baseSha,
       savedAt: Date.now(),
+      publishTarget: publishTarget || undefined,
     });
     return c.json(success({ path, op }, '已存入缓冲'));
   } catch (err) {

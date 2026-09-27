@@ -93,7 +93,7 @@ export function readBufferFile(params: { owner: string; repo: string; branch: st
 
 export function writeBufferFile(params: {
   owner: string; repo: string; branch: string; path: string;
-  op: BufferOp; content?: string; fromPath?: string; baseSha?: string;
+  op: BufferOp; content?: string; fromPath?: string; baseSha?: string; publishTarget?: string;
 }): Promise<null> {
   return bufferFetch('/api/buffer/file', {
     method: 'PUT',

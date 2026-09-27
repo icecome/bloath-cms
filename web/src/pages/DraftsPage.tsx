@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useBuffer } from '../contexts/BufferContext';
+import { readBufferFile, writeBufferFile } from '../lib/bufferApi';
 import { buildEditUrl } from '../lib/navigation';
 import { mergeDraftList } from '../lib/draftMerge';
 import { fetchDirTree, type DirNode } from '../lib/dirTree';
@@ -349,35 +350,64 @@ export default function DraftsPage() {
     if (!selectedRepo || !user || !renameFile || !renameValue.trim()) return;
     setActionLoading(true);
     try {
-      const { content: fileContent } = await readFile({
-        owner: selectedRepo.owner,
-        repo: selectedRepo.repo,
-        path: renameFile.path,
-        branch: selectedRepo.branch
-      });
-
       const oldName = renameFile.name;
       const newName = `${renameValue.trim().replace(/\s+/g, '-')}.md`;
       const newDir = renameFile.path.substring(0, renameFile.path.lastIndexOf('/'));
       const newPath = `${newDir}/${newName}`;
 
-      // 重命名 = 写新路径 + 删旧路径，合并为单 commit
-      await commitBatch({
-        owner: selectedRepo.owner,
-        repo: selectedRepo.repo,
-        branch: selectedRepo.branch,
-        message: buildCommitMessage(`重命名: ${oldName} -> ${newName}`, { skipCi: true }),
-        ops: [
-          { op: 'write', path: newPath, content: fileContent },
-          { op: 'delete', path: renameFile.path }
-        ],
-        userName: user?.login
-      });
+      if (bufferEnabled) {
+        // 缓冲模式下重命名不进仓库：读缓冲内容（miss 自动回退仓库），
+        // 写新路径 + 删旧路径，均留在缓冲里
+        const { content } = await readBufferFile({
+          owner: selectedRepo.owner,
+          repo: selectedRepo.repo,
+          branch: selectedRepo.branch,
+          path: renameFile.path,
+        });
+        await writeBufferFile({
+          owner: selectedRepo.owner,
+          repo: selectedRepo.repo,
+          branch: selectedRepo.branch,
+          path: newPath,
+          op: 'write',
+          content,
+          publishTarget: renameFile.publishTarget,
+        });
+        await writeBufferFile({
+          owner: selectedRepo.owner,
+          repo: selectedRepo.repo,
+          branch: selectedRepo.branch,
+          path: renameFile.path,
+          op: 'delete',
+        });
+        await refreshChanges();
+      } else {
+        const { content: fileContent } = await readFile({
+          owner: selectedRepo.owner,
+          repo: selectedRepo.repo,
+          path: renameFile.path,
+          branch: selectedRepo.branch
+        });
 
-      addToast({ message: `重命名成功`, type: 'success' });
+        // 重命名 = 写新路径 + 删旧路径，合并为单 commit
+        await commitBatch({
+          owner: selectedRepo.owner,
+          repo: selectedRepo.repo,
+          branch: selectedRepo.branch,
+          message: buildCommitMessage(`重命名: ${oldName} -> ${newName}`, { skipCi: true }),
+          ops: [
+            { op: 'write', path: newPath, content: fileContent },
+            { op: 'delete', path: renameFile.path }
+          ],
+          userName: user?.login
+        });
+      }
+
+      addToast({ message: '重命名成功', type: 'success' });
       setShowRenameDialog(false);
       setRenameFile(null);
       setRenameValue('');
+      clearCache(selectedRepo);
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
