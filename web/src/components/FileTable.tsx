@@ -1,5 +1,22 @@
 import type { ReactNode } from 'react';
-import type { EnhancedFileItem } from '../lib/extractFrontMatter';
+import type { EnhancedFileItem, FileSource } from '../lib/extractFrontMatter';
+
+const SOURCE_META: Record<FileSource, { label: string; className: string }> = {
+  repo: { label: '仓库', className: 'bg-secondary text-muted-foreground' },
+  buffer: { label: '缓存', className: 'bg-orange-100 text-orange-700' },
+  'buffer-modified': { label: '缓存·有改动', className: 'bg-orange-100 text-orange-700' },
+  'buffer-deleted': { label: '缓存·待删除', className: 'bg-red-100 text-red-700' },
+};
+
+function SourceBadge({ file }: { file: EnhancedFileItem }) {
+  const source = file.source ?? 'repo';
+  const meta = SOURCE_META[source];
+  return (
+    <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded-sm flex-shrink-0 ${meta.className}`}>
+      {meta.label}
+    </span>
+  );
+}
 
 interface FileTableProps {
   files: EnhancedFileItem[];
@@ -11,6 +28,8 @@ interface FileTableProps {
   rowIcon: ReactNode;
   nameColumnWidth: string;
   pathColumnWidth: string;
+  /** 是否显示来源列 */
+  showSource?: boolean;
   renderDesktopActions: (file: EnhancedFileItem) => ReactNode;
   renderMobileActions: (file: EnhancedFileItem) => ReactNode;
 }
@@ -25,6 +44,7 @@ export default function FileTable({
   rowIcon,
   nameColumnWidth,
   pathColumnWidth,
+  showSource = false,
   renderDesktopActions,
   renderMobileActions,
 }: FileTableProps) {
@@ -41,7 +61,8 @@ export default function FileTable({
         </div>
         <div className={nameColumnWidth}>文件名</div>
         <div className={pathColumnWidth}>路径</div>
-        <div className="w-[20%] text-right">操作</div>
+        {showSource && <div className="w-[12%]">来源</div>}
+        <div className={showSource ? 'flex-1 text-right' : 'w-[20%] text-right'}>操作</div>
       </div>
 
       {files.map((file) => (
@@ -74,7 +95,12 @@ export default function FileTable({
           <div className={`hidden md:block ${pathColumnWidth} px-3`}>
             <span className="text-sm text-muted-foreground truncate block">{file.path}</span>
           </div>
-          <div className="hidden md:flex w-[20%] items-center justify-end gap-2 px-3">
+          {showSource && (
+            <div className="hidden md:flex w-[12%] items-center px-3">
+              <SourceBadge file={file} />
+            </div>
+          )}
+          <div className={`hidden md:flex ${showSource ? 'flex-1' : 'w-[20%]'} items-center justify-end gap-2 px-3`}>
             {renderDesktopActions(file)}
           </div>
 
@@ -94,6 +120,7 @@ export default function FileTable({
                 {file.path}
               </div>
             </div>
+            {showSource && <SourceBadge file={file} />}
             <div className="flex items-center gap-1 flex-shrink-0">
               {renderMobileActions(file)}
             </div>

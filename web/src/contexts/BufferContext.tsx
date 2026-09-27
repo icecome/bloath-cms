@@ -3,7 +3,7 @@ import { useRepo } from './RepoContext';
 import { useToast } from './ToastContext';
 import {
   getBufferConfig, getBufferChanges, publishBuffer,
-  type BufferConfigPublic, type BufferChangeItem, type PublishResult,
+  type BufferConfigPublic, type BufferChangeItem, type PublishResult, type PublishItem,
 } from '../lib/bufferApi';
 
 interface BufferState {
@@ -18,7 +18,7 @@ interface BufferState {
 interface BufferContextValue extends BufferState {
   refreshConfig: () => Promise<void>;
   refreshChanges: () => Promise<void>;
-  publish: (userName?: string) => Promise<PublishResult | null>;
+  publish: (userName?: string, items?: PublishItem[]) => Promise<PublishResult | null>;
   setShowPublishDialog: (v: boolean) => void;
 }
 
@@ -71,7 +71,7 @@ export function BufferProvider({ children }: { children: ReactNode }) {
     refreshChanges();
   }, [refreshChanges]);
 
-  const publish = useCallback(async (userName?: string): Promise<PublishResult | null> => {
+  const publish = useCallback(async (userName?: string, items?: PublishItem[]): Promise<PublishResult | null> => {
     if (!selectedRepo) {
       addToast({ message: '请先选择仓库', type: 'warning' });
       return null;
@@ -83,6 +83,7 @@ export function BufferProvider({ children }: { children: ReactNode }) {
         repo: selectedRepo.repo,
         branch: selectedRepo.branch,
         userName,
+        items,
       });
       addToast({ message: result.message, type: result.published > 0 ? 'success' : 'info' });
       await refreshChanges();

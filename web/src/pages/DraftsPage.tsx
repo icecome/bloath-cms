@@ -1,9 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
-import { commitBatch, readFile, type CommitOp } from '../lib/api';
+import { commitBatch, readFile } from '../lib/api';
 import { buildCommitMessage } from '../lib/deploySettings';
 import { scanMdFiles } from '../lib/scanner';
 import { useFileListPage } from '../hooks/useFileListPage';
@@ -25,16 +25,16 @@ import {
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useBuffer } from '../contexts/BufferContext';
-import { discardBufferPaths, readBufferFile } from '../lib/bufferApi';
 import { buildEditUrl } from '../lib/navigation';
-import { DraftBufferPanel } from '../components/drafts/DraftBufferPanel';
+import { mergeDraftList } from '../lib/draftMerge';
+import { fetchDirTree, type DirNode } from '../lib/dirTree';
 import { RenameDraftDialog } from '../components/drafts/RenameDraftDialog';
 import { PublishDraftDialog } from '../components/drafts/PublishDraftDialog';
 
 export default function DraftsPage() {
   const { user } = useAuth();
   const { selectedRepo } = useRepo();
-  const { config: bufferConfig, changes: bufferChanges, refreshChanges } = useBuffer();
+  const { config: bufferConfig, changes: bufferChanges, refreshChanges, publish } = useBuffer();
   const bufferEnabled = bufferConfig?.enabled === true;
   const { config } = useCollections();
   const navigate = useNavigate();
@@ -50,12 +50,8 @@ export default function DraftsPage() {
     setSearchQuery,
     currentPage,
     setCurrentPage,
-    filteredFiles,
-    paginatedFiles,
-    totalPages,
     selectedFiles,
     setSelectedFiles,
-    handleSelectAll,
     handleSelectFile,
   } = useFileListPage({ basePath: draftPath, selectedRepo, user });
 
@@ -64,12 +60,54 @@ export default function DraftsPage() {
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [renameFile, setRenameFile] = useState<EnhancedFileItem | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [publishTarget, setPublishTarget] = useState('');
+  const [publishTargets, setPublishTargets] = useState<Record<string, string>>({});
   const [moveTarget, setMoveTarget] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [dirNodes, setDirNodes] = useState<DirNode[]>([]);
   const lastDeletedRef = useRef<{ files: EnhancedFileItem[]; originalPaths: string[] } | null>(null);
 
-  const availableDirs = filterValidDirs(config.paths || []);
+  const availableDirs = useMemo(() => filterValidDirs(config.paths || []), [config.paths]);
+
+  // 仓库草稿 + 缓冲变更合并为统一列表，来源列区分
+  const mergedFiles = useMemo(
+    () => (bufferEnabled ? mergeDraftList(files, bufferChanges, draftPath) : files),
+    [files, bufferChanges, bufferEnabled, draftPath]
+  );
+
+  // 发布目标目录树：源自仓库真实树，以内容目录为根
+  useEffect(() => {
+    if (!selectedRepo || !showPublishDropdown) return;
+    let cancelled = false;
+    fetchDirTree(selectedRepo, availableDirs)
+      .then((nodes) => { if (!cancelled) setDirNodes(nodes); })
+      .catch(() => { if (!cancelled) setDirNodes([]); });
+    return () => { cancelled = true; };
+  }, [selectedRepo, showPublishDropdown, availableDirs]);
+
+  const filteredFiles = useMemo(
+    () => mergedFiles.filter((f) =>
+      f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      f.path.toLowerCase().includes(searchQuery.toLowerCase())
+    ),
+    [mergedFiles, searchQuery]
+  );
+
+  const totalPages = Math.ceil(filteredFiles.length / PAGE_SIZE);
+  const paginatedFiles = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredFiles.slice(start, start + PAGE_SIZE);
+  }, [filteredFiles, currentPage]);
+
+  // 全选基于合并后的列表，与 useFileListPage 内部列表不同
+  const handleSelectAllMerged = useCallback(() => {
+    setSelectedFiles((prev) =>
+      prev.size === filteredFiles.length
+        ? new Set<string>()
+        : new Set(filteredFiles.map((f) => f.path))
+    );
+  }, [filteredFiles, setSelectedFiles]);
+
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, setCurrentPage]);
 
   const handleEdit = (file: EnhancedFileItem) => {
     if (!selectedRepo) return;
@@ -91,67 +129,67 @@ export default function DraftsPage() {
     );
   };
 
+  // 统一发布：仓库草稿走 commit，缓冲项走逐项发布接口
   const handlePublish = async () => {
-    if (!selectedRepo || !user || selectedFiles.size === 0 || !publishTarget.trim()) return;
-    let safeTarget: string;
-    try {
-      safeTarget = sanitizePath(publishTarget);
-    } catch (err) {
-      addToast({ message: (err as Error).message, type: 'error' });
-      return;
-    }
+    if (!selectedRepo || !user || selectedFiles.size === 0) return;
     setActionLoading(true);
     try {
-      const filesToMove = files.filter((f) => selectedFiles.has(f.path));
-      // 批量发布合并为单 commit：原子生效，CI 至多触发一次
-      const targets = dedupeTargetPaths(filesToMove.map((file) => `${safeTarget}/${file.name}`));
-      const bufferedWrites = new Set(
-        bufferChanges.filter((c) => c.op === 'write').map((c) => c.path)
-      );
-      // 有缓冲 write 的草稿：用缓冲内容发布，避免 GitHub 旧内容覆盖未发布编辑
-      const opGroups = await Promise.all(filesToMove.map(async (file, i) => {
-        const target = targets[i] ?? `${safeTarget}/${file.name}`;
-        if (bufferEnabled && bufferedWrites.has(file.path)) {
-          const { content } = await readBufferFile({
-            owner: selectedRepo.owner,
-            repo: selectedRepo.repo,
-            branch: selectedRepo.branch,
-            path: file.path,
-          });
-          return [
-            { op: 'write' as const, path: target, content },
-            { op: 'delete' as const, path: file.path },
-          ] satisfies CommitOp[];
-        }
-        return [{ op: 'move' as const, fromPath: file.path, path: target }] satisfies CommitOp[];
-      }));
-      const ops: CommitOp[] = opGroups.flat();
-      const names = filesToMove.map((f) => f.name).slice(0, 3).join(', ');
-      await commitBatch({
-        owner: selectedRepo.owner,
-        repo: selectedRepo.repo,
-        branch: selectedRepo.branch,
-        message: buildCommitMessage(
-          `发布 ${filesToMove.length} 篇草稿: ${names}${filesToMove.length > 3 ? ' ...' : ''}`
-        ),
-        ops,
-        userName: user?.login
-      });
-      addToast({ message: `成功发布 ${filesToMove.length} 篇草稿`, type: 'success' });
-      // 草稿箱直发布后同步清理对应缓冲，避免残留旧内容被下次统一发布覆盖
-      if (bufferEnabled) {
-        await discardBufferPaths({
+      const selectedItems = mergedFiles.filter((f) => selectedFiles.has(f.path));
+      const repoItems = selectedItems.filter((f) => !f.source || f.source === 'repo');
+      const bufferItems = selectedItems.filter((f) => f.source && f.source !== 'repo');
+
+      let repoPublished = 0;
+      let bufferPublished = 0;
+
+      // 仓库草稿：按各自目标 move 到目标目录，未指定则留在草稿目录
+      const moveOps = repoItems
+        .map((file) => {
+          const raw = (publishTargets[file.path] || '').trim();
+          if (!raw) return null;
+          let safeTarget: string;
+          try { safeTarget = sanitizePath(raw); } catch (err) {
+            throw new Error(`「${file.name}」目标路径无效: ${(err as Error).message}`);
+          }
+          return { op: 'move' as const, fromPath: file.path, path: `${safeTarget}/${file.name}` };
+        })
+        .filter((x): x is { op: 'move'; fromPath: string; path: string } => x !== null);
+
+      if (moveOps.length > 0) {
+        const targets = dedupeTargetPaths(moveOps.map((o) => o.path));
+        await commitBatch({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           branch: selectedRepo.branch,
-          paths: filesToMove.map((f) => f.path),
-        }).catch(() => undefined);
-        await refreshChanges();
+          message: buildCommitMessage(`发布 ${moveOps.length} 篇草稿`),
+          ops: moveOps.map((o, i) => ({ ...o, path: targets[i] ?? o.path })),
+          userName: user.login,
+        });
+        repoPublished = moveOps.length;
       }
+
+      // 缓冲项：一次提交，逐项目标由后端重写路径
+      if (bufferEnabled && bufferItems.length > 0) {
+        const result = await publish(user.login, bufferItems.map((f) => {
+          const raw = (publishTargets[f.path] || '').trim();
+          return raw
+            ? { path: f.path, publishTarget: sanitizePath(raw) }
+            : { path: f.path };
+        }));
+        if (!result) throw new Error('缓冲发布失败');
+        bufferPublished = result.published;
+      }
+
+      if (repoPublished === 0 && bufferPublished === 0) {
+        addToast({ message: '未指定发布目标，文章仍留在草稿目录', type: 'info' });
+      } else {
+        addToast({ message: `已发布 ${repoPublished + bufferPublished} 篇`, type: 'success' });
+      }
+
       setSelectedFiles(new Set());
-      setPublishTarget('');
+      setPublishTargets({});
       setShowPublishDropdown(false);
       clearCache(selectedRepo);
+      await refreshChanges();
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
@@ -172,7 +210,13 @@ export default function DraftsPage() {
     }
     setActionLoading(true);
     try {
+      // 仅仓库草稿可移动；缓冲项尚未落到仓库，需先发布
       const filesToMove = files.filter((f) => selectedFiles.has(f.path));
+      const bufferedCount = selectedFiles.size - filesToMove.length;
+      if (filesToMove.length === 0) {
+        addToast({ message: '选中的都是缓存中的文章，请先发布后再移动', type: 'warning' });
+        return;
+      }
       const targets = dedupeTargetPaths(filesToMove.map((file) => `${safeTarget}/${file.name}`));
       await commitBatch({
         owner: selectedRepo.owner,
@@ -186,7 +230,12 @@ export default function DraftsPage() {
         })),
         userName: user?.login
       });
-      addToast({ message: `成功移动 ${filesToMove.length} 篇草稿`, type: 'success' });
+      addToast({
+        message: bufferedCount > 0
+          ? `已移动 ${filesToMove.length} 篇草稿，${bufferedCount} 篇缓存中的文章未处理`
+          : `成功移动 ${filesToMove.length} 篇草稿`,
+        type: 'success'
+      });
       setSelectedFiles(new Set());
       setMoveTarget('');
       setShowMoveDropdown(false);
@@ -207,6 +256,10 @@ export default function DraftsPage() {
 
     setActionLoading(true);
     try {
+      if (filesToDelete.length === 0) {
+        addToast({ message: '选中的都是缓存中的文章，请在编辑器中删除', type: 'warning' });
+        return;
+      }
       const targets = dedupeTargetPaths(filesToDelete.map((file) => `${trashPath}/${file.name}`));
       await commitBatch({
         owner: selectedRepo.owner,
@@ -356,22 +409,13 @@ export default function DraftsPage() {
             />
           </div>
 
-          {/* 缓冲合并视图：草稿路径下的缓冲变更带「未发布」角标 */}
-          {bufferEnabled && bufferChanges.length > 0 && (
-            <DraftBufferPanel
-              draftPath={draftPath}
-              items={bufferChanges}
-              selectedRepo={selectedRepo}
-            />
-          )}
-
           {selectedFiles.size > 0 && (
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <span className="text-sm text-muted-foreground bg-accent px-2.5 py-1.5 rounded-sm">
                 已选 {selectedFiles.size} 篇
               </span>
               <button
-                onClick={handleSelectAll}
+                onClick={handleSelectAllMerged}
                 className="text-sm text-muted-foreground hover:text-foreground hover:bg-accent px-2.5 py-1.5 rounded-sm transition-colors"
               >
                 {selectedFiles.size === filteredFiles.length ? '取消全选' : '全选'}
@@ -473,12 +517,13 @@ export default function DraftsPage() {
             files={paginatedFiles}
             selectedFiles={selectedFiles}
             filteredCount={filteredFiles.length}
-            onSelectAll={handleSelectAll}
+            onSelectAll={handleSelectAllMerged}
             onSelectFile={handleSelectFile}
             onRowClick={handleEdit}
             rowIcon={<FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
-            nameColumnWidth="w-[40%]"
-            pathColumnWidth="w-[40%]"
+            nameColumnWidth="w-[35%]"
+            pathColumnWidth="w-[35%]"
+            showSource={bufferEnabled}
             renderDesktopActions={(file) => (
               <>
                 <button
@@ -545,11 +590,13 @@ export default function DraftsPage() {
 
       {showPublishDropdown && (
         <PublishDraftDialog
-          selectedCount={selectedFiles.size}
-          availableDirs={availableDirs}
-          publishTarget={publishTarget}
+          entries={filteredFiles
+            .filter((f) => selectedFiles.has(f.path))
+            .map((f) => ({ path: f.path, name: f.name }))}
+          dirNodes={dirNodes}
           loading={actionLoading}
-          onTargetChange={setPublishTarget}
+          targets={publishTargets}
+          onTargetsChange={setPublishTargets}
           onConfirm={handlePublish}
           onClose={() => setShowPublishDropdown(false)}
         />

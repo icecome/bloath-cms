@@ -3,6 +3,11 @@ import { parseFrontmatterBody, FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } 
 import type { ArticleFrontmatter, RepoInfo } from '../../../shared/types';
 
 /**
+ * 文件来源：仓库 / 缓冲（未发布）/ 缓冲有改动 / 缓冲待删除
+ */
+export type FileSource = 'repo' | 'buffer' | 'buffer-modified' | 'buffer-deleted';
+
+/**
  * 从 Front Matter 提取的增强文件项
  */
 export interface EnhancedFileItem {
@@ -16,6 +21,10 @@ export interface EnhancedFileItem {
   frontmatter?: ArticleFrontmatter;
   /** 解析后的排序日期时间戳 */
   sortDate?: number;
+  /** 来源标记，缺省视为仓库 */
+  source?: FileSource;
+  /** 缓冲中的发布目标；仅 source 为 buffer* 时有意义 */
+  publishTarget?: string;
 }
 
 export interface ExtractOptions {

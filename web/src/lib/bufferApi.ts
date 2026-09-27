@@ -39,6 +39,7 @@ export interface BufferChangeItem {
   op: BufferOp;
   fromPath?: string;
   savedAt: number;
+  publishTarget?: string;
 }
 
 export interface BufferChangesResult {
@@ -113,19 +114,18 @@ export function getBufferChanges(params: { owner: string; repo: string; branch: 
 
 // ---------- 发布 ----------
 
-export function publishBuffer(params: { owner: string; repo: string; branch: string; userName?: string }): Promise<PublishResult> {
+export interface PublishItem {
+  path: string;
+  publishTarget?: string;
+}
+
+// items 省略 = 全量发布；提供则逐项发布
+export function publishBuffer(params: {
+  owner: string; repo: string; branch: string; userName?: string; items?: PublishItem[];
+}): Promise<PublishResult> {
   return bufferFetch('/api/buffer/publish', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   }, PUBLISH_TIMEOUT_MS);
-}
-
-// 草稿箱直发布后同步清理对应缓冲
-export function discardBufferPaths(params: { owner: string; repo: string; branch: string; paths: string[] }): Promise<null> {
-  return bufferFetch('/api/buffer/discard', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
 }

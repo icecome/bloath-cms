@@ -13,6 +13,8 @@ export interface BufferEntry {
   fromPath?: string;
   baseSha?: string;
   savedAt: number;
+  /** 发布目标目录（如 content/posts/sub）；缺省表示发布时落回草稿目录 */
+  publishTarget?: string;
 }
 
 export interface BufferChangeItem {
@@ -20,6 +22,7 @@ export interface BufferChangeItem {
   op: BufferOp;
   fromPath?: string;
   savedAt: number;
+  publishTarget?: string;
 }
 
 export class BufferUnavailableError extends Error {
@@ -92,16 +95,29 @@ export async function deleteBufferEntry(
   await deleteObject(cfg, bufferKey(cfg, owner, repo, branch, path));
 }
 
-// 变更清单（含过期懒清理：>7 天的对象顺手删除）
-const STALE_MS = 7 * 24 * 60 * 60 * 1000;
+// 仅更新发布目标，保留内容与操作类型；条目不存在时返回 false
+export async function setBufferPublishTarget(
+  env: Env, owner: string, repo: string, branch: string, path: string, publishTarget: string | null
+): Promise<boolean> {
+  const existing = await readBufferEntry(env, owner, repo, branch, path);
+  if (!existing) return false;
+  const next: BufferEntry = { ...existing, savedAt: Date.now() };
+  if (publishTarget) {
+    next.publishTarget = publishTarget;
+  } else {
+    delete next.publishTarget;
+  }
+  await writeBufferEntry(env, owner, repo, branch, path, next);
+  return true;
+}
 
+// 变更清单（永久保留，不做时间过期清理）
 export async function listBufferChanges(
   env: Env, owner: string, repo: string, branch: string
 ): Promise<BufferChangeItem[]> {
   const cfg = await requireBufferConfig(env);
   const prefix = repoPrefix(cfg, owner, repo, branch);
   const entries = await listObjects(cfg, prefix);
-  const now = Date.now();
 
   const parsed = await mapLimit(entries, S3_CONCURRENCY, async (e): Promise<BufferChangeItem | null> => {
     const path = pathFromKey(prefix, e.key);
@@ -110,11 +126,10 @@ export async function listBufferChanges(
       const raw = await getObject(cfg, e.key);
       if (raw === null) return null;
       const entry = JSON.parse(raw) as BufferEntry;
-      if (now - (entry.savedAt || 0) > STALE_MS) {
-        await deleteObject(cfg, e.key).catch(() => undefined);
-        return null;
-      }
-      return { path, op: entry.op, fromPath: entry.fromPath, savedAt: entry.savedAt || 0 };
+      return {
+        path, op: entry.op, fromPath: entry.fromPath,
+        savedAt: entry.savedAt || 0, publishTarget: entry.publishTarget,
+      };
     } catch {
       return null;
     }

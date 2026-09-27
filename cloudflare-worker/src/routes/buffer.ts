@@ -12,10 +12,10 @@ import { putObject } from '../services/s3.client';
 import { isBlockedS3Endpoint, S3Error } from '../services/s3.errors';
 import { getBufferConfig } from '../services/bufferConfig.service';
 import {
-  writeBufferEntry, deleteBufferEntry,
+  writeBufferEntry, deleteBufferEntry, setBufferPublishTarget,
   listBufferChanges, readFileWithBuffer, BufferUnavailableError,
 } from '../services/buffer.service';
-import { publishBuffer } from '../services/publish.service';
+import { publishBuffer, type PublishItem } from '../services/publish.service';
 import { GithubApiError } from '../services/github';
 
 const bufferApp = new Hono<HonoEnv>();
@@ -244,45 +244,60 @@ bufferApp.get('/api/buffer/changes', async (c: Context<HonoEnv>) => {
 
 // ---------- 发布 ----------
 
-// POST /api/buffer/publish {owner,repo,branch,userName}
+// POST /api/buffer/publish {owner,repo,branch,userName,items?}
+// items 省略 = 全量发布；提供则逐项发布，publishTarget 覆盖该条目标
 bufferApp.post('/api/buffer/publish', async (c: Context<HonoEnv>) => {
-  let body: { owner?: string; repo?: string; branch?: string; userName?: string };
+  let body: { owner?: string; repo?: string; branch?: string; userName?: string; items?: PublishItem[] };
   try { body = safeJsonParse(await c.req.raw.text()) as typeof body; } catch {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
   }
-  const { owner, repo, branch = 'main', userName } = body;
+  const { owner, repo, branch = 'main', userName, items } = body;
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branch)) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
   }
+  if (items !== undefined) {
+    if (!Array.isArray(items) || items.length > 100) {
+      return c.json(error(ErrorCode.VALIDATION_ERROR, 'items 需为数组且不超过 100 项'), 400);
+    }
+    for (const item of items) {
+      if (!item || !isSafePathParam(item.path, true)) {
+        return c.json(error(ErrorCode.VALIDATION_ERROR, 'items 中存在非法 path'), 400);
+      }
+      if (item.publishTarget !== undefined && !isSafePathParam(item.publishTarget, true)) {
+        return c.json(error(ErrorCode.VALIDATION_ERROR, 'items 中存在非法 publishTarget'), 400);
+      }
+    }
+  }
   try {
-    const result = await publishBuffer(c.env, auth(c).githubToken, owner!, repo!, branch, userName);
+    const result = await publishBuffer(c.env, auth(c).githubToken, owner!, repo!, branch, userName, items);
     return c.json(success(result, result.message));
   } catch (err) {
     return respondBufferError(c, err);
   }
 });
 
-// POST /api/buffer/discard — 发布后草稿箱直发布时的缓冲同步清理
-// body: {owner,repo,branch,paths[]}
-bufferApp.post('/api/buffer/discard', async (c: Context<HonoEnv>) => {
-  let body: { owner?: string; repo?: string; branch?: string; paths?: string[] };
+// PUT /api/buffer/target {owner,repo,branch,path,publishTarget} — 设置/清除单条发布目标
+bufferApp.put('/api/buffer/target', async (c: Context<HonoEnv>) => {
+  let body: { owner?: string; repo?: string; branch?: string; path?: string; publishTarget?: string | null };
   try { body = safeJsonParse(await c.req.raw.text()) as typeof body; } catch {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
   }
-  const { owner, repo, branch = 'main', paths } = body;
+  const { owner, repo, branch = 'main', path, publishTarget } = body;
   if (
     !isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branch) ||
-    !Array.isArray(paths) || paths.length === 0 || paths.length > 100
+    !path || !isSafePathParam(path, true)
   ) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
   }
+  if (publishTarget !== null && publishTarget !== undefined && !isSafePathParam(publishTarget, true)) {
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '非法 publishTarget'), 400);
+  }
   try {
-    await Promise.all(
-      paths
-        .filter((p) => isSafePathParam(p, true))
-        .map((p) => deleteBufferEntry(c.env, owner!, repo!, branch, p).catch(() => undefined))
-    );
-    return c.json(success(null, '缓冲已同步清理'));
+    const updated = await setBufferPublishTarget(c.env, owner!, repo!, branch, path, publishTarget ?? null);
+    if (!updated) {
+      return c.json(error(ErrorCode.VALIDATION_ERROR, '缓冲中不存在该文件'), 404);
+    }
+    return c.json(success({ path, publishTarget: publishTarget ?? null }, '已设置发布目标'));
   } catch (err) {
     return respondBufferError(c, err);
   }

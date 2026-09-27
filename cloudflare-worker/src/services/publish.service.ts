@@ -1,4 +1,4 @@
-// 发布编排器：全量缓冲 → 幂等预检 → batchCommit → 清理
+// 发布编排器：全量/逐项缓冲 → 幂等预检 → batchCommit → 清理
 import type { Env } from '../env';
 import type { CommitOp } from './github';
 import { batchCommit, buildCommitAuthor, getTree, GithubApiError } from './github';
@@ -15,9 +15,23 @@ export interface PublishResult {
   message: string;
 }
 
+/** 逐项发布参数：path 为缓冲中的原路径，publishTarget 覆盖该条的发布目标 */
+export interface PublishItem {
+  path: string;
+  publishTarget?: string;
+}
+
+// 目标目录 + 原文件名 → 发布路径；无目标时保持原路径（降级落草稿目录）
+export function resolvePublishPath(path: string, publishTarget?: string | null): string {
+  if (!publishTarget) return path;
+  const name = path.split('/').pop() || path;
+  return `${publishTarget.replace(/\/+$/, '')}/${name}`;
+}
+
 export async function publishBuffer(
   env: Env, githubToken: string,
-  owner: string, repo: string, branch: string, userName?: string
+  owner: string, repo: string, branch: string, userName?: string,
+  items?: PublishItem[]
 ): Promise<PublishResult> {
   await requireBufferConfig(env);
   const buffered = await readBufferFull(env, owner, repo, branch);
@@ -29,6 +43,21 @@ export async function publishBuffer(
     };
   }
 
+  // 逐项发布时只取选中的条目；items 省略表示全量发布
+  const overrideTargets = new Map<string, string | undefined>();
+  let selected = buffered;
+  if (items && items.length > 0) {
+    for (const item of items) overrideTargets.set(item.path, item.publishTarget);
+    const selectedPaths = new Set(items.map((i) => i.path));
+    selected = buffered.filter((b) => selectedPaths.has(b.path));
+    if (selected.length === 0) {
+      return {
+        commitSha: null, published: 0, skipped: 0, bufferCleared: 0, cleanupFailed: 0,
+        message: '选中的条目不在缓冲区中，无待发布变更',
+      };
+    }
+  }
+
   // 拉取远端树做幂等预检（path → sha 映射）
   const tree = await getTree(githubToken, owner, repo, branch);
   const remoteShas = new Map<string, string>();
@@ -38,9 +67,17 @@ export async function publishBuffer(
   const keysToClear: string[] = [];
   let skipped = 0;
 
-  for (const { path, entry, key } of buffered) {
+  for (const { path, entry, key } of selected) {
+    // 逐项指定优先于条目自身记录的目标
+    const target = overrideTargets.has(path) ? overrideTargets.get(path) : entry.publishTarget;
+    const targetPath = resolvePublishPath(path, target);
+
     if (entry.op === 'write') {
-      ops.push({ op: 'write', path, content: entry.content ?? '' });
+      ops.push({ op: 'write', path: targetPath, content: entry.content ?? '' });
+      // 路径被重写时需删掉源文件，否则草稿目录会残留一份
+      if (targetPath !== path && remoteShas.has(path)) {
+        ops.push({ op: 'delete', path });
+      }
       keysToClear.push(key);
     } else if (entry.op === 'delete') {
       if (remoteShas.has(path)) {
@@ -51,8 +88,9 @@ export async function publishBuffer(
       keysToClear.push(key);
     } else if (entry.op === 'move') {
       const from = entry.fromPath;
+      const toPath = targetPath === path ? resolvePublishPath(from ?? path, target) : targetPath;
       if (from && remoteShas.has(from)) {
-        ops.push({ op: 'move', fromPath: from, path });
+        ops.push({ op: 'move', fromPath: from, path: toPath });
       } else {
         skipped++; // 源已不存在（上次已移动），幂等跳过
       }
