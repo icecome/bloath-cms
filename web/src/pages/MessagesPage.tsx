@@ -3,7 +3,7 @@ import {
   listAdminMessages, patchMessageAction, createReply, updateReply, deleteReply,
   batchOperateMessages, type AdminMessage, type AdminListResult,
 } from '../lib/commentApi';
-import { renderMarkdown } from '../lib/markdown';
+import { renderMessageMarkdown } from '../lib/messageMarkdown';
 import { useToast } from '../contexts/ToastContext';
 import {
   formatTime, formatFullTime, buildThread, STATUS_LABEL, STATUS_TABS,
@@ -13,6 +13,22 @@ import {
   Bold, Italic, Code, Link as LinkIcon, Heading, List, Quote,
   ChevronDown, ChevronLeft, ChevronRight, X, ExternalLink, Mail,
 } from 'lucide-react';
+
+/**
+ * 留言正文渲染：markdown-it 懒加载。
+ * 首帧为空（chunk 加载中），加载完成后渲染 HTML；实例在模块级缓存，同一会话内只加载一次。
+ */
+function MarkdownBody({ content }: { content: string }) {
+  const [html, setHtml] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    renderMessageMarkdown(content)
+      .then((result) => { if (!cancelled) setHtml(result); })
+      .catch((err) => console.error('[MessagesPage] Markdown 渲染失败:', err));
+    return () => { cancelled = true; };
+  }, [content]);
+  return <div className="msg-md-body" dangerouslySetInnerHTML={{ __html: html }} />;
+}
 
 export default function MessagesPage() {
   const { addToast } = useToast();
@@ -504,10 +520,7 @@ export default function MessagesPage() {
                         )}
 
                         {/* Markdown content */}
-                        <div
-                          className="msg-md-body"
-                          dangerouslySetInnerHTML={{ __html: renderMarkdown(part.content) }}
-                        />
+                        <MarkdownBody content={part.content} />
 
                         {/* Visitor quoted text */}
                         {part.type === 'visitor' && selectedMessage.quoted_text && (
@@ -530,10 +543,7 @@ export default function MessagesPage() {
                                 <span>From: {part.replyFromEmail}</span>
                                 <span>Date: {formatFullTime(part.time)}</span>
                               </div>
-                              <div
-                                className="msg-md-body"
-                                dangerouslySetInnerHTML={{ __html: renderMarkdown(part.content) }}
-                              />
+                              <MarkdownBody content={part.content} />
                             </div>
                           </div>
                         )}

@@ -10,6 +10,33 @@ export const TRUSTED_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEVICE_INACTIVE_MS = 7 * 24 * 60 * 60 * 1000;
 const DEVICE_KEY_PREFIX = 'device:';
 
+// 会话吊销门槛：key 为 revocation:{login}，值为时间戳。
+// issuedAt 早于该戳的 token 一律失效——登出时推进时间戳即可使该账号全部存量会话作废。
+const REVOCATION_KEY_PREFIX = 'revocation:';
+
+// 读取某账号的会话吊销门槛；未设置或 KV 不可用返回 0（不拦截）
+export async function getSessionRevocationAt(kv: KVNamespace | undefined, githubLogin: string): Promise<number> {
+  if (!kv || !githubLogin) return 0;
+  try {
+    const raw = await kv.get(REVOCATION_KEY_PREFIX + githubLogin.toLowerCase());
+    const ts = raw ? parseInt(raw, 10) : 0;
+    return Number.isFinite(ts) ? ts : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// 推进吊销门槛到当前时刻，使该账号所有已签发会话立即失效
+export async function revokeSessions(kv: KVNamespace | undefined, githubLogin: string): Promise<void> {
+  if (!kv || !githubLogin) return;
+  try {
+    await kv.put(REVOCATION_KEY_PREFIX + githubLogin.toLowerCase(), String(Date.now()));
+  } catch (err) {
+    // 吊销失败仅记日志：cookie 已清除，风险窗口由原 expiresAt 兜底
+    console.error('[session] 会话吊销写入失败:', err);
+  }
+}
+
 // 从 UA 中提取稳定内核族标识（忽略浏览器小版本号/build，增强稳定性）
 function parseStableUa(ua: string): string {
   const lower = ua.toLowerCase();
@@ -91,13 +118,17 @@ export async function validateSessionToken(
     const deviceFingerprint = typeof sessionPayload.deviceFingerprint === 'string'
       ? sessionPayload.deviceFingerprint
       : undefined;
-    // 向后兼容：旧 token 无 longLived/issuedAt 字段
     const longLived = sessionPayload.longLived === true;
-    const issuedAt = typeof sessionPayload.issuedAt === 'number'
-      ? sessionPayload.issuedAt
-      : sessionPayload.expiresAt;
+    // issuedAt 必须存在且为数字：吊销校验依赖它比较签发时刻，
+    // 若回退为 expiresAt（未来时间）会使 "issuedAt < revokedAt" 恒为 false，静默绕过登出吊销。
+    if (typeof sessionPayload.issuedAt !== 'number') return null;
+    const issuedAt = sessionPayload.issuedAt;
 
     if (Date.now() > sessionPayload.expiresAt) return null;
+
+    // 登出吊销：issuedAt 早于该账号吊销门槛的 token 一律失效
+    const revokedAt = await getSessionRevocationAt(env.DEVICES_KV, sessionPayload.githubLogin);
+    if (revokedAt > 0 && issuedAt < revokedAt) return null;
 
     if (deviceFingerprint && currentFingerprint && deviceFingerprint !== currentFingerprint) {
       return null;

@@ -142,9 +142,7 @@ export async function updateMessageStatus(db: D1Database, id: number, action: st
   };
   const allowedFrom = validTransitions[targetStatus] || [];
   if (!allowedFrom.includes(existing.status)) {
-    if (action !== 'feature' || existing.status !== 'pending') {
-      throw new ApiError(ErrorCode.INVALID_STATUS_TRANSITION, `无法从 "${existing.status}" 转换为 "${targetStatus}"`, 400);
-    }
+    throw new ApiError(ErrorCode.INVALID_STATUS_TRANSITION, `无法从 "${existing.status}" 转换为 "${targetStatus}"`, 400);
   }
   if (targetStatus === 'spam') {
     const recordStmts = await buildRecordSpamSourceStmts(db, { name: existing.visitor_name, email: existing.visitor_email || '', ip: existing.visitor_ip || '', content: existing.content || '' });

@@ -895,3 +895,96 @@ node --experimental-strip-types --test src/lib/path.test.ts src/lib/frontmatter.
 2. **M-R2 的端到端验证**：缺陷触发路径涉及"缓冲层删除→发布"跨端流程，代码链已静态验证，但**建议在测试仓库上实际走一遍**：在有缓冲的环境下删除一篇已入库文章 → 发布 → 确认文件被移动到回收站而非删除。
 
 3. **下一轮建议优先处理**：15.3 的 N-3（4 处空 catch 吞错）+ 报告中的 m-11（`requestJson` 测试补齐）。
+
+---
+
+## 16. 第 3 轮：Q 项收口与 B 批次回归验证
+
+> **触发**：Q 类问题分析后，用户指示「按推荐实施 + 做回归验证」。
+> **范围**：① 独立验证 B1–B4 四批修复是否真实生效；② 实施第 15 章未覆盖的 Q 项；③ 补齐 m-11。
+
+### 16.1 B1–B4 回归验证（模式 6）
+
+按「不以『上一轮说已修复』为由跳过验证」的要求，逐项独立读代码复验，**不采信第 15 章自述**。
+
+#### 已验证通过项
+
+| 原问题 ID | 声称状态 | 独立验证结论 | 证据 |
+|----------|---------|-------------|------|
+| C-01 | B1 已修复 | ✅ 验证通过 | `sessionAuth.ts:69-107` 完整白名单实现（未配置即拒绝、大小写归一、警告日志）；`session.ts:41-49` payload 固化 `githubLogin`；`:116` 无该字段的 token 一律作废 |
+| C-02 | B1 已修复 | ✅ 验证通过 | `cors.ts:9-11` localhost 仅非生产注入；`:21-29` 改用 `parsed.origin` 比对；`resolveFrontendUrl`（`:35-40`）生产缺配置返回 null；`index.ts:63-67` 不再读请求头 |
+| M-S2 | B1 已修复 | ✅ 验证通过 | `cors.ts:25-28` 白名单项逐个归一化为 origin 后比对 |
+| M-R1 | B2 已修复 | ✅ 验证通过 | `admin.service.ts:27-28` 已改用 `(created_at, id)` 复合游标，与 `message.service.ts:72` 语义一致 |
+| M-R2 | B2 已修复 | ✅ 验证通过（含加码） | `publish.service.ts:95` 修正为 `target ? resolvePublishPath(path, target) : path`；`:96` 额外加 `from !== toPath` 守卫 |
+| M-R3 | B2 已修复 | ✅ 验证通过 | `useFileListPage.ts:50,53,59,68,71` 完整 `cancelled` 守卫 + cleanup |
+| m-12 | B2 已修复 | ✅ 验证通过 | `TrashPage.tsx:51` 改用 `err instanceof HttpError && err.status === 404`；`:49` 有注释解释为何不用文本匹配 |
+| m-13 | B2 已修复 | ✅ 验证通过 | `repoConfigSync.ts:22` 同型改造 |
+| m-15 | B2 已修复 | ✅ 验证通过 | `admin.service.ts:83` 审计日志与状态变更合并进同一 `db.batch`，`:72` 注释说明动机 |
+| m-19 | B2 已修复 | ✅ 验证通过（方案优于建议） | `DraftsPage.tsx:70,76-81` 引入 `actionLockRef` **同步锁** —— 报告建议用 `actionLoading` 守卫，实际实现识别出「state 在同一事件循环内读旧值」的更根本问题 |
+| M-A1 | B3 已修复 | ✅ 验证通过 | `shared/types.ts:152` 定义 `MessageRecord`、`:175` 定义 `MessageAdminView`；worker 侧 `comment/types.ts:13` 别名重导出；web 侧 `commentApi.ts:16` 引用 |
+| M-A2 | B3 已修复 | ✅ 验证通过（双向补齐） | `http.ts` 已含 503（`:79`）、204（`:83`）、`skipDataCheck`（`:11,50,99`）与 signal 转发（`:53-55`）；`api.ts:38-40` 退化为 3 行薄包装 |
+| m-01 | B3 已修复 | ✅ 验证通过 | `lib/concurrency.ts` 抽出 `mapLimit`，`buffer.service.ts`、`github.ts:467,570` 全部改用它 |
+| m-03 | B3 已修复 | ✅ 验证通过 | `buffer.ts` 校验样板收敛 |
+| m-17 | B4 已修复 | ✅ 验证通过 | `shared/types.ts` 中 `ContentEntry`、`ContentListParams` 已清除（grep 0 命中） |
+| Q-01 | B1 已修复 | ✅ 验证通过 | `auth.ts:146` dev 快捷路径已有 `ENVIRONMENT !== 'production'` 守卫，`:144-145` 注释说明为"第二道独立防线" |
+
+#### 验证结论
+
+**B1–B4 声称的修复全部真实生效**，无「修复不完整」或「引入回归」项。实施质量在本轮抽样中**普遍高于报告建议**（M-R2 的双层防御、m-19 的同步锁、M-A2 的双向能力补齐均为实例）。
+
+**一处需说明**：`15.4` 将 Q-06 整体列为「需产品决策」而未处理。本轮复核确认该判断对**指纹强度**部分成立（改动会破坏"浏览器升级不掉登录"的设计初衷），但对**会话吊销**部分不成立 —— 原报告 Q-06 明确包含"无吊销机制"这半，而 B1–B4 未触及。本轮补实施（见 16.2）。
+
+### 16.2 本轮实施内容
+
+| # | 问题 | 实施内容 | 文件 |
+|---|------|---------|------|
+| 1 | C-01 收口 | 补 `ADMIN_GITHUB_LOGIN: "icecome"` 至 `vars` | `wrangler.jsonc` |
+| 2 | Q-06（吊销半） | 新增 `revokeSessions`/`getSessionRevocationAt`，以 `revocation:{login}` KV 门槛使该账号全部存量会话失效；登出端点接入 | `session.ts:14-35,129-131`、`auth.ts:120-136` |
+| 3 | Q-06 加固 | `issuedAt` 缺失不再回退为 `expiresAt`（后者是未来时间，会让 `issuedAt < revokedAt` 恒 false 从而绕过吊销） | `session.ts:121-125` |
+| 4 | Q-04 | 新增 `storedConfigSchema`（Zod），三处裸 `JSON.parse` 断言统一走 `parseStoredConfig`，结构非法时留日志并返回 null | `bufferConfig.service.ts:43-70` |
+| 5 | Q-03 | 删除 `pending→featured` 不可达例外分支（全组合推演确认 `validTransitions.pending` 已含 featured） | `message.service.ts:143-146` |
+| 6 | Q-05 | 新建 `messageMarkdown.ts`（markdown-it 动态 import，配置与后端一致）；`MessagesPage` 抽 `MarkdownBody` 组件（定义于 `:17-28`）替换两处 `dangerouslySetInnerHTML`（`:523`、`:546`）；删除旧 `markdown.ts` | `messageMarkdown.ts`、`MessagesPage.tsx` |
+| 7 | Q-02 | 新建 `AGENTS.md`，记录最新值 ref 约定（含边界条件与现有使用点）、陈旧响应防护范式、Context value 稳定性判定方法等 8 项项目约定 | `AGENTS.md` |
+| 8 | m-11 | `http.test.ts` 从 4 例扩至 16 例，覆盖 `requestJson` 的超时/401 事件/503/非 JSON/业务错误带状态码/skipDataCheck/网络失败/204/URL 拼接/CSRF 头共 12 个新分支 | `http.test.ts` |
+
+**Q-05 的关键验证**：构建产物确认 `markdown-it` 为独立 chunk（97.38 kB / gzip 40.92 kB），主包 `index-*.js` 保持 476.08 kB **未增长** —— 懒加载目标达成。
+
+**未实施的 Q 项**：Q-06 的**指纹强度**部分保持原状（依据 15.4 的判断，改动会破坏稳定性设计初衷，属产品决策而非缺陷）。
+
+### 16.3 验证证据
+
+| 检查项 | 命令 | 结果 |
+|--------|------|------|
+| worker 类型检查 | `cd cloudflare-worker && npm run typecheck` | 退出码 0 |
+| web 类型检查 | `cd web && npm run typecheck` | 退出码 0 |
+| web 单元测试 | `cd web && npm test` | **31 通过 / 0 失败**（19 → 31，新增 12 例） |
+| web 构建 | `cd web && npm run build` | 成功；`markdown-it` 独立 chunk，主包体积不变 |
+| 依赖审计 | `cd web && npm audit --json` | 6 个既有漏洞（`js-yaml` 等），**`markdown-it` 未引入新漏洞** |
+| 旧渲染器残留 | `grep renderMarkdown` 全仓 | 仅剩后端 `email.service.ts` 自身定义与使用 |
+| 吊销函数一致性 | `grep revokeSessions\|getSessionRevocationAt` | 定义 2 处、调用 2 处，签名一致 |
+
+### 16.4 本轮实施中发现的额外问题
+
+#### 新增 N-4: `web/src/lib/markdown.ts` 删除后的样式残留检查
+
+`globals.css` 中 21 处 `msg-md-body` 样式规则在新 `MarkdownBody` 组件中仍被使用（保留 `className="msg-md-body"`），**无样式失效**。已验证。
+
+#### 新增 N-5: `parseStoredConfig` 的双层 catch
+
+`parseStoredConfig` 内部已有 `try/catch`（捕获 `JSON.parse` 抛错），而调用方（`getBufferConfig` 等）外层也有 `try/catch`。当前写法下内层 catch 仅对 JSON 解析失败生效，`safeParse` 本身不抛错 —— 属**冗余但无害**的防御。保留理由：若未来有人把 `safeParse` 改成 `parse`，内层 catch 仍能兜住。不作修改。
+
+### 16.5 剩余未闭环项
+
+| ID | 内容 | 状态 |
+|----|------|------|
+| Q-06（指纹半） | 设备指纹熵低 + token 到期前无法强制失效 | 维持 Q 状态，需产品决策（15.4 已论证改动代价） |
+| n-06 | `github.ts` 拆分（758 行 / 5 职责域） | 维持延后（15.4 已说明理由） |
+| n-05 | `MessagesPage` 非空断言 | 维持（15.4 复核为非冗余，TS 语言限制） |
+| m-11 覆盖扩展 | `path.ts` 的 `sanitizePath`/`sanitizeSlug`/`dedupeTargetPaths` 仍无测试 | 本轮未做（属路径安全边界函数，建议下一轮优先） |
+| N-3 空 catch | 4 处 `no-empty` 空 catch 吞错 | 本轮未做（15.6 已列为下一轮优先项） |
+
+### 16.6 上线前必做（承接 15.6）
+
+1. 确认 Cloudflare 侧 `ADMIN_GITHUB_LOGIN` 已配置为 **`icecome`**（本轮已写入 `wrangler.jsonc`，需确认部署生效）
+2. 本轮的 Q-06 吊销改动会使**存量会话在部署后失效**，博主需重新登录一次
+3. Q-02 的文档化约定已落 `AGENTS.md`，建议告知后续协作方

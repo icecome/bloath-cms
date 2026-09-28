@@ -6,7 +6,7 @@ import { success, error } from '../comment/utils/response';
 import { exchangeCode, getUserInfo } from '../services/github';
 import {
   generateState, parseState, generateDeviceFingerprint, generateSessionToken,
-  validateSessionToken,
+  validateSessionToken, revokeSessions,
   getDeviceRecord, upsertDeviceRecord, listDeviceRecords, deleteDeviceRecord,
   SESSION_DURATION_MS, TRUSTED_DURATION_MS,
 } from '../services/session';
@@ -121,6 +121,14 @@ authApp.get('/api/auth/callback', async (c: Context<HonoEnv>) => {
 authApp.post('/api/auth/logout', async (c: Context<HonoEnv>) => {
   if (!checkCsrf(c.req.raw)) {
     return c.json({ error: 'CSRF validation failed' }, 403);
+  }
+  // 服务端吊销：仅清 cookie 无法使被窃取的 token 失效，登出必须同时推进该账号的吊销门槛
+  const sessionToken = getSessionTokenFromCookie(c.req.raw);
+  if (sessionToken) {
+    const session = await validateSessionToken(sessionToken, c.env, undefined);
+    if (session) {
+      await revokeSessions(c.env.DEVICES_KV, session.githubLogin);
+    }
   }
   const url = new URL(c.req.url);
   const isSecure = url.protocol === 'https:';
