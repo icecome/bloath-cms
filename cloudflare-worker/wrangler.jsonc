@@ -22,8 +22,6 @@
   ],
   "vars": {
     "ENVIRONMENT": "production",
-    "FRONTEND_URL": "https://blog.icecome.com",
-    "PROD_ORIGINS": "https://blog.icecome.com",
     "ADMIN_GITHUB_LOGIN": "icecome",
     "CORS_ORIGIN": "https://blog.icecome.com",
     "INBOUND_REPLY_DOMAIN": "mail.icecome.com",

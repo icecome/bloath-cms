@@ -36,9 +36,13 @@ function maskSecret(s: string): string {
   return s.length <= 4 ? '****' : `****${s.slice(-4)}`;
 }
 
-interface StoredConfig extends Omit<BufferConfig, 'secretAccessKey' | 'enabled'> {
-  // enabled 与读侧 schema 一致为可选：首次未勾选保存的配置也需可读
+interface StoredConfig extends Omit<BufferConfig, 'secretAccessKey' | 'enabled' | 'region' | 'accessKeyId' | 'prefix' | 'rand'> {
+  // 以下字段与读侧 schema 一致为可选（历史/未完整写入的配置仍需可读）
   enabled?: boolean;
+  region?: string;
+  accessKeyId?: string;
+  prefix?: string;
+  rand?: string;
   secretAccessKeyEnc: string;
 }
 
