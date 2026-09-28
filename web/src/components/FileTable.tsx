@@ -97,7 +97,7 @@ export default function FileTable({
   return (
     <div>
       <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-muted-foreground bg-accent border-b border-border">
-        <div className="w-8 flex items-center justify-center">
+        <div className="w-8 flex items-center justify-center shrink-0">
           <input
             type="checkbox"
             checked={selectedFiles.size === filteredCount && filteredCount > 0}
@@ -105,11 +105,12 @@ export default function FileTable({
             className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
           />
         </div>
-        <div className={nameColumnWidth}>文件名</div>
-        <div className={pathColumnWidth}>路径</div>
-        {showPreviewPath && <div className="w-[20%] px-3">预发布路径</div>}
-        {showSource && <div className={showPreviewPath ? 'w-[16%] px-3' : 'w-[12%]'}>来源</div>}
-        <div className={showSource || showPreviewPath ? 'flex-1 text-right' : 'w-[20%] text-right'}>操作</div>
+        <div className={`${nameColumnWidth} shrink-0`}>文件名</div>
+        <div className={`${pathColumnWidth} shrink-0`}>路径</div>
+        {showPreviewPath && <div className="w-[18%] px-3 shrink-0">预发布路径</div>}
+        {showSource && <div className={showPreviewPath ? 'w-[14%] px-3 shrink-0' : 'w-[12%] shrink-0'}>来源</div>}
+        {/* 操作列固定最小宽度并禁止压缩：否则 flex-1 会把它压到内容最小尺寸以下导致按钮文字换行 */}
+        <div className="flex-1 min-w-[170px] shrink-0 text-right">操作</div>
       </div>
 
       {files.map((file) => (
@@ -133,19 +134,19 @@ export default function FileTable({
               className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
             />
           </div>
-          <div className={`hidden md:flex items-center ${nameColumnWidth} gap-2.5 px-3`}>
+          <div className={`hidden md:flex items-center ${nameColumnWidth} shrink-0 gap-2.5 px-3`}>
             {rowIcon}
             <span className="text-sm text-foreground truncate">
               {file.name.replace('.md', '')}
             </span>
           </div>
-          <div className={`hidden md:block ${pathColumnWidth} px-3`}>
+          <div className={`hidden md:block ${pathColumnWidth} shrink-0 px-3`}>
             <span className="text-sm text-muted-foreground truncate block" title={file.path}>
               {displayPath(file, draftPath)}
             </span>
           </div>
           {showPreviewPath && (
-            <div className="hidden md:block w-[20%] px-3">
+            <div className="hidden md:block w-[18%] px-3 shrink-0">
               {(() => {
                 const { text, className } = previewPathDisplay(file);
                 const clickable = !!onPreviewPathClick;
@@ -165,12 +166,12 @@ export default function FileTable({
             </div>
           )}
           {showSource && (
-            <div className={`hidden md:flex items-center gap-1 px-3 ${showPreviewPath ? 'w-[16%]' : 'w-[12%]'}`}>
+            <div className={`hidden md:flex items-center gap-1 px-3 shrink-0 ${showPreviewPath ? 'w-[14%]' : 'w-[12%]'}`}>
               <SourceBadge file={file} />
               <PreviewBadge state={file.previewState ?? 'draft'} />
             </div>
           )}
-          <div className={`hidden md:flex ${showSource || showPreviewPath ? 'flex-1' : 'w-[20%]'} items-center justify-end gap-2 px-3`}>
+          <div className={`hidden md:flex ${showSource || showPreviewPath ? 'flex-1 min-w-[170px] shrink-0' : 'w-[20%]'} items-center justify-end gap-2 px-3`}>
             {renderDesktopActions(file)}
           </div>
 

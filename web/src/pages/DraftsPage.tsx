@@ -731,8 +731,8 @@ export default function DraftsPage() {
             onSelectFile={handleSelectFile}
             onRowClick={handleEdit}
             rowIcon={<FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
-            nameColumnWidth="w-[26%]"
-            pathColumnWidth="w-[26%]"
+            nameColumnWidth="w-[24%]"
+            pathColumnWidth="w-[24%]"
             showSource={bufferEnabled}
             showPreviewPath
             onPreviewPathClick={openPreviewDialog}
@@ -741,14 +741,14 @@ export default function DraftsPage() {
               <>
                 <button
                   onClick={() => handleEdit(file)}
-                  className="text-sm text-primary hover:underline cursor-pointer"
+                  className="text-sm text-primary hover:underline cursor-pointer whitespace-nowrap"
                 >
                   编辑
                 </button>
                 {(file.previewState ?? 'draft') === 'draft' ? (
                   <button
                     onClick={() => openPreviewDialogFor(file)}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
                     title="设置预发布目标"
                   >
                     预发布
@@ -756,7 +756,7 @@ export default function DraftsPage() {
                 ) : (
                   <button
                     onClick={() => handleCancelPreview(file)}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
                     title="取消预发布"
                   >
                     取消预发布
@@ -764,7 +764,7 @@ export default function DraftsPage() {
                 )}
                 <button
                   onClick={() => handleSingleDelete(file)}
-                  className="text-muted-foreground hover:text-destructive transition-colors"
+                  className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
                   title="移至回收站"
                 >
                   <Trash2 className="w-4 h-4" />
