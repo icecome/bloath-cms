@@ -25,10 +25,35 @@
 | 决策点 | 结论 | 含义 |
 |--------|------|------|
 | 预发布的技术含义 | **仅标记状态**，标识草稿即将发布到的指定目录 | 不推分支、不触发部署、不产生预览 URL |
-| 正式发布是否必经预发布 | **强制** —— 未预发布不能发布 | 预发布成为发布前的确认关卡 |
+| 正式发布是否必经预发布 | **强制** —— 未预发布不能发布 | 预发布成为发布前的确认关卡，有/无 S3 一致 |
 | 预发布路径来源 | **用户指定**预发布目录 | 与现有 `publishTargets` 机制同源 |
 | 能否取消预发布 | **支持**，回到未发布态 | 非单向流程 |
-| 状态存储 | **复用 S3 缓冲层基础设施**，独立命名空间 | 不引入配置文件、不新建 D1 表 |
+| 状态存储 | **浏览器 localStorage**，按 `owner_repo_branch` 隔离 | **与 S3、git 完全解耦**，有无 S3 行为一致 |
+| 多设备同步 | **不需要** | 预发布是本机操作意图，非跨设备协作文档 |
+| 键是否含 branch | **含**（`{owner}_{repo}_{branch}`） | 避免跨分支误判（同类问题见审查报告 M-R4） |
+| 孤立记录清理 | **自动清理** | 列表渲染时忽略无对应草稿的记录 |
+
+### 1.2.1 存储选型的演进（设计过程中的一次修正）
+
+设计初稿把预发布状态存放在 **S3 缓冲层**（复用 `s3.client` 与 `bufferConfig`）。经需求方质疑"如果没有接入 S3，预发布该怎么办"后核实发现：
+
+`BufferContext.tsx:50` 在缓冲层关闭时会清空 `changes`，`DraftsPage.tsx:88` 也随之退化为"纯仓库文件列表"。此时：
+
+- 我的初稿方案**完全不可用**（无 S3 即无存储）
+- 叠加"强制预发布才能发布"的规则，会导致**无 S3 环境下用户连发布都做不了** —— 功能死锁
+
+**改用 localStorage 后，上述问题全部消失**，且带来额外收益：
+
+| 维度 | S3 方案（初稿） | localStorage 方案（定稿） |
+|------|---------------|------------------------|
+| 有无 S3 的行为 | **不一致**（无 S3 时不可用） | **完全一致** |
+| 实现复杂度 | 需 4 个后端端点 + service + 类型 | **零后端改动** |
+| 写操作开销 | 每次预发布一次 S3 写 | 本地写入，无网络 |
+| 离线可用 | 否 | **是** |
+| 多设备同步 | 支持 | 不支持（需求确认**不要求**） |
+| 状态与仓库内容一致性 | 强（服务端权威） | 弱（以本地文件 sha 比对检测变更） |
+
+**结论：需求方"状态存浏览器、仅本机即可"的选择，使方案在复杂度与一致性之间取得了更好的平衡。** 唯一代价是失去多设备同步，而这恰是需求明确不要求的。
 
 ### 1.3 设计范围边界（本次不做）
 
@@ -38,6 +63,8 @@
 - 不实现定时发布 / 预约发布
 - 不实现多人协作与审批流
 - 不改变现有的 git commit 与 CI 触发策略（`deploySettings.ts` 保持原样）
+- **不引入后端改动**（存储方案改为 localStorage 后，无需新端点、新表、新配置文件）
+- **不做多设备同步**（需求明确不要求；预发布状态是本机操作意图）
 
 ---
 
@@ -99,13 +126,14 @@ await publish(user.login, bufferItems.map(f => ({ path: f.path, publishTarget })
 
 | 能力 | 位置 | 复用方式 |
 |------|------|---------|
-| S3 对象读写 | `cloudflare-worker/src/services/s3.client.ts` | 预发布状态的存储后端 |
-| 缓冲配置（含密钥加密） | `bufferConfig.service.ts` | 直接复用，无需新配置 |
-| 路径参数校验 | `middleware/pathGuard.ts` 的 `isSafePathParam` | 复用校验 `previewTarget` |
-| 请求鉴权 | `middleware/sessionAuth.ts` 的 `requireAuth` | 新端点复用 |
-| 目录树选择器 | `DirectoryTreePicker.tsx` | 预发布目标选择的 UI 复用 |
-| 响应封装 | `comment/utils/response.ts` 的 `success`/`error` | 新端点复用 |
-| 并发控制 | `lib/concurrency.ts` 的 `mapLimit` | 批量预发布时复用 |
+| localStorage 读写范式 | `lib/profileService.ts:15-37` | **主要参照对象**：按仓库存元数据的键构造、容错读、手动覆盖清除 |
+| 键前缀常量约定 | `lib/constants.ts:9` 的 `UNDO_STORAGE_PREFIX` | 新增 `PREVIEW_KEY_PREFIX` 时遵循 |
+| 目录树选择器 | `components/drafts/DirectoryTreePicker.tsx` | 预发布目标选择的 UI 复用 |
+| 对话框交互范式 | `components/drafts/PublishDraftDialog.tsx` | `PreviewDraftDialog` 的结构参照 |
+| 动作锁防重 | `DraftsPage.tsx:70-84` 的 `acquireActionLock` | 批量预发布时复用 |
+| 表格列参数化 | `components/FileTable.tsx:37-40` | 新增列无需改表格结构 |
+
+> **注**：初稿此表列出的是 `s3.client` / `bufferConfig` / `mapLimit` 等服务端能力。改用 localStorage 后，可复用的对象全部转为前端既有的本地存储与 UI 范式。
 
 ---
 
@@ -193,186 +221,248 @@ await publish(user.login, bufferItems.map(f => ({ path: f.path, publishTarget })
 
 ## 4. 数据模型设计
 
-### 4.1 存储方案
+### 4.1 存储方案：浏览器 localStorage
 
-**复用 S3 缓冲层基础设施，使用独立命名空间**。
+**完全不依赖 S3、不依赖 git、不改后端** —— 这是本方案最重要的特性。
 
 ```
-S3 Key 结构对比：
+localStorage 键结构：
 
-现有缓冲条目（不动）：
-  {prefix}/{rand}/{owner}/{repo}/{branch}/{path}.buf
+bloath_previews_{owner}_{repo}_{branch}
+     └──────┬──────┘ └────────┬────────┘
+      前缀常量          仓库 + 分支隔离
 
-新增预发布记录：
-  {prefix}/{rand}/{owner}/{repo}/{branch}/.preview/{path}.json
-                        └──────┬──────┘
-                     新增一级目录隔离
+值结构（JSON）：
+{
+  "version": 1,
+  "records": {
+    ".draft/20260928-测试文章.md": {
+      "previewTarget": "content/posts",
+      "contentSha": "a1b2c3...",
+      "savedAt": 1790574265999,
+      "previewedAt": 1790574265999
+    },
+    ".draft/三无.md": { ... }
+  }
+}
 ```
 
-**为何用独立前缀而非扩展 `BufferEntry`**：
+**键的粒度选择**：
+
+| 粒度 | 键 | 取舍 |
+|------|-----|------|
+| 每仓库一个键 | `bloath_previews_{owner}_{repo}_{branch}` | ✅ 一次读写全部记录；✅ 与 `profileService.ts:16` 的既有粒度一致；❌ 记录多时单值较大（但草稿量通常 <100，JSON 约 10KB 量级，远低于 localStorage 5MB 上限） |
+| 每草稿一个键 | `bloath_preview_{owner}_{repo}_{branch}_{path}` | ✅ 单条读写；❌ 需列举全部键（localStorage 无前缀查询，须遍历 `key(i)`）；❌ 键数量膨胀 |
+
+**选每仓库一个键**，理由：与项目既有的 `profileService` 粒度一致；避免遍历；单值体量可控。
+
+**为何不用 S3**（初稿方案的废弃原因）见 1.2.1 节。核心原因：S3 是可选的，无 S3 时初稿方案完全不可用，且会因"强制预发布"导致发布功能死锁。
+
+**为何不用 git / 配置文件**：
 
 | 方案 | 问题 |
 |------|------|
-| 复用 `BufferEntry` 加字段 | `BufferEntry.op` 是必需的（`write`/`delete`/`move`），而 `mergeDraftList:39` 会把 `op:'write'` 判为"缓存·有改动" → **仓库草稿会被误标为已修改** |
-| `setBufferPublishTarget` | 该函数要求条目已存在（`buffer.service.ts:91` 的 `if (!existing) return false`），仓库草稿在 S3 无条目 → 无法使用 |
-| **独立前缀（本方案）** | 与缓冲条目物理隔离，`mergeDraftList` 完全无感，无需修改其逻辑 |
+| `.bloath/config.json` | `pushRepoConfig`（`repoConfigSync.ts:45-69`）**整体覆盖文件**，而该文件由 `MainLayout.tsx:407-432` 的自动拉取 + 设置页手动推送共同维护 → 预发布写入会被后续的配置推送**静默覆盖** |
+| 草稿旁标记文件 | 仓库中产生非常规文件（`.draft/xxx.md.preview`），可能被内容同步机制误处理 |
+| front-matter | 污染文章元数据；Hugo/Jekyll 会把自定义字段当文章属性；改目标需写文件内容 |
 
 ### 4.2 数据结构
 
 ```typescript
-// shared/types.ts 新增（前后端共用）
+// web/src/lib/draftPreviewStore.ts（前端专用，无需放 shared/）
 
 /** 草稿的预发布状态 */
 export type DraftPreviewState = 'draft' | 'previewed' | 'preview-stale';
 
-/** 预发布记录（存 S3，key: {repoPrefix}.preview/{path}.json） */
+/** 单条预发布记录 */
 export interface DraftPreviewRecord {
-  /** 数据格式版本，便于后续演进 */
-  version: 1;
-  /** 草稿在仓库中的路径，如 .draft/20260928-测试文章.md */
-  path: string;
   /** 预发布目标目录，如 content/posts */
   previewTarget: string;
   /** 预发布时的内容 SHA（git blob sha），用于检测预发布后内容是否变化 */
   contentSha: string;
+  /**
+   * 预发布时的 savedAt 兜底值。
+   * 新建的缓冲项 sha 为 ''（draftMerge.ts:61），无法用 sha 检测变化，
+   * 此时退回比对 savedAt。
+   */
+  savedAt?: number;
   /** 预发布操作时间戳 */
   previewedAt: number;
-  /** 执行预发布的操作者（GitHub login），用于多设备场景追溯 */
-  previewedBy?: string;
+}
+
+/** localStorage 中的完整存储结构 */
+export interface DraftPreviewStore {
+  /** 数据格式版本，便于后续演进（参照 repoConfigSync.ts:34 的版本检查做法） */
+  version: 1;
+  /** 草稿路径 → 预发布记录 */
+  records: Record<string, DraftPreviewRecord>;
 }
 ```
 
-### 4.3 内容哈希的取值
+**字段设计说明**：
 
-用**草稿文件的 git blob sha**（`EnhancedFileItem.sha`）而非内容哈希：
+- **不放 `version` 到单条记录**：版本属于整个存储结构，放顶层即可（初稿放在每条记录里是冗余）
+- **去掉 `previewedBy`**：多设备同步已确认不需要，记录操作者无消费方
+- **`savedAt` 可选**：仅 sha 为空的条目需要
 
-- 仓库草稿的 `sha` 已由 `scanner.ts` → `getTree` 提供，**零额外成本**
-- 缓冲项的 `sha` 来自 `draftMerge.ts:46` 的 `prev?.sha`，同样已有
-- 文件内容变化时 git 必然重算 sha → 天然可作变更检测
+### 4.3 内容变更检测
 
-**边界情况**：新建的缓冲项 `sha` 为 `''`（`draftMerge.ts:61`）。此时以 `''` 存记录，下次比对仍为 `''`，不会误判为"过期" —— 但也不会检测到变化。**处理**：对 `sha` 为空的条目，在记录中额外存 `savedAt` 作为兜底比对依据。
+用**草稿文件的 git blob sha**（`EnhancedFileItem.sha`）作为变更依据：
+
+| 草稿类型 | sha 来源 | 可用性 |
+|---------|---------|--------|
+| 仓库草稿（`repo`） | `scanner.ts` → `getTree` 提供 | ✅ 始终有值 |
+| 缓冲项（`buffer-modified`） | `draftMerge.ts:46` 的 `prev?.sha` | ✅ 取仓库侧 sha |
+| 新建缓冲项（`buffer`） | `draftMerge.ts:61` 硬编码 `''` | ❌ 空值 |
+
+**空 sha 的处理**：存入记录的 `contentSha` 为 `''`，同时写入 `savedAt`。状态判定时：
+
+```typescript
+function isStale(record: DraftPreviewRecord, item: EnhancedFileItem): boolean {
+  // sha 可用时以 sha 为准
+  if (record.contentSha && item.sha) {
+    return record.contentSha !== item.sha;
+  }
+  // sha 缺失时退回比对 savedAt（缓冲项的 savedAt 随每次写入更新）
+  if (record.savedAt !== undefined && item.lastModified !== undefined) {
+    return item.lastModified > record.savedAt;
+  }
+  // 两者都不可用：保守判为未过期（避免误报 stale 打断用户流程）
+  return false;
+}
+```
+
+**保守判定的理由**：`preview-stale` 的作用是提醒，误报（把未变化的判为过期）会让用户做无谓的重新预发布；漏报（把已变化的判为正常）的后果由发布时的二次确认兜住。两害相权，倾向保守。
+
+### 4.4 按仓库+分支隔离
+
+```typescript
+const PREVIEW_KEY_PREFIX = 'bloath_previews_';
+
+function previewStorageKey(repo: { owner: string; repo: string; branch?: string }): string {
+  return `${PREVIEW_KEY_PREFIX}${repo.owner}_${repo.repo}_${repo.branch || 'main'}`;
+}
+```
+
+**必须含 branch** —— 这是从审查报告 M-R4 学到的教训：
+
+> M-R4 的缺陷正是"撤销键不含 branch，切换分支后在错误的分支上执行操作"。若预发布的键不含 branch，用户在 `main` 预发布了 `.draft/x.md`，切到 `dev` 分支后同路径草稿会**错误显示为已预发布**，而它实际从未在本分支预发布过。
+
+同理，切换仓库（owner/repo 变化）也天然隔离。
+
+### 4.5 孤立记录清理
+
+草稿在仓库侧被删除或移入回收站后，本地记录会成为孤立项。**采用"惰性清理 + 定期清扫"**：
+
+```typescript
+/** 惰性清理：列表加载时，丢弃无对应草稿的记录（不写回，避免渲染期写存储） */
+function pruneOrphans(
+  records: Record<string, DraftPreviewRecord>,
+  liveDraftPaths: Set<string>
+): Record<string, DraftPreviewRecord> {
+  const next: Record<string, DraftPreviewRecord> = {};
+  for (const [path, rec] of Object.entries(records)) {
+    if (liveDraftPaths.has(path)) next[path] = rec;
+  }
+  return next;
+}
+```
+
+**两段式处理的理由**：
+
+| 时机 | 动作 | 原因 |
+|------|------|------|
+| 列表渲染 | 仅**忽略**孤立记录（内存中过滤） | 渲染期不应写 localStorage（副作用）；且草稿可能只是暂时加载失败 |
+| 显式操作后 | **写回**清理结果（如发布/删除成功后） | 此时能确认草稿确实已离开草稿箱 |
+
+**不采用"立即删除"**：草稿可能因为网络抖动、扫描失败而暂时不在列表中，立即删除会导致预发布状态意外丢失。
 
 ---
 
-## 5. 后端 API 设计
+## 5. 前端模块设计（原"后端 API 设计"章节）
 
-### 5.1 端点清单
+> **本章已随存储方案变更而重写。** 初稿设计了 4 个后端端点，改用 localStorage 后**后端零改动**，设计重心转移到前端模块。
 
-沿用现有 `/api/buffer/*` 前缀与 `requireAuth` 守卫，保持路径语义聚合：
+### 5.1 模块清单
 
-| 方法 | 路径 | 用途 | 复用 |
-|------|------|------|------|
-| `GET` | `/api/buffer/previews` | 列出本仓库所有预发布记录 | `listObjects` |
-| `PUT` | `/api/buffer/preview` | 设置/更新单条预发布（含目标路径） | `putObject` |
-| `DELETE` | `/api/buffer/preview` | 取消单条预发布 | `deleteObject` |
-| `POST` | `/api/buffer/preview/batch` | 批量预发布（多选场景） | `mapLimit` |
+| 模块 | 类型 | 职责 |
+|------|------|------|
+| `web/src/lib/draftPreviewStore.ts` | 纯逻辑 | localStorage 读写、键构造、孤立清理、状态判定 |
+| `web/src/hooks/useDraftPreviews.ts` | React hook | 封装 store，提供响应式状态与操作方法 |
+| `web/src/lib/draftPreviewMerge.ts` | 纯函数 | 把预发布状态叠加到草稿列表项上 |
 
-### 5.2 端点契约
+**无新增后端代码** —— 这是存储方案变更带来的最大简化。
 
-#### `GET /api/buffer/previews?owner&repo&branch`
-
-```typescript
-// 响应
-{
-  code: 0,
-  data: {
-    items: DraftPreviewRecord[],
-    count: number
-  }
-}
-```
-
-#### `PUT /api/buffer/preview`
+### 5.2 `draftPreviewStore.ts` 接口
 
 ```typescript
-// 请求体
-{
-  owner: string;
-  repo: string;
-  branch?: string;      // 默认 main
-  path: string;         // 草稿路径，如 .draft/xxx.md
-  previewTarget: string; // 目标目录，如 content/posts
-  contentSha: string;    // 当前内容 sha（由前端传入，来自列表项）
-}
+/** 读取某仓库+分支的全部预发布记录（容错：解析失败返回空） */
+export function readPreviewStore(repo: RepoInfo): DraftPreviewStore;
 
-// 校验（复用 isSafePathParam）
-- owner / repo / branch：不允许斜杠
-- path / previewTarget：允许斜杠，禁止 `..`
-- previewTarget 非空
+/** 写入单条预发布记录，返回写入后的完整 store */
+export function writePreviewRecord(
+  repo: RepoInfo,
+  path: string,
+  record: DraftPreviewRecord
+): DraftPreviewStore;
+
+/** 删除单条记录 */
+export function removePreviewRecord(repo: RepoInfo, path: string): DraftPreviewStore;
+
+/** 批量写入（多选预发布场景） */
+export function writePreviewRecords(
+  repo: RepoInfo,
+  entries: Array<{ path: string; record: DraftPreviewRecord }>
+): DraftPreviewStore;
+
+/** 清理孤立记录并写回 */
+export function pruneAndPersist(repo: RepoInfo, livePaths: Set<string>): DraftPreviewStore;
+
+/** 判定单条草稿的预发布状态 */
+export function resolvePreviewState(
+  record: DraftPreviewRecord | undefined,
+  item: EnhancedFileItem
+): DraftPreviewState;
 ```
 
-#### `DELETE /api/buffer/preview?owner&repo&branch&path`
+**容错要求**（对齐项目既有做法）：
 
-取消预发布，返回 204。
+- 所有 `localStorage` 操作包 `try/catch`（隐私模式/配额满时降级为空 store，不抛错）
+- JSON 解析失败时返回空 store 并 `console.warn`，不阻断页面
+- 校验 `version === 1`，不匹配时返回空 store（参照 `repoConfigSync.ts:34`）
 
-#### `POST /api/buffer/preview/batch`
+### 5.3 状态判定的纯函数
 
 ```typescript
-{
-  owner, repo, branch?,
-  items: Array<{ path: string; previewTarget: string; contentSha: string }>
-}
-
-// 响应包含逐项结果，容忍部分失败
-{
-  code: 0,
-  data: {
-    succeeded: string[],   // 成功的 path
-    failed: Array<{ path: string; error: string }>
-  }
+export function resolvePreviewState(
+  record: DraftPreviewRecord | undefined,
+  item: EnhancedFileItem
+): DraftPreviewState {
+  if (!record) return 'draft';
+  return isStale(record, item) ? 'preview-stale' : 'previewed';
 }
 ```
 
-> **为何用 `Promise.allSettled` 语义而非全成或全败**：批量预发布是幂等的元数据写入，部分成功比整体失败对用户更友好（失败项可重试）。这与 `AGENTS.md` 中"需要部分成功的结果，使用 `Promise.allSettled` 并显式处理失败项"的既有约定一致。
+**纯函数化的价值**：这是本功能唯一有分支判断的逻辑，抽成纯函数后可**独立单元测试**，无需挂载 React 组件（对齐项目 `path.ts`、`frontmatter.ts` 的既有测试范式）。
 
-### 5.3 新增服务模块
+**单元测试要点**（新增 `web/src/lib/draftPreviewStore.test.ts`）：
 
-```typescript
-// cloudflare-worker/src/services/draftPreview.service.ts
+| 用例 | 输入 | 期望 |
+|------|------|------|
+| 无记录 | `record = undefined` | `'draft'` |
+| sha 一致 | `record.contentSha === item.sha` | `'previewed'` |
+| sha 变化 | `record.contentSha !== item.sha` | `'preview-stale'` |
+| sha 为空且 savedAt 更新 | `contentSha=''`，`item.lastModified > record.savedAt` | `'preview-stale'` |
+| sha 为空且 savedAt 未变 | `contentSha=''`，`item.lastModified <= record.savedAt` | `'previewed'` |
+| 两者都不可用 | 无 sha 且无 savedAt | `'previewed'`（保守） |
 
-// 与 buffer.service.ts 同构：复用 s3.client 与 bufferConfig
-export async function listDraftPreviews(env, owner, repo, branch): Promise<DraftPreviewRecord[]>
-export async function setDraftPreview(env, owner, repo, branch, record): Promise<void>
-export async function deleteDraftPreview(env, owner, repo, branch, path): Promise<void>
-export async function readDraftPreview(env, owner, repo, branch, path): Promise<DraftPreviewRecord | null>
-```
-
-**key 构造**（与 `buffer.service.ts:42-49` 对称）：
-
-```typescript
-function previewKey(cfg: BufferConfig, owner, repo, branch, path): string {
-  return `${cfg.prefix}/${cfg.rand}/${owner}/${repo}/${branch}/.preview/${path}.json`;
-}
-function previewPrefix(cfg: BufferConfig, owner, repo, branch): string {
-  return `${cfg.prefix}/${cfg.rand}/${owner}/${repo}/${branch}/.preview/`;
-}
-```
-
-**注意**：`listObjects` 是按前缀列举的，而 `.preview/` 在 `repoPrefix()` 之下 —— 现有 `listBufferChanges` 会把这些对象**一起列出来**。
-
-**但无需额外过滤代码**（已实证）：`pathFromKey`（`buffer.service.ts:52-55`）的判定是
-
-```ts
-if (!key.startsWith(prefix) || !key.endsWith('.buf')) return null;
-```
-
-它同时检查**前缀**与 **`.buf` 后缀**。预发布记录用 `.json` 后缀，会被 `endsWith('.buf')` 直接排除，因此 `listBufferChanges` 与 `readBufferFull` 都不会看到它们。
-
-**实测验证**（用 node 跑 `pathFromKey` 的原样逻辑）：
-
-| 输入 key | 返回值 | 结论 |
-|---------|-------|------|
-| `{prefix}.draft/文章.md.buf` | `.draft/文章.md` | 正常缓冲条目 |
-| `{prefix}.preview/.draft/文章.md.json` | `null` | **被排除** |
-| `{prefix}.preview/.draft/文章.md.buf` | `.preview/.draft/文章.md` | 会被误收 —— 故**必须坚持 `.json` 后缀** |
-
-**由此产生一条硬性实现约束**：预发布记录的 key **必须使用 `.json` 后缀**。若将来有人改成 `.buf`，会立即引发"预发布记录被当作待发布文件写进 commit"的故障（仓库里出现 `.preview/*.buf` 文件）。
-
-建议加一个单元测试锁定该后缀约定。
+> **测试命令注意**：`web/package.json:11` 的测试命令**显式列举文件路径**，新增测试文件必须手动加入该命令行，否则不会被执行。（该约束来自审查报告第 15.3 节的 N-2）
 
 ---
 
-## 6. 前端设计
+## 6. 界面设计
+
+> 本章覆盖需求 R1（预发布路径列）、R2（按钮拆分）、R6（界面布局与交互）。
 
 ### 6.1 数据流改造
 
@@ -381,8 +471,8 @@ if (!key.startsWith(prefix) || !key.endsWith('.buf')) return null;
 │ DraftsPage.tsx                                               │
 │                                                              │
 │  useFileListPage ──► files（仓库草稿）                        │
-│  useBuffer ───────► changes（S3 缓冲清单）                    │
-│  useDraftPreviews ─► previews（S3 预发布记录）  ← 🆕 新增 hook │
+│  useBuffer ───────► changes（S3 缓冲清单，可为空）             │
+│  useDraftPreviews ─► previews（localStorage 预发布记录）🆕      │
 │                                                              │
 │         ▼                                                    │
 │  mergeDraftList(files, changes, draftPath)                   │
@@ -397,12 +487,24 @@ if (!key.startsWith(prefix) || !key.endsWith('.buf')) return null;
 └──────────────────────────────────────────────────────────────┘
 ```
 
+**关键点：预发布状态与缓冲层并行、互不依赖。**
+
+`useDraftPreviews` 的数据源是 localStorage，`useBuffer` 的数据源是 S3。两者独立工作：
+
+| 场景 | 缓冲层 | 预发布 |
+|------|-------|--------|
+| 有 S3 | 正常工作 | 正常工作 |
+| **无 S3** | `changes` 为空数组 | **仍正常工作**（localStorage 与 S3 无关） |
+
+这是改用 localStorage 后获得的核心收益 —— 预发布功能**在有/无 S3 两种环境下行为完全一致**。
+
 **`useDraftPreviews` hook**（新文件 `web/src/hooks/useDraftPreviews.ts`）：
 
 - 参照 `BufferContext` 的实现范式（`useMemo` 包装 value、`useCallback` 包裹方法）
-- 方法：`previews`、`refreshPreviews`、`setPreview`、`cancelPreview`、`batchPreview`
-- 在 `selectedRepo` 变化时自动刷新（`useEffect` 依赖 `[selectedRepo, config?.enabled]`）
-- **必须加陈旧响应守卫**（用 `cancelled` 标志，对齐 `useFileListPage.ts` 修复后的范式）
+- 方法：`previews`、`setPreview`、`cancelPreview`、`batchPreview`、`recancelPreview`
+- **不依赖缓冲配置**：`useEffect` 依赖仅 `[selectedRepo]`（初稿曾依赖 `config?.enabled`，改用 localStorage 后该依赖不再必要）
+- localStorage 读取是**同步**的，无需陈旧响应守卫（与网络请求不同）
+- 但需在 `selectedRepo` 变化时**重新读取**对应键的记录
 
 ### 6.2 表格列设计
 
@@ -483,14 +585,14 @@ if (!key.startsWith(prefix) || !key.endsWith('.buf')) return null;
    └─► 弹出 PreviewDraftDialog
        └─► 选择目标目录 content/posts
            └─► 确认
-               └─► PUT /api/buffer/preview
+               └─► writePreviewRecord(repo, path, {...})   ← 写 localStorage
                    └─► 状态变为「已预发布」，列显示 content/posts
                        └─► Toast: 已标记预发布目标：content/posts
 
 2. 用户点击「发布」
    └─► 校验通过（已预发布）
        └─► commitBatch，move 到 content/posts
-           └─► 删除预发布记录
+           └─► removePreviewRecord(repo, path)             ← 清理记录
                └─► 成功后草稿从列表移除
                    └─► Toast: 已发布 1 篇
 ```
@@ -514,8 +616,8 @@ if (!key.startsWith(prefix) || !key.endsWith('.buf')) return null;
 #### 流程 C：取消预发布
 
 ```
-1. 已预发布项，行内操作区显示「取消预发布」（或右键菜单）
-2. 点击 → DELETE /api/buffer/preview
+1. 已预发布项，行内操作区显示「取消预发布」
+2. 点击 → removePreviewRecord(repo, path)   ← 删 localStorage 记录
 3. 状态回到 draft，列显示 —
    └─► Toast: 已取消预发布
 ```
@@ -557,40 +659,58 @@ if (!key.startsWith(prefix) || !key.endsWith('.buf')) return null;
 
 ### 7.1 分阶段实施
 
-| 阶段 | 内容 | 交付物 | 依赖 |
-|------|------|--------|------|
-| **P1 后端** | `draftPreview.service.ts` + 4 个端点 + `buffer.service` 的 `.preview/` 过滤 | 可用 API | 无 |
-| **P2 状态层** | `shared/types.ts` 类型 + `useDraftPreviews` hook + `mergePreviewState` 纯函数 | 前端状态可用 | P1 |
-| **P3 表格** | `FileTable` 新增两列 + 状态徽标 + 列宽调整 | 可视化 | P2 |
-| **P4 操作** | 工具栏拆分 + `PreviewDraftDialog` + 行内操作 + 发布校验 | 完整功能 | P3 |
-| **P5 加固** | 陈旧响应守卫、并发锁、失败重试、测试 | 生产就绪 | P4 |
+改用 localStorage 后，**实施阶段从 5 个缩减为 4 个，且无后端依赖**：
+
+| 阶段 | 内容 | 交付物 | 依赖 | 预估 |
+|------|------|--------|------|------|
+| **P1 存储层** | `draftPreviewStore.ts`（读写/键构造/清理/状态判定）+ 单元测试 | 可独立验证的纯逻辑 | 无 | 小 |
+| **P2 状态层** | `useDraftPreviews` hook + `EnhancedFileItem` 加 `previewState` 字段 | 前端状态可用 | P1 | 小 |
+| **P3 表格** | `FileTable` 新增「预发布路径」列 + 状态徽标 + 列宽调整 | 可视化 | P2 | 中 |
+| **P4 操作** | 工具栏拆分（发布/预发布）+ `PreviewDraftDialog` + 行内操作 + 发布校验 | 完整功能 | P3 | 中 |
+
+**相比初稿的变化**：删除原 P1（后端 service + 4 端点）与 P5（陈旧响应守卫 —— localStorage 同步读取无需该防护）。
 
 ### 7.2 需要同步修改的既有代码
 
-**这是本次设计的风险集中点**，逐项列出：
-
 | 文件 | 修改点 | 原因 | 回归风险 |
 |------|-------|------|---------|
-| `buffer.service.ts` | **无需修改** | 已实证：`.json` 后缀被 `pathFromKey` 的 `.buf` 检查天然排除 | 无 |
-| `DraftsPage.tsx:148-217` | `handlePublish` 增加预发布校验 + 清理记录 | 强制流程落地 | 中 |
-| `DraftsPage.tsx:64` | 移除 `publishTargets` useState，改由 previews 提供 | 统一数据源 | 中 —— 需确认所有引用点 |
-| `FileTable.tsx:73-76,100-116` | 新增列 + 列宽参数化 | 表格扩展 | 低 —— 组件已参数化 |
+| **无后端改动** | — | localStorage 方案下后端完全不涉及 | 无 |
+| `DraftsPage.tsx:148-217` | `handlePublish` 增加预发布校验 + 发布后清理记录 | 强制流程落地 | 中 |
+| `DraftsPage.tsx:64` | **移除 `publishTargets` useState**，改由 previews 提供 | 统一数据源（消除"发布对话框临时选目标"与"预发布锁定目标"的双轨） | **中** —— 需确认 3 处引用点（`:163`、`:189`、`:700`） |
 | `DraftsPage.tsx:625-628` | 传新的列宽参数 | 配合表格 | 低 |
-| `BufferContext.tsx` | 可能需暴露 previews（若选择集成进 Context 而非独立 hook） | 状态管理 | 中 |
+| `FileTable.tsx:73-76,100-116` | 新增列 + 列宽参数化 | 表格扩展 | 低 —— 组件已参数化 |
+| `extractFrontMatter.ts:13-28` | `EnhancedFileItem` 增加 `previewState?` 字段 | 类型承载 | 低 —— 纯增量字段 |
 
-**关于 `pathFromKey` 的结论修正**：设计初稿曾判断"必须在 `pathFromKey` 加 `.preview/` 过滤，否则记录会被写进 commit"，经**实测代码验证该判断不成立** —— `pathFromKey` 的 `.buf` 后缀检查已天然免疫 `.json` 记录。这条风险的真正形态是**命名约定风险**：只要坚持 `.json` 后缀就是安全的，误改为 `.buf` 才会出问题。
+**关于移除 `publishTargets` 的影响**：这是本次改动中风险最高的一处，因为它改变了现有交互。
 
-**建议的防御措施**：补一个单元测试锁定"`.preview/` 下的 `.json` key 不被 `pathFromKey` 接受"，把这个隐性约定显性化。测试成本极低（`path.test.ts` 已有现成范式），收益是防止未来的无意破坏。
+现有流程（`DraftsPage.tsx:700`）：点「发布」→ 弹 `PublishDraftDialog` → 选目标 → 确认。
+新流程：点「预发布」→ 弹 `PreviewDraftDialog` → 选目标 → 确认（写入 localStorage）→ 点「发布」（目标已确定，无需再选）。
+
+**`PublishDraftDialog` 的去留需要决策**：
+
+| 选项 | 说明 |
+|------|------|
+| A. 保留但只读 | 发布时弹窗展示已预发布的目标，仅作确认，不可改（要改先去预发布） |
+| B. 保留且可改 | 发布时仍可改目标，相当于"一步完成预发布+发布"（但削弱了强制预发布的意义） |
+| C. 移除 | 发布直接执行，无弹窗（目标来自预发布记录） |
+
+**建议 A** —— 保留视觉确认环节（用户能看到"要发到哪"），同时强制流程不被绕过。选项 B 会让强制预发布形同虚设；选项 C 缺少最后确认，风险偏高。
 
 ### 7.3 建议的验证方式
 
-| 验证项 | 方式 |
-|--------|------|
-| `pathFromKey` 的 `.preview/` 过滤 | 单元测试（`path.test.ts` 同目录新增），构造含 `.preview/` 的 key 列表，断言被排除 |
-| 状态判定的纯函数 | 单元测试：覆盖 5 种状态的所有输入组合 |
-| 预发布→发布全流程 | 手动验证（需真实 S3 + GitHub 仓库） |
-| `.preview/` 不进 commit | 手动验证：预发布后执行发布，检查 commit 的文件清单 |
-| 强制预发布的 UI 拦截 | 手动验证：未预发布时点发布，确认按钮禁用 |
+| 验证项 | 方式 | 说明 |
+|--------|------|------|
+| `resolvePreviewState` 的状态判定 | **单元测试** | 覆盖 4.3 节的 6 个用例；纯函数无需挂载组件 |
+| `isStale` 的 sha 缺失分支 | **单元测试** | 专测缓冲项 sha 为空时的 savedAt 兜底逻辑 |
+| 键的仓库+分支隔离 | **单元测试** | 构造不同 owner/repo/branch，断言键不同 |
+| localStorage 容错 | **单元测试** | 注入损坏 JSON、`version` 不匹配、`setItem` 抛异常（Mock 配额满），断言降级为空 store 且不抛错 |
+| 孤立记录清理 | **单元测试** | 传入含孤立项的 records 与 livePaths，断言过滤结果 |
+| 无 S3 环境完整流程 | **手动验证** | 关闭缓冲层（删除 `buffer_config`）后走一遍预发布→发布 |
+| 有 S3 环境完整流程 | **手动验证** | 开启缓冲层，验证缓冲项也能预发布 |
+| 强制预发布的 UI 拦截 | **手动验证** | 未预发布时点发布，确认按钮禁用且有提示 |
+| 跨分支不串状态 | **手动验证** | 在 main 预发布，切到 dev 确认显示为未预发布 |
+
+> **测试命令注意**：新增测试文件须手动加入 `web/package.json:11` 的命令行（该命令显式列举文件路径）。
 
 ---
 
@@ -601,20 +721,24 @@ if (!key.startsWith(prefix) || !key.endsWith('.buf')) return null;
 | 取舍点 | 选择 | 放弃的替代方案 | 理由 |
 |--------|------|--------------|------|
 | 预发布是否产生真实预览 | **不产生** | 分支部署 / Worker 渲染端点 | 需求方明确要求"仅标记状态"；避免预览环境的运维成本 |
-| 状态存储位置 | S3 独立命名空间 | 配置文件 / D1 表 / front-matter | 复用既有 S3 基础设施；不污染 front-matter；不引入双写一致性 |
+| **状态存储位置** | **localStorage** | S3 / 配置文件 / D1 / front-matter | **有无 S3 行为一致**；零后端改动；离线可用；需求不要求多设备同步 |
 | 状态数量 | 5 个（含 `preview-stale`） | 需求中的 4 个 | 防止"预发布后内容已变但状态显示正常"的误导 |
-| 批量预发布的失败语义 | 部分成功 | 全成或全败 | 幂等的元数据写入，部分成功对用户更友好 |
+| 存储粒度 | 每仓库+分支一个键 | 每草稿一个键 | 与 `profileService.ts:16` 的既有粒度一致；避免遍历键 |
+| 孤立记录处理 | 惰性忽略 + 操作时写回 | 立即删除 | 草稿可能因网络抖动暂时不在列表中，立即删会误丢状态 |
 | 工具栏按钮顺序 | 发布 → 预发布 | 预发布 → 发布（流程序） | 保持视觉权重与现有习惯 |
+| 发布时是否可改目标 | **不可改**（需先取消预发布） | 弹窗内可改 | 改目标会绕过"强制预发布"的设计意图 |
 
 ### 8.2 遗留问题（需后续决策）
 
+**相比初稿的变化**：初稿的 Q1（S3 清理）、Q4（多设备并发）、Q5（预发布人展示）因改用 localStorage 与"不要求多设备同步"而**自动消解**。
+
 | # | 问题 | 影响 | 建议 |
 |---|------|------|------|
-| Q1 | 预发布记录是否需要过期清理？ | S3 对象会累积 | 建议保留（记录很小），或加 90 天清理策略与 `webhook_events` 一致 |
-| Q2 | 草稿被移入回收站时，预发布记录是否同步删除？ | 记录残留 | 建议删除（在 `handleDelete` 中一并处理） |
-| Q3 | 仓库草稿的 `sha` 在首次扫描时为 `''` 怎么判定 stale？ | 可能误判 | 建议：`sha` 为空时退化用 `savedAt` 比对 |
-| Q4 | 多设备并发预发布同一草稿？ | 后写覆盖 | 建议用 `previewedAt` 做乐观锁，旧时间戳的写入被拒绝 |
-| Q5 | 是否需要在草稿箱显示"预发布人"？ | 多设备场景 | 记录中已存 `previewedBy`，UI 上可后续按需展示 |
+| Q1' | localStorage 被清空（用户清缓存/换浏览器）后预发布状态丢失 | 用户需重新预发布 | **接受**（需求确认不需要多设备同步）。可在 UI 上弱提示"预发布状态仅保存于本机" |
+| Q2 | 草稿移入回收站后，本地记录残留 | 记录成为孤立项 | 惰性清理已覆盖（4.5 节）；建议在 `handleDelete` 成功后主动 `pruneAndPersist` |
+| Q3 | 缓冲项 `sha` 为空时无法用 sha 检测变化 | 可能漏判 stale | 已设计 `savedAt` 兜底（4.3 节） |
+| Q4 | `PublishDraftDialog` 的去留 | 影响交互改动面 | 建议选项 A（保留作只读确认）—— 见 7.2 节 |
+| Q5 | 同一浏览器多标签页同时操作 | 后写覆盖（localStorage 无锁） | 影响很低（单用户场景）。可用 `storage` 事件同步，属增强项 |
 
 ### 8.3 与既有架构约定的一致性检查
 
@@ -623,13 +747,15 @@ if (!key.startsWith(prefix) || !key.endsWith('.buf')) return null;
 | 约定 | 本设计是否符合 | 说明 |
 |------|--------------|------|
 | 最新值 ref 模式 | ✅ 遵循 | `useDraftPreviews` 中的回调按该模式处理 |
-| 异步加载的陈旧响应防护 | ✅ 遵循 | 明确要求加 `cancelled` 标志 |
-| Context value 稳定性 | ✅ 遵循 | 若集成 Context，value 用 `useMemo` |
-| 管理接口授权 | ✅ 遵循 | 新端点用 `requireAuth`（非 admin 面） |
-| 存储读取的结构校验 | ⚠️ **需注意** | 从 S3 读的 JSON 是自写的，风险较低；但 `DraftPreviewRecord` 的 `version` 字段应校验（参照 `repoConfigSync.ts:34` 的版本检查） |
-| 并发控制 | ✅ 遵循 | 批量操作复用 `mapLimit` |
-| 错误消息与状态码 | ✅ 遵循 | 前端用 `HttpError.status` 判断，不用文本匹配 |
+| 异步加载的陈旧响应防护 | ➖ **不适用** | localStorage 读取是同步的，不存在陈旧响应问题（这是方案简化的一处体现） |
+| Context value 稳定性 | ✅ 遵循 | 若集成 Context，value 用 `useMemo`、方法用 `useCallback` |
+| 管理接口授权 | ➖ 不适用 | 无新增后端端点 |
+| 存储读取的结构校验 | ✅ 遵循 | **本设计明确要求校验 `version` 字段**，并注入损坏 JSON 的容错测试（参照 `repoConfigSync.ts:34` 的版本检查做法） |
+| 并发控制 | ✅ 遵循 | 批量预发布为本地同步操作，无需 `mapLimit`；发布走既有 `commitBatch` |
+| 错误消息与状态码 | ➖ 不适用 | 无新增 HTTP 调用；localStorage 异常降级为空 store |
 | 渲染一致性 | ➖ 不涉及 | 本功能不产生 Markdown 渲染 |
+
+**新增需要遵守的约定**：`previewStorageKey` 必须包含 branch（4.4 节），这是从审查报告 M-R4 的缺陷中提炼的教训，建议在实现时补单元测试锁定。
 
 ---
 
@@ -703,14 +829,16 @@ if (!key.startsWith(prefix) || !key.endsWith('.buf')) return null;
 
 ## 10. 设计要点总结
 
-**核心机制**：预发布 = 把"这篇草稿要发到哪个目录"这一意图**持久化到 S3**，并作为发布的前置关卡。
+**核心机制**：预发布 = 把"这篇草稿要发到哪个目录"这一意图**记在本机浏览器**，并作为发布的前置关卡。
 
-**三个关键设计决策**：
+**四个关键设计决策**：
 
-1. **存储复用而非新建** —— 用 S3 的 `.preview/` 独立前缀，复用既有 `s3.client` 与 `bufferConfig`，不引入配置文件、不新建 D1 表、不污染 front-matter。既满足了持久化需求，又保持与缓冲层机制的对称性好。
+1. **存储用 localStorage，与 S3/git 完全解耦** —— 这是设计过程中经过一次重要修正后的结论。初稿把状态放在 S3，未考虑"S3 是可选配置"这一事实：`BufferContext.tsx:50` 在缓冲层关闭时清空 `changes`，此时初稿方案不可用，叠加"强制预发布"规则会导致**无 S3 环境连发布都做不了**（功能死锁）。改用 localStorage 后，有无 S3 行为完全一致，且**零后端改动**。
 
 2. **增加 `preview-stale` 状态** —— 需求列了 4 个状态，设计扩展到 5 个。理由：预发布后编辑内容会让原目标失效，若不区分，用户会以为"已预发布"的路径仍然准确。
 
-3. **`.json` 后缀是隐性契约** —— 预发布记录与缓冲条目共享同一个 S3 前缀树。设计初稿误判为"需要给 `pathFromKey` 加过滤代码"，实测后发现 `pathFromKey` 的 `.buf` 后缀检查已天然排除 `.json` 记录，**无需改一行既有代码**。但这使 `.json` 后缀从"命名习惯"升级为"必须遵守的契约"—— 一旦有人改成 `.buf`，记录会被当作待发布文件写进 commit。建议用单元测试把这个隐性约定显性化。
+3. **存储键必须含 branch** —— 这是从审查报告的 M-R4 缺陷中提炼的教训（该缺陷正是"撤销键不含 branch 导致跨分支误操作"）。不含 branch 会让 `main` 分支的预发布状态错误地显示在 `dev` 分支的同名草稿上。
 
-**待您决策的开放项**：第 8.2 节的 5 个遗留问题（清理策略、回收站联动、sha 空值、并发、展示）。
+4. **移除 `publishTargets`，消除双轨数据源** —— 现状是"仓库草稿的目标存 useState（刷新即丢）+ 缓冲项的目标存 S3"，两者机制不同。改用统一的 localStorage 后，`DraftsPage.tsx:64` 的临时状态可以删除，所有草稿类型共用一套目标存储。这是本次改动中**风险最高但收益也最高**的一处（消除了用户"每次发布都要重选目标"的痛点）。
+
+**待决策的开放项**：第 8.2 节的 5 项，其中 Q4（`PublishDraftDialog` 去留）与 Q1'（本机状态丢失的提示）最需要确认。
