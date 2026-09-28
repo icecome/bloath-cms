@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { EnhancedFileItem, FileSource } from '../lib/extractFrontMatter';
+import type { DraftPreviewState } from '../lib/draftPreviewStore';
 
 const SOURCE_META: Record<FileSource, { label: string; className: string }> = {
   repo: { label: '仓库', className: 'bg-secondary text-muted-foreground' },
@@ -8,9 +9,25 @@ const SOURCE_META: Record<FileSource, { label: string; className: string }> = {
   'buffer-deleted': { label: '缓存·待删除', className: 'bg-red-100 text-red-700' },
 };
 
+// 预发布状态徽标：draft 不显示徽标（避免噪声），仅在有预发布动作时提示
+const PREVIEW_META: Record<Exclude<DraftPreviewState, 'draft'>, { label: string; className: string }> = {
+  previewed: { label: '已预发布', className: 'bg-blue-100 text-blue-700' },
+  'preview-stale': { label: '预发布过期', className: 'bg-amber-100 text-amber-700' },
+};
+
 function SourceBadge({ file }: { file: EnhancedFileItem }) {
   const source = file.source ?? 'repo';
   const meta = SOURCE_META[source];
+  return (
+    <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded-sm flex-shrink-0 ${meta.className}`}>
+      {meta.label}
+    </span>
+  );
+}
+
+function PreviewBadge({ state }: { state: DraftPreviewState }) {
+  if (state === 'draft') return null;
+  const meta = PREVIEW_META[state];
   return (
     <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded-sm flex-shrink-0 ${meta.className}`}>
       {meta.label}
@@ -24,6 +41,18 @@ function displayPath(file: EnhancedFileItem, draftPath: string): string {
   if (!isBuffered || !draftPath) return file.path;
   const prefix = draftPath.replace(/\/+$/, '') + '/';
   return file.path.startsWith(prefix) ? file.path.slice(prefix.length) : file.path;
+}
+
+/** 预发布路径列的显示文本与样式 */
+function previewPathDisplay(file: EnhancedFileItem): { text: string; className: string } {
+  const state = file.previewState ?? 'draft';
+  if (state === 'draft' || !file.previewTarget) {
+    return { text: '—', className: 'text-muted-foreground' };
+  }
+  if (state === 'preview-stale') {
+    return { text: `${file.previewTarget} ⚠`, className: 'text-amber-700' };
+  }
+  return { text: file.previewTarget, className: 'text-foreground' };
 }
 
 interface FileTableProps {
@@ -40,6 +69,10 @@ interface FileTableProps {
   showSource?: boolean;
   /** 草稿目录前缀，用于缓冲项路径的去前缀展示 */
   draftPath?: string;
+  /** 是否显示预发布路径列（仅草稿箱使用） */
+  showPreviewPath?: boolean;
+  /** 点击预发布路径列的回调（用于修改目标） */
+  onPreviewPathClick?: (file: EnhancedFileItem) => void;
   renderDesktopActions: (file: EnhancedFileItem) => ReactNode;
   renderMobileActions: (file: EnhancedFileItem) => ReactNode;
 }
@@ -56,6 +89,8 @@ export default function FileTable({
   pathColumnWidth,
   showSource = false,
   draftPath = '',
+  showPreviewPath = false,
+  onPreviewPathClick,
   renderDesktopActions,
   renderMobileActions,
 }: FileTableProps) {
@@ -72,8 +107,9 @@ export default function FileTable({
         </div>
         <div className={nameColumnWidth}>文件名</div>
         <div className={pathColumnWidth}>路径</div>
-        {showSource && <div className="w-[12%]">来源</div>}
-        <div className={showSource ? 'flex-1 text-right' : 'w-[20%] text-right'}>操作</div>
+        {showPreviewPath && <div className="w-[20%] px-3">预发布路径</div>}
+        {showSource && <div className={showPreviewPath ? 'w-[16%] px-3' : 'w-[12%]'}>来源</div>}
+        <div className={showSource || showPreviewPath ? 'flex-1 text-right' : 'w-[20%] text-right'}>操作</div>
       </div>
 
       {files.map((file) => (
@@ -104,16 +140,37 @@ export default function FileTable({
             </span>
           </div>
           <div className={`hidden md:block ${pathColumnWidth} px-3`}>
-            <span className="text-sm text-muted-foreground truncate block">
+            <span className="text-sm text-muted-foreground truncate block" title={file.path}>
               {displayPath(file, draftPath)}
             </span>
           </div>
-          {showSource && (
-            <div className="hidden md:flex w-[12%] items-center px-3">
-              <SourceBadge file={file} />
+          {showPreviewPath && (
+            <div className="hidden md:block w-[20%] px-3">
+              {(() => {
+                const { text, className } = previewPathDisplay(file);
+                const clickable = !!onPreviewPathClick;
+                return clickable ? (
+                  <button
+                    type="button"
+                    onClick={() => onPreviewPathClick(file)}
+                    title={text}
+                    className={`text-sm truncate block max-w-full text-left hover:underline ${className}`}
+                  >
+                    {text}
+                  </button>
+                ) : (
+                  <span className={`text-sm truncate block ${className}`} title={text}>{text}</span>
+                );
+              })()}
             </div>
           )}
-          <div className={`hidden md:flex ${showSource ? 'flex-1' : 'w-[20%]'} items-center justify-end gap-2 px-3`}>
+          {showSource && (
+            <div className={`hidden md:flex items-center gap-1 px-3 ${showPreviewPath ? 'w-[16%]' : 'w-[12%]'}`}>
+              <SourceBadge file={file} />
+              <PreviewBadge state={file.previewState ?? 'draft'} />
+            </div>
+          )}
+          <div className={`hidden md:flex ${showSource || showPreviewPath ? 'flex-1' : 'w-[20%]'} items-center justify-end gap-2 px-3`}>
             {renderDesktopActions(file)}
           </div>
 
@@ -132,8 +189,20 @@ export default function FileTable({
               <div className="text-xs text-muted-foreground truncate mt-0.5">
                 {displayPath(file, draftPath)}
               </div>
+              {showPreviewPath && (file.previewState ?? 'draft') !== 'draft' && (
+                <div className="text-xs truncate mt-0.5">
+                  <span className={previewPathDisplay(file).className}>
+                    → {previewPathDisplay(file).text}
+                  </span>
+                </div>
+              )}
             </div>
-            {showSource && <SourceBadge file={file} />}
+            {showSource && (
+              <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                <SourceBadge file={file} />
+                <PreviewBadge state={file.previewState ?? 'draft'} />
+              </div>
+            )}
             <div className="flex items-center gap-1 flex-shrink-0">
               {renderMobileActions(file)}
             </div>

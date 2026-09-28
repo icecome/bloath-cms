@@ -1,6 +1,7 @@
 import { readFile, extractBatch } from './api';
 import { parseFrontmatterBody, FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } from './frontmatter';
 import type { ArticleFrontmatter, RepoInfo } from '../../../shared/types';
+import type { DraftPreviewState } from './draftPreviewStore';
 
 /**
  * 文件来源：仓库 / 缓冲（未发布）/ 缓冲有改动 / 缓冲待删除
@@ -25,6 +26,13 @@ export interface EnhancedFileItem {
   source?: FileSource;
   /** 缓冲中的发布目标；仅 source 为 buffer* 时有意义 */
   publishTarget?: string;
+  /**
+   * 预发布状态，由 useDraftPreviews 在列表合并后叠加。
+   * 缺省视为 'draft'（未预发布）。
+   */
+  previewState?: DraftPreviewState;
+  /** 预发布目标目录，仅 previewState 为 previewed / preview-stale 时有值 */
+  previewTarget?: string;
 }
 
 export interface ExtractOptions {

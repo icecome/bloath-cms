@@ -1,71 +1,28 @@
-// 发布草稿弹窗：逐项指定目标，支持整批同一目标
-import { useEffect, useState } from 'react';
-import { Layers, ListTree } from 'lucide-react';
-import { DirectoryTreePicker } from './DirectoryTreePicker';
-import type { DirNode } from '../../lib/dirTree';
+// 发布草稿确认弹窗（只读）
+//
+// 目标路径已在「预发布」阶段确定，此处仅作最终确认，不可修改。
+// 设计意图：若允许在此改目标，会绕过"未预发布不能发布"的约束，
+// 使预发布形同虚设。需要改目标时请先取消预发布再重新设置。
+import { AlertTriangle } from 'lucide-react';
 
-export interface PublishTargetEntry {
+export interface PublishConfirmEntry {
   path: string;
   name: string;
+  /** 已预发布的目标目录 */
+  previewTarget: string;
+  /** 预发布后内容是否已变更 */
+  stale: boolean;
 }
 
 interface Props {
-  /** 待发布的草稿条目（来自统一列表的选中项） */
-  entries: PublishTargetEntry[];
-  /** 目录树根节点 */
-  dirNodes: DirNode[];
+  entries: PublishConfirmEntry[];
   loading: boolean;
-  /** 逐项目标：path -> target */
-  targets: Record<string, string>;
-  onTargetsChange: (next: Record<string, string>) => void;
   onConfirm: () => void;
   onClose: () => void;
 }
 
-type Mode = 'batch' | 'perItem';
-
-export function PublishDraftDialog({
-  entries, dirNodes, loading, targets, onTargetsChange, onConfirm, onClose,
-}: Props) {
-  const [mode, setMode] = useState<Mode>(entries.length > 1 ? 'batch' : 'perItem');
-  const [batchTarget, setBatchTarget] = useState('');
-  const [expandedPath, setExpandedPath] = useState<string | null>(
-    entries.length === 1 ? entries[0]?.path ?? null : null
-  );
-
-  // 单篇时直接进入逐项模式，避免多余的切换
-  useEffect(() => {
-    if (entries.length === 1) setMode('perItem');
-  }, [entries.length]);
-
-  const effectiveTargets: Record<string, string> = {};
-  for (const e of entries) {
-    effectiveTargets[e.path] = mode === 'batch' ? batchTarget : (targets[e.path] || '');
-  }
-  const hasAnyTarget = entries.some((e) => effectiveTargets[e.path]?.trim());
-
-  const applyBatch = (v: string) => {
-    setBatchTarget(v);
-    if (mode === 'batch') {
-      const next: Record<string, string> = {};
-      for (const e of entries) next[e.path] = v;
-      onTargetsChange(next);
-    }
-  };
-
-  const setOne = (path: string, v: string) => {
-    onTargetsChange({ ...targets, [path]: v });
-  };
-
-  const handleConfirm = () => {
-    if (mode === 'batch') {
-      const next: Record<string, string> = {};
-      for (const e of entries) next[e.path] = batchTarget;
-      onTargetsChange(next);
-    }
-    onClose();
-    onConfirm();
-  };
+export function PublishDraftDialog({ entries, loading, onConfirm, onClose }: Props) {
+  const staleEntries = entries.filter((e) => e.stale);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
@@ -77,72 +34,35 @@ export function PublishDraftDialog({
           发布 {entries.length} 篇草稿
         </h3>
         <p className="text-xs text-muted-foreground mb-3">
-          未指定目标的文章将发布到草稿目录。
+          以下草稿将按各自预发布的目标移动并提交。如需修改目标，请先取消预发布。
         </p>
 
-        {entries.length > 1 && (
-          <div className="flex items-center gap-1 mb-3 border border-border rounded-sm p-0.5 w-fit">
-            <button
-              type="button"
-              onClick={() => setMode('batch')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-sm transition-colors ${
-                mode === 'batch' ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Layers className="w-3 h-3" />
-              统一目标
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('perItem')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-sm transition-colors ${
-                mode === 'perItem' ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <ListTree className="w-3 h-3" />
-              逐篇指定
-            </button>
+        {staleEntries.length > 0 && (
+          <div className="flex items-start gap-2 px-3 py-2 mb-3 bg-amber-50 border border-amber-200 rounded-sm">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-700">
+              其中 {staleEntries.length} 篇在预发布后已被修改，目标路径可能已不适用。
+            </p>
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto min-h-0">
-          {mode === 'batch' ? (
-            <DirectoryTreePicker
-              nodes={dirNodes}
-              value={batchTarget}
-              onChange={applyBatch}
-              placeholder="如 content/posts/sub"
-            />
+          {entries.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-6 text-center">没有可发布的草稿。</p>
           ) : (
-            <div className="space-y-2">
-              {entries.map((entry) => {
-                const isOpen = expandedPath === entry.path;
-                const current = targets[entry.path] || '';
-                return (
-                  <div key={entry.path} className="border border-border rounded-sm">
-                    <button
-                      type="button"
-                      onClick={() => setExpandedPath(isOpen ? null : entry.path)}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-accent transition-colors"
-                    >
-                      <span className="text-sm text-foreground truncate flex-1">{entry.name}</span>
-                      <span className="text-[11px] text-muted-foreground truncate max-w-[45%]">
-                        {current || '草稿目录'}
-                      </span>
-                    </button>
-                    {isOpen && (
-                      <div className="px-3 pb-3 border-t border-border-subtle pt-2">
-                        <DirectoryTreePicker
-                          nodes={dirNodes}
-                          value={current}
-                          onChange={(v) => setOne(entry.path, v)}
-                          placeholder="留空则发布到草稿目录"
-                        />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="space-y-1">
+              {entries.map((entry) => (
+                <div
+                  key={entry.path}
+                  className="flex items-center gap-2 px-3 py-2 border border-border rounded-sm"
+                >
+                  <span className="text-sm text-foreground truncate flex-1">{entry.name}</span>
+                  {entry.stale && <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />}
+                  <span className="text-[11px] font-mono text-muted-foreground truncate max-w-[45%]">
+                    → {entry.previewTarget || '（未指定）'}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -158,10 +78,9 @@ export function PublishDraftDialog({
           </button>
           <button
             type="button"
-            onClick={handleConfirm}
-            disabled={loading}
+            onClick={onConfirm}
+            disabled={loading || entries.length === 0}
             className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            title={hasAnyTarget ? undefined : '未指定目标，将发布到草稿目录'}
           >
             {loading ? '发布中...' : '确认发布'}
           </button>
@@ -170,3 +89,5 @@ export function PublishDraftDialog({
     </div>
   );
 }
+
+export default PublishDraftDialog;

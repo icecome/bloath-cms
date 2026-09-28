@@ -21,16 +21,19 @@ import {
   Search,
   Move,
   Trash2,
-  Pencil
+  Pencil,
+  Target
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useBuffer } from '../contexts/BufferContext';
+import { useDraftPreviews } from '../hooks/useDraftPreviews';
 import { readBufferFile, writeBufferFile, discardBufferFile } from '../lib/bufferApi';
 import { buildEditUrl } from '../lib/navigation';
 import { mergeDraftList } from '../lib/draftMerge';
 import { fetchDirTree, type DirNode } from '../lib/dirTree';
 import { RenameDraftDialog } from '../components/drafts/RenameDraftDialog';
 import { PublishDraftDialog } from '../components/drafts/PublishDraftDialog';
+import { PreviewDraftDialog } from '../components/drafts/PreviewDraftDialog';
 
 export default function DraftsPage() {
   const { user } = useAuth();
@@ -57,11 +60,14 @@ export default function DraftsPage() {
   } = useFileListPage({ basePath: draftPath, selectedRepo, user });
 
   const [showPublishDropdown, setShowPublishDropdown] = useState(false);
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
+  const [previewTargets, setPreviewTargets] = useState<Record<string, string>>({});
+  // 单篇预发布时记录目标路径，供对话框只处理这一条
+  const [previewSinglePath, setPreviewSinglePath] = useState<string | null>(null);
   const [showMoveDropdown, setShowMoveDropdown] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [renameFile, setRenameFile] = useState<EnhancedFileItem | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [publishTargets, setPublishTargets] = useState<Record<string, string>>({});
   const [moveTarget, setMoveTarget] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   // 同步动作锁：actionLoading 是 state，同一事件循环内的第二次点击读到的仍是旧值，
@@ -83,21 +89,25 @@ export default function DraftsPage() {
 
   const availableDirs = useMemo(() => filterValidDirs(config.paths || []), [config.paths]);
 
-  // 仓库草稿 + 缓冲变更合并为统一列表，来源列区分
-  const mergedFiles = useMemo(
-    () => (bufferEnabled ? mergeDraftList(files, bufferChanges, draftPath) : files),
-    [files, bufferChanges, bufferEnabled, draftPath]
-  );
+  // 预发布状态：存 localStorage，与缓冲层（S3）解耦，故有无 S3 都可用
+  const { setPreviewBatch, cancelPreview, pruneOrphansFor, applyTo } = useDraftPreviews();
 
-  // 发布目标目录树：源自仓库真实树，以内容目录为根
+  // 仓库草稿 + 缓冲变更合并为统一列表，来源列区分；再叠加预发布状态
+  const mergedFiles = useMemo(() => {
+    const merged = bufferEnabled ? mergeDraftList(files, bufferChanges, draftPath) : files;
+    return applyTo(merged);
+  }, [files, bufferChanges, bufferEnabled, draftPath, applyTo]);
+
+  // 预发布目标目录树：源自仓库真实树，以内容目录为根。
+  // 仅预发布对话框需要选择目录（发布对话框已改为只读确认）。
   useEffect(() => {
-    if (!selectedRepo || !showPublishDropdown) return;
+    if (!selectedRepo || !showPreviewDialog) return;
     let cancelled = false;
     fetchDirTree(selectedRepo, availableDirs)
       .then((nodes) => { if (!cancelled) setDirNodes(nodes); })
       .catch(() => { if (!cancelled) setDirNodes([]); });
     return () => { cancelled = true; };
-  }, [selectedRepo, showPublishDropdown, availableDirs]);
+  }, [selectedRepo, showPreviewDialog, availableDirs]);
 
   const filteredFiles = useMemo(
     () => mergedFiles.filter((f) =>
@@ -144,9 +154,96 @@ export default function DraftsPage() {
     );
   };
 
+  // ---------- 预发布 ----------
+
+  /** 选中项中尚未预发布的草稿（已预发布的不重复处理） */
+  const pendingPreviewItems = useMemo(
+    () => mergedFiles.filter((f) => selectedFiles.has(f.path) && (f.previewState ?? 'draft') === 'draft'),
+    [mergedFiles, selectedFiles]
+  );
+
+  /** 选中项中已预发布的草稿（含 stale 与 previewed） */
+  const alreadyPreviewedCount = selectedFiles.size - pendingPreviewItems.length;
+
+  /** 发布的前置校验：选中项必须全部完成预发布 */
+  const publishBlocked = useMemo(() => {
+    if (selectedFiles.size === 0) return false;
+    const selected = mergedFiles.filter((f) => selectedFiles.has(f.path));
+    return selected.some((f) => (f.previewState ?? 'draft') === 'draft');
+  }, [mergedFiles, selectedFiles]);
+
+  /** 打开预发布对话框（批量入口） */
+  const openPreviewDialog = useCallback(() => {
+    const pending = pendingPreviewItems;
+    if (pending.length === 0) {
+      addToast({ message: '选中的草稿均已完成预发布', type: 'info' });
+      return;
+    }
+    // 沿用上一轮已填的目标，减少重复输入
+    const initial: Record<string, string> = {};
+    for (const f of pending) {
+      initial[f.path] = previewTargets[f.path] ?? '';
+    }
+    setPreviewTargets(initial);
+    setPreviewSinglePath(null);
+    setShowPreviewDialog(true);
+  }, [pendingPreviewItems, previewTargets, addToast]);
+
+  /** 打开预发布对话框（表格行内单篇入口，含修改已预发布项的目标） */
+  const openPreviewDialogFor = useCallback((file: EnhancedFileItem) => {
+    // 不预先取消已有记录：写入是 upsert 语义，用户取消对话框时应保留原目标，
+    // 预先删除会导致"打开后又取消"丢失原有预发布状态。
+    setPreviewTargets({ [file.path]: file.previewTarget ?? '' });
+    setPreviewSinglePath(file.path);
+    setShowPreviewDialog(true);
+  }, []);
+
+  /** 取消预发布 */
+  const handleCancelPreview = useCallback((file: EnhancedFileItem) => {
+    cancelPreview(file.path);
+    addToast({ message: `已取消「${file.name}」的预发布`, type: 'success' });
+  }, [cancelPreview, addToast]);
+
+  /** 预发布对话框的待处理项 */
+  const previewDialogEntries = useMemo(() => {
+    const source = previewSinglePath
+      ? mergedFiles.filter((f) => f.path === previewSinglePath)
+      : pendingPreviewItems;
+    return source.map((f) => ({ path: f.path, name: f.name }));
+  }, [previewSinglePath, mergedFiles, pendingPreviewItems]);
+
+  /** 确认预发布：写入目标与当前 sha，供后续变更检测 */
+  const handleConfirmPreview = useCallback(() => {
+    const entries = previewDialogEntries
+      .map((e) => {
+        const item = mergedFiles.find((f) => f.path === e.path);
+        const target = (previewTargets[e.path] || '').trim();
+        return item && target ? { item, previewTarget: target } : null;
+      })
+      .filter((x): x is { item: EnhancedFileItem; previewTarget: string } => x !== null);
+
+    if (entries.length === 0) {
+      addToast({ message: '未指定目标目录，预发布未生效', type: 'warning' });
+      return;
+    }
+    setPreviewBatch(entries);
+    setShowPreviewDialog(false);
+    setPreviewSinglePath(null);
+    addToast({
+      message: entries.length === 1
+        ? `已标记预发布目标：${entries[0]!.previewTarget}`
+        : `已预发布 ${entries.length} 篇`,
+      type: 'success',
+    });
+  }, [previewDialogEntries, mergedFiles, previewTargets, setPreviewBatch, addToast]);
+
   // 统一发布：仓库草稿走 commit，缓冲项走逐项发布接口
   const handlePublish = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0) return;
+    if (publishBlocked) {
+      addToast({ message: '有草稿尚未预发布，请先预发布', type: 'warning' });
+      return;
+    }
     if (!acquireActionLock()) return;
     setActionLoading(true);
     try {
@@ -157,10 +254,10 @@ export default function DraftsPage() {
       let repoPublished = 0;
       let bufferPublished = 0;
 
-      // 仓库草稿：按各自目标 move 到目标目录，未指定则留在草稿目录
+      // 仓库草稿：按各自已预发布的目标 move 到目标目录
       const moveOps = repoItems
         .map((file) => {
-          const raw = (publishTargets[file.path] || '').trim();
+          const raw = (file.previewTarget || '').trim();
           if (!raw) return null;
           let safeTarget: string;
           try { safeTarget = sanitizePath(raw); } catch (err) {
@@ -186,7 +283,7 @@ export default function DraftsPage() {
       // 缓冲项：一次提交，逐项目标由后端重写路径
       if (bufferEnabled && bufferItems.length > 0) {
         const result = await publish(user.login, bufferItems.map((f) => {
-          const raw = (publishTargets[f.path] || '').trim();
+          const raw = (f.previewTarget || '').trim();
           return raw
             ? { path: f.path, publishTarget: sanitizePath(raw) }
             : { path: f.path };
@@ -202,12 +299,13 @@ export default function DraftsPage() {
       }
 
       setSelectedFiles(new Set());
-      setPublishTargets({});
       setShowPublishDropdown(false);
       clearCache(selectedRepo);
       await refreshChanges();
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
+      // 发布成功后清理预发布记录：按剩余草稿路径过滤，同时顺带清掉历史孤立项
+      pruneOrphansFor(new Set(updatedFiles.map((f) => f.path)));
     } catch (err) {
       addToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
     } finally {
@@ -524,12 +622,23 @@ export default function DraftsPage() {
 
               <div className="w-px h-4 bg-border"></div>
 
+              {/* 发布：需选中项全部完成预发布，否则禁用并提示 */}
               <button
                 onClick={() => setShowPublishDropdown(true)}
-                disabled={actionLoading}
-                className="text-sm px-3 py-1.5 text-primary hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
+                disabled={actionLoading || publishBlocked}
+                title={publishBlocked ? '有草稿尚未预发布，请先预发布' : undefined}
+                className="text-sm px-3 py-1.5 text-primary hover:bg-accent rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 发布
+              </button>
+
+              {/* 预发布：标记目标位置，不产生提交 */}
+              <button
+                onClick={openPreviewDialog}
+                disabled={actionLoading}
+                className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-foreground rounded-sm transition-colors disabled:opacity-40"
+              >
+                预发布
               </button>
 
               {/* 移动 */}
@@ -622,9 +731,11 @@ export default function DraftsPage() {
             onSelectFile={handleSelectFile}
             onRowClick={handleEdit}
             rowIcon={<FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
-            nameColumnWidth="w-[35%]"
-            pathColumnWidth="w-[35%]"
+            nameColumnWidth="w-[26%]"
+            pathColumnWidth="w-[26%]"
             showSource={bufferEnabled}
+            showPreviewPath
+            onPreviewPathClick={openPreviewDialog}
             draftPath={draftPath}
             renderDesktopActions={(file) => (
               <>
@@ -634,6 +745,23 @@ export default function DraftsPage() {
                 >
                   编辑
                 </button>
+                {(file.previewState ?? 'draft') === 'draft' ? (
+                  <button
+                    onClick={() => openPreviewDialogFor(file)}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    title="设置预发布目标"
+                  >
+                    预发布
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleCancelPreview(file)}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    title="取消预发布"
+                  >
+                    取消预发布
+                  </button>
+                )}
                 <button
                   onClick={() => handleSingleDelete(file)}
                   className="text-muted-foreground hover:text-destructive transition-colors"
@@ -652,6 +780,23 @@ export default function DraftsPage() {
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
+                {(file.previewState ?? 'draft') === 'draft' ? (
+                  <button
+                    onClick={() => openPreviewDialogFor(file)}
+                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                    title="设置预发布目标"
+                  >
+                    <Target className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleCancelPreview(file)}
+                    className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+                    title="取消预发布"
+                  >
+                    <Target className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   onClick={() => handleSingleDelete(file)}
                   className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-accent rounded transition-colors"
@@ -690,15 +835,30 @@ export default function DraftsPage() {
         />
       )}
 
+      {showPreviewDialog && (
+        <PreviewDraftDialog
+          entries={previewDialogEntries}
+          skippedCount={previewSinglePath ? 0 : alreadyPreviewedCount}
+          dirNodes={dirNodes}
+          loading={actionLoading}
+          targets={previewTargets}
+          onTargetsChange={setPreviewTargets}
+          onConfirm={handleConfirmPreview}
+          onClose={() => { setShowPreviewDialog(false); setPreviewSinglePath(null); }}
+        />
+      )}
+
       {showPublishDropdown && (
         <PublishDraftDialog
           entries={filteredFiles
             .filter((f) => selectedFiles.has(f.path))
-            .map((f) => ({ path: f.path, name: f.name }))}
-          dirNodes={dirNodes}
+            .map((f) => ({
+              path: f.path,
+              name: f.name,
+              previewTarget: f.previewTarget ?? '',
+              stale: (f.previewState ?? 'draft') === 'preview-stale',
+            }))}
           loading={actionLoading}
-          targets={publishTargets}
-          onTargetsChange={setPublishTargets}
           onConfirm={handlePublish}
           onClose={() => setShowPublishDropdown(false)}
         />
