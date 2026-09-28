@@ -63,6 +63,33 @@ function normalizeArrayFields(fm: Record<string, unknown>): void {
   }
 }
 
+/**
+ * 将字面转义序列（\n / \r\n / \t）还原为真实字符。
+ * 用户在表单里输入反斜杠 n 时得不到换行，因为 YAML 裸标量与单引号标量
+ * 均不解释转义；还原为真实字符后，js-yaml 才会选用双引号或块标量输出。
+ */
+function unescapeLiterals(value: string): string {
+  return value.replace(/\\r\\n|\\n|\\t/g, (seq) => {
+    if (seq === '\\n') return '\n';
+    if (seq === '\\t') return '\t';
+    return '\r\n';
+  });
+}
+
+/** 递归还原字符串值中的字面转义序列，保持数组与嵌套对象结构 */
+function normalizeEscapes(value: unknown): unknown {
+  if (typeof value === 'string') return unescapeLiterals(value);
+  if (Array.isArray(value)) return value.map(normalizeEscapes);
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = normalizeEscapes(item);
+    }
+    return result;
+  }
+  return value;
+}
+
 function parseYamlBody(body: string): Record<string, unknown> {
   try {
     const parsed = yaml.load(body);
@@ -84,11 +111,13 @@ function parseTomlBody(body: string): Record<string, unknown> {
 /**
  * 解析 front-matter 块文本（不含 --- / +++ 定界符）。
  * 供编辑器加载与列表页聚合提取共用。
+ * 历史文章中已写入的字面 \n（YAML 不解释其转义）在此一并还原，
+ * 使老文章打开一次即恢复真正的换行语义。
  */
 export function parseFrontmatterBody(raw: string, format: FrontmatterFormat): Record<string, unknown> {
   const fm = format === 'toml' ? parseTomlBody(raw) : parseYamlBody(raw);
   normalizeArrayFields(fm);
-  return fm;
+  return format === 'toml' ? fm : normalizeEscapes(fm) as Record<string, unknown>;
 }
 
 /**
@@ -238,7 +267,8 @@ export function generateFrontmatter(fm: Frontmatter, options: GenerateOptions = 
     const body = stringifyToml(ordered);
     return '+++\n' + body + (body.endsWith('\n') ? '' : '\n') + '+++';
   }
-  return '---\n' + yaml.dump(ordered, { lineWidth: -1 }) + '---';
+  // YAML 裸标量/单引号不解释转义，需先还原字面 \n 才能输出为真正的换行
+  return '---\n' + yaml.dump(normalizeEscapes(ordered), { lineWidth: -1 }) + '---';
 }
 
 /** 由 Profile 生成 generateFrontmatter 所需选项 */

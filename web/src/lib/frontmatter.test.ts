@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateFrontmatter } from './frontmatter.ts';
+import yaml from 'js-yaml';
+import { parse as parseTomlBodyForTest } from 'smol-toml';
+import { generateFrontmatter, parseFrontmatterBody } from './frontmatter.ts';
 import type { Frontmatter } from './frontmatter.ts';
 
 function yamlKeys(block: string): string[] {
@@ -104,4 +106,65 @@ test('generateFrontmatter omits empty and forbidden url field', () => {
   assert.deepEqual(yamlKeys(text), ['title']);
   assert.ok(!text.includes('url'));
   assert.ok(!text.includes('author'));
+});
+
+test('generateFrontmatter turns literal \\n into a real newline in YAML output', () => {
+  const fm = {
+    title: 'T',
+    encryptMessage: '请输入密码查看内容\\n\\n**获取密码请联系作者**'
+  } as Frontmatter;
+
+  const text = generateFrontmatter(fm, { format: 'yaml' });
+  const parsed = yaml.load(text.replace(/^---\n/, '').replace(/---\s*$/, '')) as Record<string, unknown>;
+
+  assert.equal(parsed.encryptMessage, '请输入密码查看内容\n\n**获取密码请联系作者**');
+});
+
+test('generateFrontmatter normalizes escapes inside arrays and nested objects', () => {
+  const fm = {
+    title: 'T',
+    tags: ['a\\nb'],
+    customFields: { note: 'x\\ty' }
+  } as Frontmatter;
+
+  const text = generateFrontmatter(fm, { format: 'yaml' });
+  const parsed = yaml.load(text.replace(/^---\n/, '').replace(/---\s*$/, '')) as Record<string, unknown>;
+
+  assert.deepEqual(parsed.tags, ['a\nb']);
+  // 无 wrapper 时自定义字段平铺到顶层
+  assert.equal(parsed.note, 'x\ty');
+});
+
+test('generateFrontmatter leaves TOML output untouched', () => {
+  const fm = {
+    title: 'T',
+    encryptMessage: 'line1\\nline2'
+  } as Frontmatter;
+
+  const text = generateFrontmatter(fm, { format: 'toml' });
+  const body = text.replace(/^\+\+\+\n/, '').replace(/\+\+\+\s*$/, '');
+  const parsed = parseTomlBodyForTest(body);
+
+  assert.equal(parsed.encryptMessage, 'line1\\nline2', 'TOML 分支不做转义还原');
+});
+
+test('parseFrontmatterBody restores literal \\n from legacy YAML front-matter', () => {
+  // 历史文章：字面 \n 以裸标量写入，YAML 不解释转义
+  const raw = 'encryptMessage: line1\\nline2\n';
+  const parsed = parseFrontmatterBody(raw, 'yaml');
+  assert.equal(parsed.encryptMessage, 'line1\nline2');
+});
+
+test('parseFrontmatterBody does not normalize TOML escapes', () => {
+  const raw = 'encryptMessage = "line1\\nline2"\n';
+  const parsed = parseFrontmatterBody(raw, 'toml');
+  assert.equal(parsed.encryptMessage, 'line1\nline2');
+});
+
+test('round trip: literal \\n survives generate then parse as a real newline', () => {
+  const fm = { title: 'T', encryptMessage: 'A\\n\\nB' } as Frontmatter;
+  const text = generateFrontmatter(fm, { format: 'yaml' });
+  const body = text.replace(/^---\n/, '').replace(/---\s*$/, '');
+  const parsed = parseFrontmatterBody(body, 'yaml');
+  assert.equal(parsed.encryptMessage, 'A\n\nB');
 });
