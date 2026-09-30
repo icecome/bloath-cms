@@ -64,7 +64,7 @@ export default function MediaPage() {
     };
   }, []);
 
-  /** 显示"已复制"态 2 秒；重复调用会重置计时 */
+  /** 显示「已复制」态 2 秒；重复调用会重置计时 */
   const flashCopied = useCallback((sha: string, type: 'url' | 'markdown') => {
     setCopiedId(sha);
     setCopiedType(type);
@@ -167,7 +167,7 @@ export default function MediaPage() {
 
     for (const file of filesArray) {
       if (file.size > MAX_FILE_SIZE) {
-        errors.push(`${file.name}: 超过 20MB 限制`);
+        errors.push(`${file.name}：超过 20MB 限制`);
         continue;
       }
       try {
@@ -208,7 +208,7 @@ export default function MediaPage() {
           currentFiles = [newEntry, ...currentFiles];
         }
       } catch (err) {
-        errors.push(`${file.name}: ${err instanceof Error ? err.message : '上传失败'}`);
+        errors.push(`${file.name}：${err instanceof Error ? err.message : '上传失败'}`);
       }
     }
 

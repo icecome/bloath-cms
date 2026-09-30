@@ -139,7 +139,7 @@ export async function detectFramework(
   return result;
 }
 
-/** 失效指定仓库的缓存结果（供"重新识别"等需要重拉 tree 的场景调用） */
+/** 失效指定仓库的缓存结果（供「重新识别」等需要重拉 tree 的场景调用） */
 export function invalidateDetectCache(owner: string, repo: string, branch: string = 'main'): void {
   singleDetectCache.delete(`${owner}/${repo}@${branch}`);
 }

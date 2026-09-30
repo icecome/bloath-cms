@@ -32,8 +32,8 @@ export async function revokeSessions(kv: KVNamespace | undefined, githubLogin: s
   try {
     await kv.put(REVOCATION_KEY_PREFIX + githubLogin.toLowerCase(), String(Date.now()));
   } catch (err) {
-    // 吊销失败仅记日志：cookie 已清除，风险窗口由原 expiresAt 兜底
-    console.error('[session] 会话吊销写入失败:', err);
+    // 吊销失败仅记日志：cookie 已清除，风险窗口仍受原 expiresAt 约束
+    console.error('[session] 会话吊销写入失败：', err);
   }
 }
 
@@ -120,7 +120,7 @@ export async function validateSessionToken(
       : undefined;
     const longLived = sessionPayload.longLived === true;
     // issuedAt 必须存在且为数字：吊销校验依赖它比较签发时刻，
-    // 若回退为 expiresAt（未来时间）会使 "issuedAt < revokedAt" 恒为 false，静默绕过登出吊销。
+    // 若回退为 expiresAt（未来时间）会使「issuedAt < revokedAt」恒为 false，静默绕过登出吊销。
     if (typeof sessionPayload.issuedAt !== 'number') return null;
     const issuedAt = sessionPayload.issuedAt;
 

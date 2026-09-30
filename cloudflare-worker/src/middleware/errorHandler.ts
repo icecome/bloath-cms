@@ -18,6 +18,6 @@ export const errorHandler = (err: Error, c: Context<HonoEnv>): Response => {
     const message = err.errors[0]?.message || '参数校验失败';
     return c.json(error(ErrorCode.VALIDATION_ERROR, message), 400);
   }
-  console.error('[errorHandler] 未捕获异常:', err);
+  console.error('[errorHandler] 未捕获异常：', err);
   return c.json(error(ErrorCode.INTERNAL_ERROR, '服务器内部错误'), 500);
 };

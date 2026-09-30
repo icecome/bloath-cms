@@ -143,7 +143,7 @@ describe('writePreviewRecord / removePreviewRecord', () => {
     assert.equal(readPreviewStore(devRepo, storage).records['.draft/a.md']?.previewTarget, 'content/dev');
   });
 
-  it('批量写入一次落盘多条', () => {
+  it('批量写入一次保存多条', () => {
     writePreviewRecords(repo, [
       { path: '.draft/a.md', record: makeRecord() },
       { path: '.draft/b.md', record: makeRecord({ previewTarget: 'content/x' }) },
@@ -168,7 +168,7 @@ describe('writePreviewRecord / removePreviewRecord', () => {
     assert.doesNotThrow(() => {
       writePreviewRecord(repo, '.draft/a.md', makeRecord(), storage);
     });
-    // 未落盘，读回应为空
+    // 未写入，读回应为空
     assert.deepEqual(readPreviewStore(repo, storage).records, {});
   });
 });
@@ -260,7 +260,7 @@ describe('buildPreviewRecord', () => {
     assert.ok(rec.previewedAt > 0);
   });
 
-  it('sha 为空时额外记录 savedAt 作为兜底', () => {
+  it('sha 为空时额外记录 savedAt 作为回退', () => {
     const rec = buildPreviewRecord(makeItem({ sha: '', lastModified: 12345 }), 'content/posts');
     assert.equal(rec.contentSha, '');
     assert.equal(rec.savedAt, 12345);

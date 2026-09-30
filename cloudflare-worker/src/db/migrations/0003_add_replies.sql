@@ -1,12 +1,12 @@
 -- ============================================
--- Migration 0003: 多轮对话 (Resend Inbound 邮箱回信)
--- 执行命令: wrangler d1 migrations apply blog-comments --remote
+-- Migration 0003：多轮对话（Resend Inbound 邮箱回信）
+-- 执行命令：wrangler d1 migrations apply blog-comments --remote
 -- ============================================
 
--- 1. messages 表新增回信关联 token (通知邮件的 Reply-To 携带 reply+<token>@...)
+-- 1. messages 表新增回信关联 token（通知邮件的 Reply-To 携带 reply+<token>@……）
 ALTER TABLE messages ADD COLUMN reply_token TEXT DEFAULT '';
 
--- 2. 独立 replies 表, 存放多轮对话时间线
+-- 2. 独立 replies 表，存放多轮对话时间线
 CREATE TABLE replies (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   message_id      INTEGER NOT NULL,

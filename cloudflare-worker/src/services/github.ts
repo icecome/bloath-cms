@@ -487,14 +487,14 @@ export async function batchCommit(
       const fromPath = op.fromPath;
       const srcSha = fromPath ? blobShaByPath.get(fromPath) : undefined;
       if (!fromPath || !srcSha) {
-        throw new GithubApiError(`移动源文件不存在或不可访问: ${op.fromPath}`, 400);
+        throw new GithubApiError(`移动源文件不存在或不可访问：${op.fromPath}`, 400);
       }
       entries.push({ path: op.path, mode: '100644', type: 'blob', sha: srcSha });
       entries.push({ path: fromPath, mode: '100644', type: 'blob', sha: null });
     } else {
       const srcSha = blobShaByPath.get(op.path);
       if (!srcSha) {
-        throw new GithubApiError(`待删除文件不存在或不可访问: ${op.path}`, 400);
+        throw new GithubApiError(`待删除文件不存在或不可访问：${op.path}`, 400);
       }
       entries.push({ path: op.path, mode: '100644', type: 'blob', sha: null });
     }
@@ -565,7 +565,7 @@ export async function extractFrontMatters(
   const CONCURRENCY = 8;
 
   // 逐个文件读取失败不中断整批：在 fn 内捕获并返回错误项，
-  // 避免 mapLimit 的"任一失败即抛出"语义影响批量的部分成功结果。
+  // 避免 mapLimit 的「任一失败即抛出」语义影响批量的部分成功结果。
   type ExtractItem = { path: string; format: 'yaml' | 'toml'; raw: string } | { path: string; error: string };
   const settled = await mapLimit(paths, CONCURRENCY, async (path): Promise<ExtractItem> => {
     try {
@@ -669,7 +669,7 @@ export async function getTree(
   const headers = ghHeaders(token);
 
   // 通过 commits API 填充真实修改时间（仅媒体库 mode='filename'）：
-  // 注意：GitHub 没有"一次请求返回所有文件最后修改时间"的接口，
+  // 注意：GitHub 没有「一次请求返回所有文件最后修改时间」的接口，
   // 逐文件查询（N 次）或拉 commit 详情（最多数百次）都开销大。
   // 这里限制详情请求数并并行拉取：仅覆盖最近的提交，未命中的旧文件
   // 由前端回退到文件名时间戳（默认模板 `{Y}{m}{d}...` 已内嵌时间）。
@@ -724,7 +724,7 @@ export async function getTree(
         if (time) file.lastModified = time;
       }
     } catch (err) {
-      console.warn(`[getTree] 填充 lastModified 失败: ${err instanceof Error ? err.message : 'unknown'}`);
+      console.warn(`[getTree] 填充 lastModified 失败：${err instanceof Error ? err.message : 'unknown'}`);
     }
   }
 

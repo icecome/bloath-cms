@@ -81,7 +81,7 @@ export function resolveMediaSource(
     default: {
       // never 穷举检查：新增 MediaSourceType 时编译器会在此报错
       const _exhaustive: never = config.sourceType;
-      throw new Error(`未处理的媒体源类型: ${_exhaustive}`);
+      throw new Error(`未处理的媒体源类型：${_exhaustive}`);
     }
   }
 }

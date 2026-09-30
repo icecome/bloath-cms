@@ -1,6 +1,6 @@
 -- ============================================
--- Migration 0001: 博客留言系统初始表结构
--- 执行命令: wrangler d1 migrations apply blog-comments --remote
+-- Migration 0001：博客留言系统初始表结构
+-- 执行命令：wrangler d1 migrations apply blog-comments --remote
 -- ============================================
 
 -- 1. 留言主表
@@ -12,11 +12,11 @@ CREATE TABLE messages (
   visitor_email   TEXT DEFAULT '',
   visitor_ip      TEXT NOT NULL,
   user_agent      TEXT DEFAULT '',
-  client_hash     TEXT DEFAULT '',          -- 客户端指纹 (SHA256)
+  client_hash     TEXT DEFAULT '',          -- 客户端指纹（SHA256）
 
   -- 内容信息
   content         TEXT NOT NULL,
-  quoted_text     TEXT DEFAULT '',          -- 引用段落 (Phase 4 实现)
+  quoted_text     TEXT DEFAULT '',          -- 引用段落（Phase 4 实现）
 
   -- 上下文信息
   page_url        TEXT NOT NULL,
@@ -25,9 +25,9 @@ CREATE TABLE messages (
   -- 状态管理
   status          TEXT DEFAULT 'pending'     -- pending/approved/featured/spam
                                       CHECK(status IN ('pending','approved','featured','spam')),
-  is_deleted      INTEGER DEFAULT 0         -- 0=正常, 1=软删除
+  is_deleted      INTEGER DEFAULT 0         -- 0=正常，1=软删除
                                       CHECK(is_deleted IN (0, 1)),
-  needs_review    INTEGER DEFAULT 0         -- Turnstile降级标记, 0=正常, 1=需重点审核
+  needs_review    INTEGER DEFAULT 0         -- Turnstile 降级标记，0=正常，1=需重点审核
                                       CHECK(needs_review IN (0, 1)),
 
   -- 时间戳

@@ -1,8 +1,8 @@
 // 预发布草稿弹窗：逐项指定目标目录（或整批统一）
 //
 // 与 PublishDraftDialog 的差异：
-// - 目标不允许为空（预发布的全部价值就是固化"发到哪里"）
-// - 不产生任何提交，仅写入本地预发布记录
+// - 目标不允许为空（预发布的全部价值就是固化「发到哪里」）
+// - 不产生任何提交，仅标记目标（本地记录 + 缓冲 publishTarget）
 import { useEffect, useState } from 'react';
 import { Layers, ListTree } from 'lucide-react';
 import { DirectoryTreePicker } from './DirectoryTreePicker';
@@ -71,7 +71,7 @@ export function PreviewDraftDialog({
       for (const e of entries) next[e.path] = batchTarget;
       onTargetsChange(next);
     }
-    onClose();
+    // 由 onConfirm 负责关闭，避免先关后确认导致状态被清掉
     onConfirm();
   };
 
@@ -85,7 +85,7 @@ export function PreviewDraftDialog({
           预发布 {entries.length} 篇草稿
         </h3>
         <p className="text-xs text-muted-foreground mb-1">
-          预发布仅标记目标位置，不会产生提交；确认后需再点「发布」才会移至目标目录。
+          预发布仅标记目标位置，不会产生提交；确认后需再点「发布」或「发布变更」才会移至目标目录。
         </p>
         {skippedCount > 0 && (
           <p className="text-xs text-muted-foreground mb-2">已跳过 {skippedCount} 篇已预发布的草稿。</p>
@@ -181,7 +181,7 @@ export function PreviewDraftDialog({
             className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             title={allTargetsFilled ? undefined : '请为所有草稿指定目标目录'}
           >
-            {loading ? '处理中...' : '确认预发布'}
+            {loading ? '处理中……' : '确认预发布'}
           </button>
         </div>
       </div>

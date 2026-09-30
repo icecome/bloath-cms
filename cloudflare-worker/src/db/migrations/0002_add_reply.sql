@@ -1,13 +1,13 @@
 -- ============================================
--- Migration 0002: 留言回复功能
--- 执行命令: wrangler d1 migrations apply blog-comments --remote
+-- Migration 0002：留言回复功能
+-- 执行命令：wrangler d1 migrations apply blog-comments --remote
 -- ============================================
 
 -- 1. messages 表新增回复字段
 ALTER TABLE messages ADD COLUMN reply_content TEXT DEFAULT '';
 ALTER TABLE messages ADD COLUMN reply_at DATETIME DEFAULT NULL;
 
--- 2. 重建 admin_logs 表以放宽 action CHECK 约束 (支持 reply/delete_reply)
+-- 2. 重建 admin_logs 表以放宽 action CHECK 约束（支持 reply/delete_reply）
 CREATE TABLE admin_logs_new (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   message_id      INTEGER NOT NULL,

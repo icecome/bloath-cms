@@ -55,10 +55,10 @@ export async function shouldMarkSpam(db: D1Database, source: SpamSourceInput): P
     if (!value) return;
     const threshold = SOURCE_THRESHOLDS[dimension];
     // 该分支属编程错误（新增维度时漏配阈值），非运行时异常：
-    // 用 ApiError 归类为 500 而非让裸 Error 经 errorHandler 兜底，
+    // 用 ApiError 归类为 500 而非让裸 Error 由 errorHandler 回退处理，
     // 日志中能看到明确的配置缺失提示。
     if (!threshold) {
-      throw new ApiError(ErrorCode.INTERNAL_ERROR, `未配置垃圾来源阈值: ${dimension}`, 500);
+      throw new ApiError(ErrorCode.INTERNAL_ERROR, `未配置垃圾来源阈值：${dimension}`, 500);
     }
     clauses.push('(dimension=? AND value=? AND count>=?)');
     params.push(dimension, value, threshold);

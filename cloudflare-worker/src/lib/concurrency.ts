@@ -5,7 +5,7 @@
  *
  * 从 buffer.service.ts 提取：github.ts 的 extractFrontMatters 与
  * web/src/lib/extractFrontMatter.ts 的 batchFetchFallback 各自用
- * "for 循环切片 + Promise.all" 实现了同语义逻辑，三处参数不同（8 / 5 / 20）
+ * 「for 循环切片 + Promise.all」实现了同语义逻辑，三处参数不同（8 / 5 / 20）
  * 但机制一致，统一到此处。
  *
  * 语义：任一 fn 抛错会经 Promise.all(workers) 向上传播（不吞错、不返回部分结果）。

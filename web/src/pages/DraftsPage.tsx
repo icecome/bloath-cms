@@ -27,7 +27,7 @@ import {
 import { useToast } from '../contexts/ToastContext';
 import { useBuffer } from '../contexts/BufferContext';
 import { useDraftPreviews } from '../hooks/useDraftPreviews';
-import { readBufferFile, writeBufferFile, discardBufferFile } from '../lib/bufferApi';
+import { readBufferFile, writeBufferFile, discardBufferFile, setBufferPublishTarget } from '../lib/bufferApi';
 import { buildEditUrl } from '../lib/navigation';
 import { mergeDraftList } from '../lib/draftMerge';
 import { fetchDirTree, type DirNode } from '../lib/dirTree';
@@ -72,7 +72,7 @@ export default function DraftsPage() {
   const [actionLoading, setActionLoading] = useState(false);
   // 同步动作锁：actionLoading 是 state，同一事件循环内的第二次点击读到的仍是旧值，
   // 无法阻止双击重复提交（第二次 commitBatch 会因源文件已不存在而报错，
-  // 用户看到"失败"但操作实际已生效）。ref 的读写是同步的，可堵住该窗口。
+  // 用户看到「失败」但操作实际已生效）。ref 的读写是同步的，可堵住该窗口。
   const actionLockRef = useRef(false);
   const [dirNodes, setDirNodes] = useState<DirNode[]>([]);
   const lastDeletedRef = useRef<{ files: EnhancedFileItem[]; originalPaths: string[] } | null>(null);
@@ -192,17 +192,37 @@ export default function DraftsPage() {
   /** 打开预发布对话框（表格行内单篇入口，含修改已预发布项的目标） */
   const openPreviewDialogFor = useCallback((file: EnhancedFileItem) => {
     // 不预先取消已有记录：写入是 upsert 语义，用户取消对话框时应保留原目标，
-    // 预先删除会导致"打开后又取消"丢失原有预发布状态。
+    // 预先删除会导致「打开后又取消」丢失原有预发布状态。
     setPreviewTargets({ [file.path]: file.previewTarget ?? '' });
     setPreviewSinglePath(file.path);
     setShowPreviewDialog(true);
   }, []);
 
+  /** 是否缓冲项（预发布目标需同步进缓冲，供全量「发布变更」使用） */
+  const isBufferItem = useCallback(
+    (f: EnhancedFileItem) => !!f.source && f.source !== 'repo',
+    []
+  );
+
   /** 取消预发布 */
-  const handleCancelPreview = useCallback((file: EnhancedFileItem) => {
+  const handleCancelPreview = useCallback(async (file: EnhancedFileItem) => {
     cancelPreview(file.path);
+    if (selectedRepo && isBufferItem(file)) {
+      try {
+        await setBufferPublishTarget({
+          owner: selectedRepo.owner,
+          repo: selectedRepo.repo,
+          branch: selectedRepo.branch,
+          path: file.path,
+          publishTarget: null,
+        });
+        await refreshChanges();
+      } catch (err) {
+        addToast({ message: `取消预发布同步缓冲失败：${(err as Error).message}`, type: 'warning' });
+      }
+    }
     addToast({ message: `已取消「${file.name}」的预发布`, type: 'success' });
-  }, [cancelPreview, addToast]);
+  }, [cancelPreview, addToast, selectedRepo, isBufferItem, refreshChanges]);
 
   /** 预发布对话框的待处理项 */
   const previewDialogEntries = useMemo(() => {
@@ -213,7 +233,7 @@ export default function DraftsPage() {
   }, [previewSinglePath, mergedFiles, pendingPreviewItems]);
 
   /** 确认预发布：写入目标与当前 sha，供后续变更检测 */
-  const handleConfirmPreview = useCallback(() => {
+  const handleConfirmPreview = useCallback(async () => {
     const entries = previewDialogEntries
       .map((e) => {
         const item = mergedFiles.find((f) => f.path === e.path);
@@ -224,18 +244,45 @@ export default function DraftsPage() {
 
     if (entries.length === 0) {
       addToast({ message: '未指定目标目录，预发布未生效', type: 'warning' });
+      setShowPreviewDialog(false);
+      setPreviewSinglePath(null);
       return;
     }
-    setPreviewBatch(entries);
-    setShowPreviewDialog(false);
-    setPreviewSinglePath(null);
+    setActionLoading(true);
+    try {
+      setPreviewBatch(entries);
+      // 缓冲项同步 publishTarget，使侧边栏「发布变更」与菜单「发布」目标一致
+      if (selectedRepo) {
+        const bufferEntries = entries.filter((e) => isBufferItem(e.item));
+        if (bufferEntries.length > 0) {
+          const results = await Promise.allSettled(
+            bufferEntries.map((e) => setBufferPublishTarget({
+              owner: selectedRepo.owner,
+              repo: selectedRepo.repo,
+              branch: selectedRepo.branch,
+              path: e.item.path,
+              publishTarget: e.previewTarget,
+            }))
+          );
+          const failed = results.filter((r) => r.status === 'rejected');
+          if (failed.length > 0) {
+            addToast({ message: `${failed.length} 篇预发布目标同步缓冲失败，发布变更可能仍落回草稿目录`, type: 'warning' });
+          }
+          await refreshChanges();
+        }
+      }
+    } finally {
+      setActionLoading(false);
+      setShowPreviewDialog(false);
+      setPreviewSinglePath(null);
+    }
     addToast({
       message: entries.length === 1
         ? `已标记预发布目标：${entries[0]!.previewTarget}`
         : `已预发布 ${entries.length} 篇`,
       type: 'success',
     });
-  }, [previewDialogEntries, mergedFiles, previewTargets, setPreviewBatch, addToast]);
+  }, [previewDialogEntries, mergedFiles, previewTargets, setPreviewBatch, addToast, selectedRepo, isBufferItem, refreshChanges]);
 
   // 统一发布：仓库草稿走 commit，缓冲项走逐项发布接口
   const handlePublish = async () => {
@@ -261,7 +308,7 @@ export default function DraftsPage() {
           if (!raw) return null;
           let safeTarget: string;
           try { safeTarget = sanitizePath(raw); } catch (err) {
-            throw new Error(`「${file.name}」目标路径无效: ${(err as Error).message}`);
+            throw new Error(`「${file.name}」目标路径无效：${(err as Error).message}`);
           }
           return { op: 'move' as const, fromPath: file.path, path: `${safeTarget}/${file.name}` };
         })
@@ -283,7 +330,7 @@ export default function DraftsPage() {
       // 缓冲项：一次提交，逐项目标由后端重写路径
       if (bufferEnabled && bufferItems.length > 0) {
         const result = await publish(user.login, bufferItems.map((f) => {
-          const raw = (f.previewTarget || '').trim();
+          const raw = (f.previewTarget || f.publishTarget || '').trim();
           return raw
             ? { path: f.path, publishTarget: sanitizePath(raw) }
             : { path: f.path };
@@ -307,7 +354,7 @@ export default function DraftsPage() {
       // 发布成功后清理预发布记录：按剩余草稿路径过滤，同时顺带清掉历史孤立项
       pruneOrphansFor(new Set(updatedFiles.map((f) => f.path)));
     } catch (err) {
-      addToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `发布失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
       releaseActionLock();
@@ -331,7 +378,7 @@ export default function DraftsPage() {
       const filesToMove = files.filter((f) => selectedFiles.has(f.path));
       const bufferedCount = selectedFiles.size - filesToMove.length;
       if (filesToMove.length === 0) {
-        addToast({ message: '选中的都是缓存中的文章，请先发布后再移动', type: 'warning' });
+        addToast({ message: '选中的都是缓冲中的文章，请先发布后再移动', type: 'warning' });
         return;
       }
       const targets = dedupeTargetPaths(filesToMove.map((file) => `${safeTarget}/${file.name}`));
@@ -349,7 +396,7 @@ export default function DraftsPage() {
       });
       addToast({
         message: bufferedCount > 0
-          ? `已移动 ${filesToMove.length} 篇草稿，${bufferedCount} 篇缓存中的文章未处理`
+          ? `已移动 ${filesToMove.length} 篇草稿，${bufferedCount} 篇缓冲中的文章未处理`
           : `成功移动 ${filesToMove.length} 篇草稿`,
         type: 'success'
       });
@@ -360,7 +407,7 @@ export default function DraftsPage() {
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
-      addToast({ message: `移动失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `移动失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
       releaseActionLock();
@@ -421,12 +468,12 @@ export default function DraftsPage() {
 
       const parts: string[] = [];
       if (repoItems.length > 0) parts.push(`${repoItems.length} 篇已移至回收站`);
-      if (bufferItems.length > 0) parts.push(`${bufferItems.length} 篇缓存已删除`);
+      if (bufferItems.length > 0) parts.push(`${bufferItems.length} 篇缓冲已删除`);
       addToast({ message: parts.join('，') || '未删除任何文件', type: 'success' });
 
       setSelectedFiles(new Set());
     } catch (err) {
-      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
       releaseActionLock();
@@ -461,7 +508,7 @@ export default function DraftsPage() {
           });
         }
         await refreshChanges();
-        addToast({ message: `已删除 ${file.name}（缓存，未提交到仓库）`, type: 'success' });
+        addToast({ message: `已删除 ${file.name}（缓冲，未提交到仓库）`, type: 'success' });
         return;
       }
 
@@ -499,13 +546,13 @@ export default function DraftsPage() {
             setFiles(prev => [...prev, restoredFile]);
             addToast({ message: '已恢复', type: 'success' });
           } catch (err) {
-            addToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
+            addToast({ message: `恢复失败：${(err as Error).message}`, type: 'error' });
           }
           lastDeletedRef.current = null;
         }
       });
     } catch (err) {
-      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
       releaseActionLock();
@@ -531,6 +578,7 @@ export default function DraftsPage() {
           branch: selectedRepo.branch,
           path: renameFile.path,
         });
+        const renamePublishTarget = renameFile.previewTarget ?? renameFile.publishTarget;
         await writeBufferFile({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
@@ -538,7 +586,7 @@ export default function DraftsPage() {
           path: newPath,
           op: 'write',
           content,
-          publishTarget: renameFile.publishTarget,
+          publishTarget: renamePublishTarget,
         });
         await writeBufferFile({
           owner: selectedRepo.owner,
@@ -546,7 +594,7 @@ export default function DraftsPage() {
           branch: selectedRepo.branch,
           path: renameFile.path,
           op: 'delete',
-          publishTarget: renameFile.publishTarget,
+          publishTarget: renamePublishTarget,
         });
         await refreshChanges();
       } else {
@@ -579,7 +627,7 @@ export default function DraftsPage() {
       const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
       setFiles(updatedFiles);
     } catch (err) {
-      addToast({ message: `重命名失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `重命名失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
       releaseActionLock();
@@ -601,7 +649,7 @@ export default function DraftsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="搜索草稿..."
+              placeholder="搜索草稿……"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
@@ -669,7 +717,7 @@ export default function DraftsPage() {
                       disabled={!moveTarget.trim() || actionLoading}
                       className="w-full px-2.5 py-1.5 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
-                      {actionLoading ? '移动中...' : `移动 ${selectedFiles.size} 篇`}
+                      {actionLoading ? '移动中……' : `移动 ${selectedFiles.size} 篇`}
                     </button>
                     <button
                       onClick={() => setShowMoveDropdown(false)}

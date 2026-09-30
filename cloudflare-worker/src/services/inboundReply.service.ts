@@ -16,7 +16,7 @@ export async function handleReceivedEmail(
 ): Promise<void> {
   try {
     if (!svixId || !(await claimWebhookEvent(env.DB, svixId))) {
-      console.warn('[inbound] 重复事件, 已跳过:', svixId || '(无 svix-id)');
+      console.warn('[inbound] 重复事件，已跳过：', svixId || '（无 svix-id）');
       return;
     }
 
@@ -29,13 +29,13 @@ export async function handleReceivedEmail(
       if (token) break;
     }
     if (!token) {
-      console.warn('[inbound] 无法从收件地址解析 token:', JSON.stringify(allAddresses));
+      console.warn('[inbound] 无法从收件地址解析 token：', JSON.stringify(allAddresses));
       return;
     }
 
     const message = await findByReplyToken(env.DB, token);
     if (!message) {
-      console.warn('[inbound] token 未命中留言:', token);
+      console.warn('[inbound] token 未命中留言：', token);
       return;
     }
 
@@ -44,7 +44,7 @@ export async function handleReceivedEmail(
       signal: AbortSignal.timeout(10000),
     });
     if (!emailResp.ok) {
-      console.warn(`[inbound] 拉取邮件正文失败: HTTP ${emailResp.status}`);
+      console.warn(`[inbound] 拉取邮件正文失败：HTTP ${emailResp.status}`);
       return;
     }
     const emailData = (await emailResp.json()) as { text?: string; html?: string };
@@ -56,10 +56,10 @@ export async function handleReceivedEmail(
     }
 
     const fromEmail = (event.from as string | undefined) || '';
-    // appendEmailReply 返回的 alert 内部已做 .catch() 兜底，此处无需再次捕获
+    // appendEmailReply 返回的 alert 内部已用 .catch() 吞掉错误，此处无需再次捕获
     await appendEmailReply(env, message.id, content, fromEmail);
-    console.log(`[inbound] 留言 #${message.id} 收到回信, 已落库`);
+    console.log(`[inbound] 留言 #${message.id} 收到回信，已保存`);
   } catch (err) {
-    console.error('[inbound] 处理回信异常:', err);
+    console.error('[inbound] 处理回信异常：', err);
   }
 }

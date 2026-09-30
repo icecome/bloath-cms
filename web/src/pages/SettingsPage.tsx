@@ -40,7 +40,7 @@ function RepoSyncSection() {
       );
       addToast({ message: '配置已同步到仓库 .bloath/config.json', type: 'success' });
     } catch (err) {
-      addToast({ message: `同步失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `同步失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setPushing(false);
     }
@@ -66,7 +66,7 @@ function RepoSyncSection() {
         className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-foreground text-white rounded-sm hover:bg-foreground/90 disabled:opacity-40 transition-colors"
       >
         <UploadCloud className="w-3.5 h-3.5" />
-        {pushing ? '同步中...' : '同步配置到仓库'}
+        {pushing ? '同步中……' : '同步配置到仓库'}
       </button>
     </div>
   );

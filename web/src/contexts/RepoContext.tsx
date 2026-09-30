@@ -49,7 +49,7 @@ export function RepoProvider({ children }: { children: ReactNode }) {
       const branchList = await getBranches(owner, repo);
       setBranches(branchList);
     } catch (err) {
-      console.error('加载分支失败:', err);
+      console.error('加载分支失败：', err);
       setBranches(['main']);
     } finally {
       setLoadingBranches(false);

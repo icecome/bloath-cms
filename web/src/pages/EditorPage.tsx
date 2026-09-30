@@ -125,7 +125,7 @@ export default function EditorPage() {
         }
       })
       .catch((err) => {
-        console.error('加载文件失败:', err);
+        console.error('加载文件失败：', err);
         setError(err.message || '加载失败');
       })
       .finally(() => setLoading(false));
@@ -169,7 +169,7 @@ export default function EditorPage() {
 
   const handleSave = async () => {
     if (!user) return;
-    // 缓冲配置未就绪时禁止落盘：否则会静默走 GitHub，造成「S3 无文件却进了 .draft」
+    // 缓冲配置未就绪时禁止写入：否则会静默走 GitHub，造成「S3 无文件却进了 .draft」
     if (bufferConfigLoading) {
       addToast({ message: '缓冲配置加载中，请稍候再保存', type: 'warning' });
       return;
@@ -191,7 +191,7 @@ export default function EditorPage() {
     try {
       targetSlug = sanitizeSlug(resolved.fileStem);
     } catch (err) {
-      addToast({ message: `URL 校验失败: ${(err as Error).message}`, type: 'warning' });
+      addToast({ message: `URL 校验失败：${(err as Error).message}`, type: 'warning' });
       return;
     }
     const editorContent = bodyContent || vditorInstanceRef.current?.getValue();
@@ -286,7 +286,7 @@ export default function EditorPage() {
     } catch (err) {
       console.error('Failed to save:', err);
       if (seq === saveSeqRef.current) {
-        addToast({ message: `保存失败: ${(err as Error).message}`, type: 'error' });
+        addToast({ message: `保存失败：${(err as Error).message}`, type: 'error' });
       }
     } finally {
       setSaving(false);
@@ -329,7 +329,7 @@ export default function EditorPage() {
       addToast({ message: '已移至回收站', type: 'success' });
       handleBack();
     } catch (err) {
-      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setSaving(false);
       setShowDeleteConfirm(false);
@@ -387,7 +387,7 @@ export default function EditorPage() {
       <div className="flex-1 flex items-center justify-center h-full">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto border-border"></div>
-          <p className="mt-3 text-sm text-muted-foreground">加载中...</p>
+          <p className="mt-3 text-sm text-muted-foreground">加载中……</p>
         </div>
       </div>
     );
@@ -412,7 +412,7 @@ export default function EditorPage() {
             <ArrowLeft className="w-4 h-4" />
           </button>
           <h1 className="text-sm font-medium text-foreground truncate max-w-[120px] md:max-w-none">
-            {isNew ? '新建文章' : `编辑: ${frontmatter.title || slug}`}
+            {isNew ? '新建文章' : `编辑：${frontmatter.title || slug}`}
           </h1>
         </div>
         <div className="flex items-center gap-1.5 md:gap-2">
@@ -430,7 +430,7 @@ export default function EditorPage() {
           >
             <Save className="w-4 h-4" />
             <span className="hidden md:inline">
-              {saving ? '保存中...' : bufferConfigLoading ? '缓冲就绪中...' : bufferEnabled ? '保存到缓冲' : '保存'}
+              {saving ? '保存中……' : bufferConfigLoading ? '缓冲就绪中……' : bufferEnabled ? '保存到缓冲' : '保存'}
             </span>
           </button>
           {!isNew && (
@@ -447,7 +447,7 @@ export default function EditorPage() {
               {showDeleteConfirm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
                   <div className="bg-white rounded-md shadow-sm p-4 w-full max-w-sm mx-4">
-                    <p className="text-sm text-foreground mb-4">确定要将 "{frontmatter.title || frontmatter.url || slug}" 移至回收站吗？</p>
+                    <p className="text-sm text-foreground mb-4">确定要将「{frontmatter.title || frontmatter.url || slug}」移至回收站吗？</p>
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => setShowDeleteConfirm(false)}
@@ -461,7 +461,7 @@ export default function EditorPage() {
                         disabled={saving}
                         className="px-3 py-1.5 text-sm text-white bg-red-600 hover:bg-red-700 rounded-sm transition-colors disabled:opacity-40"
                       >
-                        {saving ? '处理中...' : '确认删除'}
+                        {saving ? '处理中……' : '确认删除'}
                       </button>
                     </div>
                   </div>

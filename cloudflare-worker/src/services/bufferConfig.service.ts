@@ -11,7 +11,7 @@ export interface BufferConfig {
   region: string;         // R2 固定 auto
   bucket: string;
   accessKeyId: string;
-  secretAccessKey: string; // 明文仅在内存；落库为密文
+  secretAccessKey: string; // 明文仅在内存；存储为密文
   prefix: string;          // 默认 tmp/blog
   rand: string;            // 16 字节随机十六进制，key 不可发现段
 }
@@ -47,10 +47,10 @@ interface StoredConfig extends Omit<BufferConfig, 'secretAccessKey' | 'enabled' 
 }
 
 // 读侧结构校验：app_settings 是共享库，除本服务外还可能有运维脚本/其他模块写入，
-// 字段类型异常时显式拒绝并留日志，避免 "endpoint 非字符串 → replace 抛错 → 被外层 catch 静默吞掉" 的降级路径
+// 字段类型异常时显式拒绝并留日志，避免「endpoint 非字符串 → replace 抛错 → 被外层 catch 静默吞掉」的降级路径
 const storedConfigSchema = z.object({
   enabled: z.boolean().optional(),
-  // 必填三件套非空：enabled 不作为"配置存在"的硬条件（首次未勾选保存的 enabled:false 配置仍需可读），
+  // 必填三件套非空：enabled 不作为「配置存在」的硬条件（首次未勾选保存的 enabled:false 配置仍需可读），
   // 但 endpoint/bucket/secretAccessKeyEnc 为空说明配置未完整写入，按不存在处理
   endpoint: z.string().min(1),
   region: z.string().optional(),
@@ -65,12 +65,12 @@ function parseStoredConfig(raw: string, label: string): StoredConfig | null {
   try {
     const parsed = storedConfigSchema.safeParse(JSON.parse(raw));
     if (!parsed.success) {
-      console.error(`[bufferConfig] ${label} 存储结构非法:`, parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+      console.error(`[bufferConfig] ${label} 存储结构非法：`, parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
       return null;
     }
     return parsed.data as StoredConfig;
   } catch (err) {
-    console.error(`[bufferConfig] ${label} JSON 解析失败:`, err);
+    console.error(`[bufferConfig] ${label} JSON 解析失败：`, err);
     return null;
   }
 }
@@ -85,7 +85,7 @@ export async function getBufferConfig(env: Env): Promise<BufferConfig | null> {
     try {
       secretAccessKey = await openWithSecret(env.SESSION_SECRET, parsed.secretAccessKeyEnc, CRYPTO_DOMAIN);
     } catch (err) {
-      console.error('[bufferConfig] 密钥解密失败（SESSION_SECRET 是否已轮换？需重新保存密钥）:', err);
+      console.error('[bufferConfig] 密钥解密失败（SESSION_SECRET 是否已轮换？需重新保存密钥）：', err);
       return null;
     }
     return {
@@ -99,7 +99,7 @@ export async function getBufferConfig(env: Env): Promise<BufferConfig | null> {
       rand: parsed.rand || '',
     };
   } catch (err) {
-    console.error('[bufferConfig] 读取失败:', err);
+    console.error('[bufferConfig] 读取失败：', err);
     return null;
   }
 }

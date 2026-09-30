@@ -120,7 +120,7 @@ export function SiteSettings() {
       addToast({ message: '部署已触发，可在 GitHub Actions 查看进度', type: 'success' });
     } catch (err) {
       addToast({
-        message: `触发失败: ${(err as Error).message}。请确认 workflow 含 workflow_dispatch 触发器。`,
+        message: `触发失败：${(err as Error).message}。请确认 workflow 含 workflow_dispatch 触发器。`,
         type: 'error'
       });
     } finally {
@@ -202,7 +202,7 @@ export function SiteSettings() {
           <p className="text-xs text-muted-foreground">请先选择仓库</p>
         ) : workflowsLoading ? (
           <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" /> 加载 workflows...
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> 加载 workflows……
           </p>
         ) : workflows.length === 0 ? (
           <p className="text-xs text-muted-foreground">
@@ -226,7 +226,7 @@ export function SiteSettings() {
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-foreground text-white rounded-sm hover:bg-foreground/90 disabled:opacity-40 transition-colors"
             >
               <Rocket className="w-3.5 h-3.5" />
-              {deploying ? '触发中...' : `部署 ${selectedRepo.branch}`}
+              {deploying ? '触发中……' : `部署 ${selectedRepo.branch}`}
             </button>
           </div>
         )}

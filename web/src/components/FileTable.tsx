@@ -4,9 +4,9 @@ import type { DraftPreviewState } from '../lib/draftPreviewStore';
 
 const SOURCE_META: Record<FileSource, { label: string; className: string }> = {
   repo: { label: '仓库', className: 'bg-secondary text-muted-foreground' },
-  buffer: { label: '缓存', className: 'bg-orange-100 text-orange-700' },
-  'buffer-modified': { label: '缓存·有改动', className: 'bg-orange-100 text-orange-700' },
-  'buffer-deleted': { label: '缓存·待删除', className: 'bg-red-100 text-red-700' },
+  buffer: { label: '缓冲', className: 'bg-orange-100 text-orange-700' },
+  'buffer-modified': { label: '缓冲·有改动', className: 'bg-orange-100 text-orange-700' },
+  'buffer-deleted': { label: '缓冲·待删除', className: 'bg-red-100 text-red-700' },
 };
 
 // 预发布状态徽标：draft 不显示徽标（避免噪声），仅在有预发布动作时提示

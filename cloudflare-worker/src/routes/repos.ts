@@ -119,13 +119,13 @@ reposApp.post('/api/repos/commit', async (c: Context<HonoEnv>) => {
   for (const op of ops) {
     const source = op.fromPath;
     if ((op.op !== 'write' && op.op !== 'move' && op.op !== 'delete') || !isSafePathParam(op.path, true) || (op.op === 'move' && (!source || !isSafePathParam(source, true)))) {
-      return c.json(badRequest(`非法操作项: op=${op.op}, path=${op.path}${source ? `, from=${source}` : ''}`), 400);
+      return c.json(badRequest(`非法操作项：op=${op.op}, path=${op.path}${source ? `, from=${source}` : ''}`), 400);
     }
     if (op.op === 'write') {
       const len = typeof op.content === 'string' ? op.content.length : 0;
       const b64len = typeof op.base64Content === 'string' ? op.base64Content.length : 0;
-      if (len === 0 && b64len === 0) return c.json(badRequest(`写入操作缺少内容: ${op.path}`), 400);
-      if (len + b64len > MAX_CONTENT_SIZE) return c.json(badRequest(`文件过大（单文件上限 10MB）: ${op.path}`), 400);
+      if (len === 0 && b64len === 0) return c.json(badRequest(`写入操作缺少内容：${op.path}`), 400);
+      if (len + b64len > MAX_CONTENT_SIZE) return c.json(badRequest(`文件过大（单文件上限 10MB）：${op.path}`), 400);
     }
   }
   const author = buildCommitAuthor(userName);

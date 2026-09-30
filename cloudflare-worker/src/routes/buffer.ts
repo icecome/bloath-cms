@@ -12,7 +12,7 @@ import { putObject } from '../services/s3.client';
 import { isBlockedS3Endpoint, S3Error } from '../services/s3.errors';
 import { getBufferConfig } from '../services/bufferConfig.service';
 import {
-  writeBufferEntry, deleteBufferEntry, setBufferPublishTarget,
+  writeBufferEntry, deleteBufferEntry, setBufferPublishTarget, readBufferEntry,
   listBufferChanges, readFileWithBuffer, BufferUnavailableError,
 } from '../services/buffer.service';
 import { publishBuffer, type PublishItem } from '../services/publish.service';
@@ -49,12 +49,12 @@ function respondBufferError(c: Context<HonoEnv>, err: unknown) {
   if (err instanceof S3Error) {
     // S3 原始响应体只进日志，不回传客户端
     console.error(`[buffer] ${err.op} ${err.status}:`, err.detail);
-    return c.json(error(ErrorCode.INTERNAL_ERROR, `对象存储操作失败 (${err.status})`), 502);
+    return c.json(error(ErrorCode.INTERNAL_ERROR, `对象存储操作失败（${err.status}）`), 502);
   }
   if (err instanceof GithubApiError) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, err.message), err.statusCode as 400 | 404 | 409 | 500 | 503);
   }
-  console.error('[buffer] 未预期异常:', err);
+  console.error('[buffer] 未预期异常：', err);
   return c.json(error(ErrorCode.INTERNAL_ERROR, '服务器内部错误'), 500);
 }
 
@@ -153,7 +153,7 @@ bufferApp.post('/api/buffer/config/test', async (c: Context<HonoEnv>) => {
     }, probeKey, '');
     return c.json(success({ ok: true }, '连接成功'));
   } catch (err) {
-    const msg = err instanceof S3Error ? err.message : `连接异常: ${(err as Error).message}`;
+    const msg = err instanceof S3Error ? err.message : `连接异常：${(err as Error).message}`;
     return c.json(error(ErrorCode.VALIDATION_ERROR, msg), 400);
   }
 });
@@ -207,13 +207,19 @@ bufferApp.put('/api/buffer/file', async (c: Context<HonoEnv>) => {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '非法 publishTarget'), 400);
   }
   try {
+    // write 未显式携带 publishTarget 时保留原目标，避免再次保存冲掉预发布目录
+    let resolvedTarget = publishTarget || undefined;
+    if (op === 'write' && publishTarget === undefined) {
+      const existing = await readBufferEntry(c.env, owner!, repo!, branch, path!);
+      resolvedTarget = existing?.publishTarget;
+    }
     await writeBufferEntry(c.env, owner!, repo!, branch, path!, {
       op: op as 'write' | 'delete' | 'move',
       content: op === 'write' ? content : undefined,
       fromPath: op === 'move' ? fromPath : undefined,
       baseSha,
       savedAt: Date.now(),
-      publishTarget: publishTarget || undefined,
+      publishTarget: resolvedTarget,
     });
     return c.json(success({ path, op }, '已存入缓冲'));
   } catch (err) {

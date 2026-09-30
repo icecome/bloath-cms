@@ -107,6 +107,17 @@ export function discardBufferFile(params: { owner: string; repo: string; branch:
   return bufferFetch(`/api/buffer/file?${q.toString()}`, { method: 'DELETE' });
 }
 
+/** 设置/清除单条缓冲发布目标；publishTarget 为 null 表示清除 */
+export function setBufferPublishTarget(params: {
+  owner: string; repo: string; branch: string; path: string; publishTarget: string | null;
+}): Promise<{ path: string; publishTarget: string | null }> {
+  return bufferFetch<{ path: string; publishTarget: string | null }>('/api/buffer/target', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+}
+
 export function getBufferChanges(params: { owner: string; repo: string; branch: string }): Promise<BufferChangesResult> {
   const q = new URLSearchParams(params);
   return bufferFetch<BufferChangesResult>(`/api/buffer/changes?${q.toString()}`);

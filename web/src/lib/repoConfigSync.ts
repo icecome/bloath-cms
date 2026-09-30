@@ -17,7 +17,7 @@ export interface RepoSyncedConfig {
   media?: MediaConfig;
 }
 
-/** 按状态码判断"文件不存在"，不匹配 message 文本 */
+/** 按状态码判断「文件不存在」，不匹配 message 文本 */
 function isNotFound(err: unknown): boolean {
   return err instanceof HttpError && err.status === 404;
 }
@@ -35,7 +35,7 @@ export async function pullRepoConfig(
     return parsed;
   } catch (err) {
     if (!isNotFound(err)) {
-      console.error('[repoConfigSync] 拉取配置失败:', err);
+      console.error('[repoConfigSync] 拉取配置失败：', err);
     }
     return null;
   }

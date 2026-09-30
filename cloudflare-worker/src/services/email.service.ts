@@ -112,9 +112,9 @@ async function sendViaResend(env: Env, payload: Record<string, unknown>, logLabe
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10000),
     });
-    if (!response.ok) console.warn(`[emailService] ${logLabel}失败: HTTP ${response.status}`);
+    if (!response.ok) console.warn(`[emailService] ${logLabel}失败：HTTP ${response.status}`);
   } catch (err) {
-    console.error(`[emailService] ${logLabel}异常:`, err);
+    console.error(`[emailService] ${logLabel}异常：`, err);
   }
 }
 

@@ -40,7 +40,7 @@ export function RenameDraftDialog({ value, loading, onChange, onConfirm, onClose
             disabled={!value.trim() || loading}
             className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? '处理中...' : '确认重命名'}
+            {loading ? '处理中……' : '确认重命名'}
           </button>
         </div>
       </div>

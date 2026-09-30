@@ -1,7 +1,7 @@
 // 发布草稿确认弹窗（只读）
 //
 // 目标路径已在「预发布」阶段确定，此处仅作最终确认，不可修改。
-// 设计意图：若允许在此改目标，会绕过"未预发布不能发布"的约束，
+// 设计意图：若允许在此改目标，会绕过「未预发布不能发布」的约束，
 // 使预发布形同虚设。需要改目标时请先取消预发布再重新设置。
 import { AlertTriangle } from 'lucide-react';
 
@@ -82,7 +82,7 @@ export function PublishDraftDialog({ entries, loading, onConfirm, onClose }: Pro
             disabled={loading || entries.length === 0}
             className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? '发布中...' : '确认发布'}
+            {loading ? '发布中……' : '确认发布'}
           </button>
         </div>
       </div>

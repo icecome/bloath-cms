@@ -44,10 +44,13 @@ export async function publishBuffer(
   }
 
   // 逐项发布时只取选中的条目；items 省略表示全量发布
+  // 仅显式携带 publishTarget 时覆盖条目目标；缺省时回落 entry.publishTarget
   const overrideTargets = new Map<string, string | undefined>();
   let selected = buffered;
   if (items && items.length > 0) {
-    for (const item of items) overrideTargets.set(item.path, item.publishTarget);
+    for (const item of items) {
+      if (item.publishTarget !== undefined) overrideTargets.set(item.path, item.publishTarget);
+    }
     const selectedPaths = new Set(items.map((i) => i.path));
     selected = buffered.filter((b) => selectedPaths.has(b.path));
     if (selected.length === 0) {

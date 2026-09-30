@@ -74,7 +74,7 @@ export default function DirectorySelectorDropdown({
           disabled={!customValue.trim() || disabled || isLoading}
           className="w-full px-2.5 py-1.5 text-xs text-white bg-foreground rounded-sm hover:bg-foreground/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {isLoading ? '处理中...' : confirmLabel}
+          {isLoading ? '处理中……' : confirmLabel}
         </button>
       </div>
       <button

@@ -166,7 +166,7 @@ export async function cleanupBufferKeys(env: Env, keys: string[]): Promise<Clean
       cleared++;
     } catch (err) {
       failed++;
-      console.error('[buffer] 清理失败:', key, err);
+      console.error('[buffer] 清理失败：', key, err);
     }
   });
   return { cleared, failed };
@@ -181,7 +181,7 @@ export async function readFileWithBuffer(
   try {
     buffered = await readBufferEntry(env, owner, repo, branch, path);
   } catch (err) {
-    console.warn('[buffer] 读取缓冲失败，回退 GitHub:', err);
+    console.warn('[buffer] 读取缓冲失败，回退 GitHub：', err);
   }
   if (buffered && buffered.op === 'write' && typeof buffered.content === 'string') {
     return { content: buffered.content, sha: '', source: 'buffer' };

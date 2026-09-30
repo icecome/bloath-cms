@@ -180,7 +180,7 @@ function SidebarContent({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="搜索仓库..."
+                    placeholder="搜索仓库……"
                     className="w-full pl-7 pr-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
                     autoFocus
                   />
@@ -190,7 +190,7 @@ function SidebarContent({
               <div>
                 {filteredRepos.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-muted-foreground">
-                    {repos.length === 0 ? '加载中...' : '没有匹配的仓库'}
+                    {repos.length === 0 ? '加载中……' : '没有匹配的仓库'}
                   </div>
                 ) : (
                   filteredRepos.map((repo) => (
@@ -240,7 +240,7 @@ function SidebarContent({
             {showBranchDropdown && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border z-50 max-h-40 overflow-auto">
                 {branches.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">加载中...</div>
+                  <div className="px-3 py-2 text-sm text-muted-foreground">加载中……</div>
                 ) : (
                   branches.map((branch: string) => (
                     <button
@@ -428,7 +428,7 @@ export default function MainLayout() {
           updateMediaConfig(remote.media);
         }
       })
-      .catch((err) => console.error('拉取仓库配置失败:', err));
+      .catch((err) => console.error('拉取仓库配置失败：', err));
   }, [selectedRepo, user, updateConfig, updateMediaConfig]);
 
   useEffect(() => {

@@ -5,10 +5,10 @@ import type { EnhancedFileItem, FileSource } from './extractFrontMatter';
 /**
  * 合并规则（缓冲优先）：
  * - 仓库有、缓冲无           → 仓库
- * - 仓库有、缓冲 write 同路径 → 缓存·有改动（内容以缓冲为准）
- * - 仓库无、缓冲 write       → 缓存
- * - 缓冲 delete             → 仓库项标为 缓存·待删除（无对应仓库项时忽略）
- * - 缓冲 move（目标在草稿范围内）→ 视作目标路径的缓存项
+ * - 仓库有、缓冲 write 同路径 → 缓冲·有改动（内容以缓冲为准）
+ * - 仓库无、缓冲 write       → 缓冲
+ * - 缓冲 delete             → 仓库项标为 缓冲·待删除（无对应仓库项时忽略）
+ * - 缓冲 move（目标在草稿范围内）→ 视作目标路径的缓冲项
  */
 export function mergeDraftList(
   repoFiles: readonly EnhancedFileItem[],

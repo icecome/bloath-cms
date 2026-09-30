@@ -35,7 +35,7 @@ authApp.get('/api/auth/dev-login', async (c: Context<HonoEnv>) => {
   }
   const encoded = encodeURIComponent(sessionToken);
   const html = `<!DOCTYPE html><html><head><title>Dev Login</title></head><body>
-<p>正在登录...</p>
+<p>正在登录……</p>
 <script>
 document.cookie = 'session=${encoded}; path=/api; max-age=604800; SameSite=Lax';
 location.href = '/';

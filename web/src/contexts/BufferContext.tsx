@@ -5,6 +5,7 @@ import {
   getBufferConfig, getBufferChanges, publishBuffer,
   type BufferConfigPublic, type BufferChangeItem, type PublishResult, type PublishItem,
 } from '../lib/bufferApi';
+import { readPreviewStore } from '../lib/draftPreviewStore';
 
 interface BufferState {
   config: BufferConfigPublic | null;
@@ -39,7 +40,7 @@ export function BufferProvider({ children }: { children: ReactNode }) {
       const cfg = await getBufferConfig();
       setConfig(cfg);
     } catch (err) {
-      console.error('[buffer] 配置加载失败，本次会话将回退 GitHub 直写:', err);
+      console.error('[buffer] 配置加载失败，本次会话将回退 GitHub 直写：', err);
       setConfig(null);
     } finally {
       setConfigLoading(false);
@@ -78,23 +79,32 @@ export function BufferProvider({ children }: { children: ReactNode }) {
     }
     setPublishing(true);
     try {
+      // 全量发布也带上预发布目标，与草稿箱「发布」保持同一套目标解析
+      let effectiveItems = items;
+      if (!effectiveItems && changes.length > 0) {
+        const records = readPreviewStore(selectedRepo).records;
+        effectiveItems = changes.map((c) => {
+          const raw = (records[c.path]?.previewTarget || c.publishTarget || '').trim();
+          return raw ? { path: c.path, publishTarget: raw } : { path: c.path };
+        });
+      }
       const result = await publishBuffer({
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         branch: selectedRepo.branch,
         userName,
-        items,
+        items: effectiveItems,
       });
       addToast({ message: result.message, type: result.published > 0 ? 'success' : 'info' });
       await refreshChanges();
       return result;
     } catch (err) {
-      addToast({ message: `发布失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `发布失败：${(err as Error).message}`, type: 'error' });
       return null;
     } finally {
       setPublishing(false);
     }
-  }, [selectedRepo, addToast, refreshChanges]);
+  }, [selectedRepo, addToast, refreshChanges, changes]);
 
   const value = useMemo<BufferContextValue>(() => ({
     config,

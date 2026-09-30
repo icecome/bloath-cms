@@ -1,5 +1,5 @@
 // AES-GCM 加解密统一实现：session token 与 buffer 配置共用
-// 密文格式保持 IV(12) || cipher，base64 编码，与历史落库字节兼容
+// 密文格式保持 IV(12) || cipher，base64 编码，与历史存储字节兼容
 
 async function deriveKey(secret: string, domainPrefix: string, usages: ('encrypt' | 'decrypt')[]): Promise<CryptoKey> {
   const material = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${domainPrefix}${secret}`));

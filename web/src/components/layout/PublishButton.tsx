@@ -29,7 +29,7 @@ function PublishDialog() {
         </div>
         <div className="px-4 py-3 max-h-80 overflow-y-auto">
           <p className="text-xs text-muted-foreground mb-3">
-            以下缓冲变更将合并为一次提交推送至 GitHub（触发一次 CI 部署），发布后缓冲文件立即清理。
+            以下缓冲变更将合并为一次提交推送至 GitHub（触发一次 CI 部署），发布后缓冲文件立即清理。已设置预发布目标的条目会移动到对应目录。
           </p>
           <div className="space-y-1">
             {changes.map((item) => {
@@ -61,7 +61,7 @@ function PublishDialog() {
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-foreground text-white rounded-sm hover:bg-foreground/90 disabled:opacity-40 transition-colors"
           >
             {publishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            {publishing ? '发布中...' : '确认发布'}
+            {publishing ? '发布中……' : '确认发布'}
           </button>
         </div>
       </div>

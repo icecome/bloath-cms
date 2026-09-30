@@ -82,7 +82,7 @@ if (!currentDir) {
         setFiles(sorted);
       })
       .catch((err) => {
-        console.error('加载文件列表失败:', err);
+        console.error('加载文件列表失败：', err);
         setFiles([]);
       })
       .finally(() => setLoading(false));
@@ -197,7 +197,7 @@ if (!currentDir) {
       clearCache(selectedRepo);
       addToast({ message: `已将 ${filesToDelete.length} 篇文章移至回收站`, type: 'success' });
     } catch (err) {
-      addToast({ message: `批量删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `批量删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setBatchLoading(false);
     }
@@ -276,7 +276,7 @@ if (!selectedRepo || !currentDir) return;
             clearCache(selectedRepo);
             addToast({ message: '已恢复', type: 'success' });
           } catch (err) {
-            addToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
+            addToast({ message: `恢复失败：${(err as Error).message}`, type: 'error' });
           }
           lastDeletedRef.current = null;
           if (selectedRepo) {
@@ -286,7 +286,7 @@ if (!selectedRepo || !currentDir) return;
         }
       });
     } catch (err) {
-      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     }
   };
 
@@ -304,7 +304,7 @@ if (!selectedRepo || !currentDir) return;
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="按文件名或提交信息筛选..."
+              placeholder="按文件名或提交信息筛选……"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
@@ -337,7 +337,7 @@ if (!selectedRepo || !currentDir) return;
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 text-white bg-red-600 hover:bg-red-700 rounded-sm transition-colors disabled:opacity-40"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            {batchLoading ? '处理中...' : '移至回收站'}
+            {batchLoading ? '处理中……' : '移至回收站'}
           </button>
         </div>
       )}

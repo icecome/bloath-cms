@@ -60,7 +60,7 @@ export function useFileListPage({
         if (onErrorRef.current) {
           onErrorRef.current(err);
         } else {
-          console.error(`扫描路径 ${basePath} 失败:`, err);
+          console.error(`扫描路径 ${basePath} 失败：`, err);
         }
         if (!cached) setFiles([]);
       })

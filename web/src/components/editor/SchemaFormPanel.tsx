@@ -654,7 +654,7 @@ function CustomFieldsField({ frontmatter, setFm }: {
           </div>
         ))}
         {rows.length === 0 && (
-          <p className="text-xs text-muted-foreground">暂无自定义字段，点击上方"添加"按钮创建</p>
+          <p className="text-xs text-muted-foreground">暂无自定义字段，点击上方「添加」按钮创建</p>
         )}
       </div>
     </div>

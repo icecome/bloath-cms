@@ -20,16 +20,16 @@ export async function createMessage(
   const data = validateCreateMessage(input);
   if (data.cf_verified) {
     if (!data.turnstile_token || data.turnstile_token.trim() === '') {
-      throw new ApiError(ErrorCode.TURNSTILE_FAILED, '人机验证Token不能为空', 400);
+      throw new ApiError(ErrorCode.TURNSTILE_FAILED, '人机验证 Token 不能为空', 400);
     }
     const isValid = await verifyToken(data.turnstile_token, ip, env.TURNSTILE_SECRET_KEY);
     if (!isValid) throw new ApiError(ErrorCode.TURNSTILE_FAILED, '人机验证未通过', 400);
   }
   const ipResult = await checkRateLimit(env.DB, ip, RATE_LIMIT_ACTION, IP_LIMIT_COUNT, IP_LIMIT_WINDOW);
-  if (!ipResult.allowed) throw new ApiError(ErrorCode.RATE_LIMITED, `提交过于频繁，请${IP_LIMIT_WINDOW}秒后再试`, 429);
+  if (!ipResult.allowed) throw new ApiError(ErrorCode.RATE_LIMITED, `提交过于频繁，请 ${IP_LIMIT_WINDOW} 秒后再试`, 429);
   if (data.visitor_email) {
     const emailResult = await checkRateLimit(env.DB, data.visitor_email, RATE_LIMIT_ACTION, EMAIL_LIMIT_COUNT, EMAIL_LIMIT_WINDOW);
-    if (!emailResult.allowed) throw new ApiError(ErrorCode.RATE_LIMITED, `该邮箱提交过于频繁，请${EMAIL_LIMIT_WINDOW}秒后再试`, 429);
+    if (!emailResult.allowed) throw new ApiError(ErrorCode.RATE_LIMITED, `该邮箱提交过于频繁，请 ${EMAIL_LIMIT_WINDOW} 秒后再试`, 429);
   }
   const globalResult = await checkRateLimit(env.DB, 'global', RATE_LIMIT_ACTION, GLOBAL_LIMIT_COUNT, GLOBAL_LIMIT_WINDOW);
   if (!globalResult.allowed) throw new ApiError(ErrorCode.RATE_LIMITED, '系统繁忙，请稍后重试', 429);
@@ -47,10 +47,10 @@ export async function createMessage(
     notifications = Promise.allSettled([
       getBlogPushSetting(env.DB)
         .then((s) => (s.emailEnabled ? sendNotificationEmail(env, msgRow) : undefined))
-        .catch((err) => console.error('[createMessage] 邮件提醒开关读取失败:', err)),
+        .catch((err) => console.error('[createMessage] 邮件提醒开关读取失败：', err)),
       sendPushNotification(env, msgRow),
     ]).then((results): void[] => {
-      results.forEach((r) => { if (r.status === 'rejected') console.error('[createMessage] 通知发送失败:', r.reason); });
+      results.forEach((r) => { if (r.status === 'rejected') console.error('[createMessage] 通知发送失败：', r.reason); });
       return [];
     });
   }
@@ -129,7 +129,7 @@ export const ACTION_STATUS_MAP: Record<string, string> = {
 
 export async function updateMessageStatus(db: D1Database, id: number, action: string, operator: string): Promise<void> {
   if (!VALID_ACTIONS.includes(action as typeof VALID_ACTIONS[number])) {
-    throw new ApiError(ErrorCode.INVALID_STATUS_TRANSITION, `无效的操作: ${action}`, 400);
+    throw new ApiError(ErrorCode.INVALID_STATUS_TRANSITION, `无效的操作：${action}`, 400);
   }
   const existing = await getMessageById(db, id);
   if (!existing) throw new ApiError(ErrorCode.MESSAGE_NOT_FOUND, '留言不存在', 404);
@@ -142,7 +142,7 @@ export async function updateMessageStatus(db: D1Database, id: number, action: st
   };
   const allowedFrom = validTransitions[targetStatus] || [];
   if (!allowedFrom.includes(existing.status)) {
-    throw new ApiError(ErrorCode.INVALID_STATUS_TRANSITION, `无法从 "${existing.status}" 转换为 "${targetStatus}"`, 400);
+    throw new ApiError(ErrorCode.INVALID_STATUS_TRANSITION, `无法从「${existing.status}」转换为「${targetStatus}」`, 400);
   }
   if (targetStatus === 'spam') {
     const recordStmts = await buildRecordSpamSourceStmts(db, { name: existing.visitor_name, email: existing.visitor_email || '', ip: existing.visitor_ip || '', content: existing.content || '' });
@@ -192,7 +192,7 @@ export async function upsertMessageReply(
   let notify: Promise<void> | null = null;
   if (existing.visitor_email) {
     notify = sendReplyEmail(env, { ...existing, reply_content: trimmed, reply_token: token }).catch((err) => {
-      console.error('[upsertMessageReply] 回复邮件发送失败:', err);
+      console.error('[upsertMessageReply] 回复邮件发送失败：', err);
     });
   }
   return { notify };
@@ -229,7 +229,7 @@ export async function appendEmailReply(
     env.DB.prepare('INSERT INTO admin_logs (message_id, action, operator) VALUES (?, ?, ?)').bind(messageId, 'reply', 'email-inbound'),
   ]);
   const alert = sendInboundReplyAlert(env, trimmed, sender).catch((err) => {
-    console.error('[appendEmailReply] 回信提醒发送失败:', err);
+    console.error('[appendEmailReply] 回信提醒发送失败：', err);
   });
   return { alert };
 }

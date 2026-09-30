@@ -36,7 +36,7 @@ adminApp.patch('/api/admin/messages/:id', async (c: Context<HonoEnv>) => {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
   }
   if (!ADMIN_SINGLE_ACTIONS.includes(action || '')) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '无效的操作: ' + action), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '无效的操作：' + action), 400);
   }
   if (action === 'delete') await softDeleteMessage(c.env.DB, id, 'admin');
   else await updateMessageStatus(c.env.DB, id, action!, 'admin');
@@ -95,7 +95,7 @@ adminApp.post('/api/admin/batch', async (c: Context<HonoEnv>) => {
   // 状态变更与审计日志由 service 在同一批次提交，此处不再单独写入
   const { missingIds } = await batchOperateMessages(c.env.DB, ids, action);
   if (missingIds.length > 0) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, `以下留言不存在: ${missingIds.join(', ')}`), 404);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, `以下留言不存在：${missingIds.join(', ')}`), 404);
   }
   return c.json(success(null, `已批量${action === 'delete' ? '删除' : ACTION_STATUS_MAP[action] || action} ${ids.length} 条`));
 });
@@ -106,8 +106,8 @@ adminApp.get('/api/admin/settings/push', async (c: Context<HonoEnv>) => {
 });
 
 const pushSettingsSchema = z.object({
-  enabled: z.boolean({ required_error: '参数错误: enabled 需为布尔' }),
-  channelIds: z.array(z.number().int().positive(), { required_error: '参数错误: channelIds 需为正整数数组' }),
+  enabled: z.boolean({ required_error: '参数错误：enabled 需为布尔' }),
+  channelIds: z.array(z.number().int().positive(), { required_error: '参数错误：channelIds 需为正整数数组' }),
   emailEnabled: z.boolean().optional(),
 });
 

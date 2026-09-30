@@ -58,7 +58,7 @@ export function DeviceSettings() {
         if (!cancelled) setDevices(list);
       })
       .catch((err) => {
-        if (!cancelled) addToast({ message: `加载设备失败: ${(err as Error).message}`, type: 'error' });
+        if (!cancelled) addToast({ message: `加载设备失败：${(err as Error).message}`, type: 'error' });
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -84,7 +84,7 @@ export function DeviceSettings() {
         type: 'success'
       });
     } catch (err) {
-      addToast({ message: `设置失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `设置失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setSavingFingerprint(null);
     }
@@ -101,7 +101,7 @@ export function DeviceSettings() {
       setDevices(prev => prev.filter(d => d.fingerprint !== device.fingerprint));
       addToast({ message: '设备已移除', type: 'success' });
     } catch (err) {
-      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setSavingFingerprint(null);
     }
@@ -112,7 +112,7 @@ export function DeviceSettings() {
       <section className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">登录设备</h3>
         <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" /> 加载设备列表...
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> 加载设备列表……
         </p>
       </section>
     );

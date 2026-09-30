@@ -165,7 +165,7 @@ export async function moveFile(
     });
   } catch (err) {
     // 写入成功但删除失败：向上传播错误，让调用者提示用户手动清理
-    throw new Error(`文件已写入 ${params.toPath}，但删除源文件 ${params.fromPath} 失败，仓库可能存在重复文件。原因: ${err instanceof Error ? err.message : '未知错误'}`);
+    throw new Error(`文件已写入 ${params.toPath}，但删除源文件 ${params.fromPath} 失败，仓库可能存在重复文件。原因：${err instanceof Error ? err.message : '未知错误'}`);
   }
 }
 
@@ -203,7 +203,7 @@ export async function renameFile(
     }
   } catch (err) {
     // 写入成功但删除失败：向上传播错误，让调用者提示用户手动清理
-    throw new Error(`文件已写入 ${params.newPath}，但删除旧文件 ${params.oldPath} 失败，仓库可能存在重复文件。原因: ${err instanceof Error ? err.message : '未知错误'}`);
+    throw new Error(`文件已写入 ${params.newPath}，但删除旧文件 ${params.oldPath} 失败，仓库可能存在重复文件。原因：${err instanceof Error ? err.message : '未知错误'}`);
   }
 }
 
@@ -324,7 +324,7 @@ export async function setDeviceTrusted(trusted: boolean): Promise<void> {
 
 /**
  * 批量提交：N 个文件变更 → 1 个 commit → 最多触发 1 次 CI。
- * 原子性：失败时整批不落盘，不会出现"发布一半"的中间状态。
+ * 原子性：失败时整批不写入，不会出现「发布一半」的中间状态。
  */
 export async function commitBatch(
   params: RepoInfo & { message: string; ops: CommitOp[]; userName?: string }

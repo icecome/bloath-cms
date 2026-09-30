@@ -46,12 +46,12 @@ export default function TrashPage() {
     selectedRepo,
     user,
     onError: (err) => {
-      // 按状态码判断，不用 message 文本：JSON 信封响应的 404 抛的是业务 message（不含 "404"），
-      // 文本匹配分支会永久失效，反而把"目录未创建"降级成错误日志。
+      // 按状态码判断，不用 message 文本：JSON 信封响应的 404 抛的是业务 message（不含「404」），
+      // 文本匹配分支会永久失效，反而把「目录未创建」降级成错误日志。
       if (err instanceof HttpError && err.status === 404) {
         console.info(`回收站目录 ${trashPath} 尚未创建`);
       } else {
-        console.error(`扫描路径 ${trashPath} 失败:`, err);
+        console.error(`扫描路径 ${trashPath} 失败：`, err);
       }
     },
   });
@@ -84,7 +84,7 @@ export default function TrashPage() {
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
-      addToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `恢复失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
       setProgress(null);
@@ -107,7 +107,7 @@ export default function TrashPage() {
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
-      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
       setProgress(null);
@@ -141,7 +141,7 @@ export default function TrashPage() {
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
-      addToast({ message: `恢复失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `恢复失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
       setProgress(null);
@@ -169,7 +169,7 @@ export default function TrashPage() {
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
-      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
       setProgress(null);
@@ -198,7 +198,7 @@ export default function TrashPage() {
                 disabled={actionLoading}
                 className="px-3 py-1.5 text-sm text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
               >
-                {actionLoading ? '删除中...' : '永久删除'}
+                {actionLoading ? '删除中……' : '永久删除'}
               </button>
             </div>
           </div>
@@ -229,7 +229,7 @@ export default function TrashPage() {
                 disabled={actionLoading}
                 className="px-3 py-1.5 text-sm text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
               >
-                {actionLoading ? '删除中...' : '永久删除'}
+                {actionLoading ? '删除中……' : '永久删除'}
               </button>
             </div>
           </div>
@@ -242,7 +242,7 @@ export default function TrashPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="搜索回收站..."
+              placeholder="搜索回收站……"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
@@ -292,7 +292,7 @@ export default function TrashPage() {
                     value={restoreTarget}
                     onChange={setRestoreTarget}
                     onConfirm={handleBulkRestore}
-                    confirmLabel={actionLoading ? '恢复中...' : `恢复 ${selectedFiles.size} 个`}
+                    confirmLabel={actionLoading ? '恢复中……' : `恢复 ${selectedFiles.size} 个`}
                     onCancel={() => setShowRestoreDropdown(false)}
                     disabled={actionLoading}
                     isLoading={actionLoading}

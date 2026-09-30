@@ -42,7 +42,7 @@ function LoadingFallback() {
     <div className="flex-1 flex items-center justify-center h-full">
       <div className="text-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto border-border"></div>
-        <p className="mt-3 text-sm text-muted-foreground">加载中...</p>
+        <p className="mt-3 text-sm text-muted-foreground">加载中……</p>
       </div>
     </div>
   );

@@ -24,7 +24,7 @@ function MarkdownBody({ content }: { content: string }) {
     let cancelled = false;
     renderMessageMarkdown(content)
       .then((result) => { if (!cancelled) setHtml(result); })
-      .catch((err) => console.error('[MessagesPage] Markdown 渲染失败:', err));
+      .catch((err) => console.error('[MessagesPage] Markdown 渲染失败：', err));
     return () => { cancelled = true; };
   }, [content]);
   return <div className="msg-md-body" dangerouslySetInnerHTML={{ __html: html }} />;
@@ -69,7 +69,7 @@ export default function MessagesPage() {
         setSelectedMessageId(first ? first.id : null);
       }
     } catch (err) {
-      addToast({ message: `加载失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `加载失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -108,7 +108,7 @@ export default function MessagesPage() {
       setHasMore(result.hasMore);
       setNextCursor(result.nextCursor);
     } catch (err) {
-      addToast({ message: `加载更多失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `加载更多失败：${(err as Error).message}`, type: 'error' });
     }
   };
 
@@ -119,7 +119,7 @@ export default function MessagesPage() {
       addToast({ message: '操作成功', type: 'success' });
       await loadMessages(activeTab);
     } catch (err) {
-      addToast({ message: `操作失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `操作失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -134,7 +134,7 @@ export default function MessagesPage() {
       setSelectedIds(new Set());
       await loadMessages(activeTab);
     } catch (err) {
-      addToast({ message: `批量操作失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `批量操作失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -155,7 +155,7 @@ export default function MessagesPage() {
       setReplyExpanded(false);
       await loadMessages(activeTab);
     } catch (err) {
-      addToast({ message: `回复失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `回复失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -173,7 +173,7 @@ export default function MessagesPage() {
       setReplyExpanded(false);
       await loadMessages(activeTab);
     } catch (err) {
-      addToast({ message: `更新失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `更新失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -186,7 +186,7 @@ export default function MessagesPage() {
       addToast({ message: '回复已删除', type: 'success' });
       await loadMessages(activeTab);
     } catch (err) {
-      addToast({ message: `删除失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
     }
@@ -463,7 +463,7 @@ export default function MessagesPage() {
                   </div>
                   <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground flex-wrap">
                     <span>ID: {selectedMessage.id}</span>
-                    {selectedMessage.visitor_website && <span>站点: {selectedMessage.visitor_website}</span>}
+                    {selectedMessage.visitor_website && <span>站点：{selectedMessage.visitor_website}</span>}
                     {selectedMessage.visitor_ip && <span>IP: {selectedMessage.visitor_ip}</span>}
                     <span>{formatFullTime(selectedMessage.created_at)}</span>
                   </div>
@@ -613,7 +613,7 @@ export default function MessagesPage() {
                       setEditReplyContent(e.target.value);
                     }}
                     className="w-full min-h-[200px] px-5 py-3 text-sm bg-transparent border-none resize-y focus:outline-none"
-                    placeholder="输入回复内容..."
+                    placeholder="输入回复内容……"
                   />
 
                   {/* Footer */}

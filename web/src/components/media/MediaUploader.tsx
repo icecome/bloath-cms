@@ -54,7 +54,7 @@ export function MediaUploader({ uploading, quality, onUpload }: MediaUploaderPro
         <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
       )}
       <p className="text-sm text-muted-foreground">
-        {uploading ? '上传中...' : '拖拽图片到此处，或点击选择文件'}
+        {uploading ? '上传中……' : '拖拽图片到此处，或点击选择文件'}
       </p>
       <p className="text-xs text-muted-foreground mt-1">
         自动压缩为 WebP · 质量 {quality}% · 自动重命名

@@ -53,11 +53,11 @@ const DEFAULT_OPTIONS: Required<ExtractOptions> = {
 /**
  * 将 Front Matter date 字段转换为时间戳
  * 支持格式：
- * - Date 对象: TOML 解析器会将日期解析为 Date 对象
- * - ISO 8601 字符串: "2026-07-07T12:00:00+08:00"
- * - 日期字符串: "2026-07-07"
- * - 完整日期: "Fri Mar 07 2025 18:00:00 GMT+0800"
- * - 时间戳: 1688774400000
+ * - Date 对象：TOML 解析器会将日期解析为 Date 对象
+ * - ISO 8601 字符串：「2026-07-07T12:00:00+08:00」
+ * - 日期字符串：「2026-07-07」
+ * - 完整日期：「Fri Mar 07 2025 18:00:00 GMT+0800」
+ * - 时间戳：1688774400000
  */
 export function parseDateToTimestamp(dateValue?: string | number | Date): number {
   if (!dateValue) return 0;
@@ -128,7 +128,7 @@ async function readSingleFrontmatter(
     const yamlMatch = content.match(FRONTMATTER_YAML_REGEX);
     return applyExtracted(file, yamlMatch?.[1] ?? '', 'yaml');
   } catch (err) {
-    console.error(`[extractFrontMatter] 读取 ${file.name} 失败:`, err);
+    console.error(`[extractFrontMatter] 读取 ${file.name} 失败：`, err);
     if (retries < options.maxRetries) {
       await delay(500 * (retries + 1));
       return readSingleFrontmatter(file, repoInfo, options, retries + 1);
@@ -186,7 +186,7 @@ export async function extractFrontMatters(
       // 聚合端点个别文件读取失败：回退到单文件读取，避免丢失元数据
       const failedPaths = new Set(extractErrors.map((e) => e.path));
       if (failedPaths.size > 0) {
-        console.warn(`[extractFrontMatter] ${failedPaths.size} 个文件聚合失败，回退单文件读取:`,
+        console.warn(`[extractFrontMatter] ${failedPaths.size} 个文件聚合失败，回退单文件读取：`,
           [...failedPaths].join(', '));
         const failedFiles = chunk.filter((f) => f && failedPaths.has(f.path));
         const recovered = await batchFetchFallback(failedFiles, repoInfo, resolvedOptions);
@@ -207,7 +207,7 @@ export async function extractFrontMatters(
     }
     return results;
   } catch (err) {
-    console.error('[extractFrontMatter] 聚合提取失败，回退单文件读取:', err);
+    console.error('[extractFrontMatter] 聚合提取失败，回退单文件读取：', err);
     return batchFetchFallback(files, repoInfo, resolvedOptions);
   }
 }

@@ -25,7 +25,7 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
       const instance = new Vditor(editorRef.current, {
         height: '100%',
         mode: 'ir',
-        placeholder: '开始编写 Markdown 内容...',
+        placeholder: '开始编写 Markdown 内容……',
         cache: { enable: false },
         toolbarConfig: { pin: true },
         lang: 'zh_CN',
@@ -48,7 +48,7 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
       });
       vditorRef.current = instance;
     } catch (err) {
-      console.error('Vditor 初始化失败:', err);
+      console.error('Vditor 初始化失败：', err);
     }
   }, []);
 

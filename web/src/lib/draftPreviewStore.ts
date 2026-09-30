@@ -2,7 +2,7 @@
 //
 // 设计取舍：
 // - 存 localStorage 而非 S3/git：缓冲层（S3）是可选配置，无 S3 时它不可用；
-//   叠加"未预发布不能发布"的规则会导致无 S3 环境发布功能死锁。
+//   叠加「未预发布不能发布」的规则会导致无 S3 环境发布功能死锁。
 //   用 localStorage 后有无 S3 行为一致，且无需后端改动。
 // - 仅本机有效，不做多设备同步（需求确认）。
 import type { EnhancedFileItem } from './extractFrontMatter';
@@ -17,7 +17,7 @@ export interface DraftPreviewRecord {
   /** 预发布时的内容 sha（git blob sha），用于检测预发布后内容是否变化 */
   contentSha: string;
   /**
-   * 预发布时的 savedAt 兜底值。
+   * 预发布时的 savedAt 回退值。
    * 新建的缓冲项 sha 为 ''（draftMerge.ts），无法用 sha 检测变化，
    * 此时退回比对 savedAt。
    */
@@ -152,8 +152,8 @@ export function removePreviewRecord(
 /**
  * 清理孤立记录并写回。
  *
- * 分两段处理的理由：列表渲染时只应"忽略"孤立项（渲染期不写存储，且草稿可能
- * 因网络抖动暂时不在列表中），仅在用户显式操作成功后才调用本函数落盘。
+ * 分两段处理的理由：列表渲染时只应「忽略」孤立项（渲染期不写存储，且草稿可能
+ * 因网络抖动暂时不在列表中），仅在用户显式操作成功后才调用本函数写入存储。
  */
 export function pruneAndPersist(
   repo: RepoScope,
@@ -187,7 +187,7 @@ export function pruneOrphans(
  *
  * 优先用 sha 比对；sha 不可用（新建缓冲项的 sha 为 ''）时退回 savedAt。
  * 两者都不可用时保守判为未过期 —— preview-stale 的作用是提醒，
- * 误报会让用户做无谓的重新预发布；漏报由发布时的二次确认兜住。
+ * 误报会让用户做无谓的重新预发布；漏报由发布时的二次确认防护。
  */
 export function isStale(record: DraftPreviewRecord, item: EnhancedFileItem): boolean {
   if (record.contentSha && item.sha) {
@@ -215,7 +215,7 @@ export function buildPreviewRecord(item: EnhancedFileItem, previewTarget: string
     contentSha: item.sha || '',
     previewedAt: Date.now(),
   };
-  // sha 不可用时记录 savedAt 作为变更检测的兜底依据
+  // sha 不可用时记录 savedAt 作为变更检测的回退依据
   if (!item.sha && item.lastModified !== undefined) {
     record.savedAt = item.lastModified;
   }

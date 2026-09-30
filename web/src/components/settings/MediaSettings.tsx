@@ -29,14 +29,14 @@ const DUPLICATE_STRATEGIES: { value: DuplicateStrategy; label: string; desc: str
 ];
 
 const PLACEHOLDER_DOCS = [
-  { token: '{Y}', desc: '年份，4位数' },
-  { token: '{m}', desc: '月份，2位数' },
-  { token: '{d}', desc: '日期，2位数' },
-  { token: '{h}', desc: '小时，2位数' },
-  { token: '{i}', desc: '分钟，2位数' },
-  { token: '{s}', desc: '秒，2位数' },
+  { token: '{Y}', desc: '年份，4 位数' },
+  { token: '{m}', desc: '月份，2 位数' },
+  { token: '{d}', desc: '日期，2 位数' },
+  { token: '{h}', desc: '小时，2 位数' },
+  { token: '{i}', desc: '分钟，2 位数' },
+  { token: '{s}', desc: '秒，2 位数' },
   { token: '{filename}', desc: '原始文件名（无扩展名）' },
-  { token: '{str-n}', desc: 'n位随机字符串，如 {str-4}' },
+  { token: '{str-n}', desc: 'n 位随机字符串，如 {str-4}' },
 ];
 
 export function MediaSettings() {
@@ -213,7 +213,7 @@ export function MediaSettings() {
               className="flex items-center gap-1 px-3 py-1.5 text-xs bg-foreground text-white rounded-sm hover:bg-foreground/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             >
               {initializing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitBranch className="w-3.5 h-3.5" />}
-              {initializing ? '初始化中...' : '初始化分支'}
+              {initializing ? '初始化中……' : '初始化分支'}
             </button>
           </div>
           <p className="text-xs text-muted-foreground mt-1">默认分支名 {DEFAULT_BRANCH_NAME}，可自定义</p>

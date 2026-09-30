@@ -38,10 +38,10 @@ async function postPush(env: Env, payload: PushPayload): Promise<void> {
     }
     if (!resp.ok) {
       const detail = await resp.text().catch(() => '');
-      console.warn(`[vectrelService] 推送失败: HTTP ${resp.status} ${detail.slice(0, 200)}`);
+      console.warn(`[vectrelService] 推送失败：HTTP ${resp.status} ${detail.slice(0, 200)}`);
     }
   } catch (err) {
-    console.error('[vectrelService] 推送异常:', err);
+    console.error('[vectrelService] 推送异常：', err);
   }
 }
 
@@ -66,13 +66,13 @@ export async function sendPushNotification(env: Env, msg: MessageRow): Promise<v
   const time = formatBeijing(msg.created_at);
   const preview = firstLinePreview(msg.content);
   const card = [`昵称：${msg.visitor_name}`, `内容：${preview}`, `来源：${msg.page_title}`, `时间：${time}`].join(NL);
-  const detailText = [`昵称：${msg.visitor_name}`, `内容：${msg.content}`, `来源：${msg.page_title} (${msg.page_url})`, `时间：${time}`, `留言IP：${msg.visitor_ip}`, `邮箱：${msg.visitor_email}`].join(NL);
+  const detailText = [`昵称：${msg.visitor_name}`, `内容：${msg.content}`, `来源：${msg.page_title}（${msg.page_url}）`, `时间：${time}`, `留言 IP：${msg.visitor_ip}`, `邮箱：${msg.visitor_email}`].join(NL);
   await postPush(env, { title, content: card.slice(0, 1000), detail: { title, content: detailText.slice(0, 10000) }, source: '博客留言' });
 }
 
 export async function sendInboundReplyAlert(env: Env, content: string, fromEmail: string): Promise<void> {
   const preview = firstLinePreview(content);
-  const fullText = `回信人: ${fromEmail}${NL}内容: ${content.slice(0, 200)}`;
+  const fullText = `回信人：${fromEmail}${NL}内容：${content.slice(0, 200)}`;
   await postPush(env, {
     title: '收到访客邮箱回信',
     content: [`回信人：${fromEmail}`, `内容：${preview}`].join(NL),

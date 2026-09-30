@@ -26,7 +26,7 @@ export default function Pagination({
       {/* 信息文字 */}
       <div className="text-xs md:text-sm text-muted-foreground truncate">
         <span className="md:hidden">{currentPage}/{totalPages} 页</span>
-        <span className="hidden md:inline">显示 {start} - {end} 条，共 {totalItems} 条</span>
+        <span className="hidden md:inline">显示 {start} 至 {end} 条，共 {totalItems} 条</span>
       </div>
 
       {/* 桌面端：完整按钮组 */}

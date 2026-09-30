@@ -95,14 +95,14 @@ export const requireAdminAuth: MiddlewareHandler<HonoEnv> = async (c: Context<Ho
     return c.json(errorResp(ErrorCode.UNAUTHORIZED, '未登录或会话已过期'), 401);
   }
   // 身份白名单：GitHub OAuth 对任意账号开放，仅校验会话有效性等同于把管理面公开。
-  // 未配置白名单时一律拒绝，避免"忘记配置即全开"。
+  // 未配置白名单时一律拒绝，避免「忘记配置即全开」。
   const admins = getAdminLogins(c.env);
   if (admins.length === 0) {
     console.error('[auth] ADMIN_GITHUB_LOGIN 未配置，管理接口已拒绝访问');
     return c.json(errorResp(ErrorCode.UNAUTHORIZED, '管理功能未启用'), 403);
   }
   if (!admins.includes(result.githubLogin.toLowerCase())) {
-    console.warn('[auth] 非管理员账号尝试访问管理接口:', result.githubLogin);
+    console.warn('[auth] 非管理员账号尝试访问管理接口：', result.githubLogin);
     return c.json(errorResp(ErrorCode.UNAUTHORIZED, '无管理权限'), 403);
   }
   await next();

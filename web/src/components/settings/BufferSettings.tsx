@@ -41,7 +41,7 @@ export function BufferSettings() {
       await testBufferConfig(form);
       addToast({ message: 'S3 连接成功', type: 'success' });
     } catch (err) {
-      addToast({ message: `连接失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `连接失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setTesting(false);
     }
@@ -54,7 +54,7 @@ export function BufferSettings() {
       await refreshConfig();
       addToast({ message: '缓冲层配置已保存', type: 'success' });
     } catch (err) {
-      addToast({ message: `保存失败: ${(err as Error).message}`, type: 'error' });
+      addToast({ message: `保存失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setSaving(false);
     }
@@ -87,7 +87,7 @@ export function BufferSettings() {
 
       {config?.enabled && config.rand && (
         <p className="text-[10px] text-muted-foreground font-mono">
-          当前缓冲路径: {config.prefix}/{config.rand}/...
+          当前缓冲路径：{config.prefix}/{config.rand}/...
         </p>
       )}
 

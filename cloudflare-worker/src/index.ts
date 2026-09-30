@@ -18,7 +18,7 @@ const app = new Hono<HonoEnv>();
 app.use('*', requestLog);
 app.use('*', corsMiddleware);
 
-// 管理面与缓冲层禁缓存: 响应被边缘缓存会让匿名请求命中登录态结果
+// 管理面与缓冲层禁缓存：响应被边缘缓存会让匿名请求命中登录态结果
 app.use('/admin/api/*', async (c, next) => {
   await next();
   c.header('Cache-Control', 'no-store');
@@ -42,7 +42,7 @@ app.get('/api/health', async (c) => {
     await c.env.DB.prepare('SELECT 1').first();
     d1Connected = true;
   } catch (err) {
-    console.error('[health] D1 连接失败:', err);
+    console.error('[health] D1 连接失败：', err);
   }
   return c.json(success({ status: 'ok', d1: d1Connected ? 'connected' : 'disconnected' }));
 });

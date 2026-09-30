@@ -9,7 +9,7 @@ export function sanitizePath(input: string): string {
 /**
  * 校验并清理文件 slug，防止路径穿越
  * - 去除 .md 扩展名
- * - 禁止包含路径分隔符 (/ \) 和 ..
+ * - 禁止包含路径分隔符（/、\）和 ..
  * @throws Error slug 包含非法字符时抛出异常
  */
 export function sanitizeSlug(slug: string): string {

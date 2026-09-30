@@ -7,7 +7,7 @@ export type Envelope =
 
 export interface HttpRequestOptions extends RequestInit {
   timeoutMs?: number;
-  /** 跳过"响应数据为空"校验，用于 204/void 响应 */
+  /** 跳过「响应数据为空」校验，用于 204/void 响应 */
   skipDataCheck?: boolean;
 }
 
@@ -15,7 +15,7 @@ export interface HttpRequestOptions extends RequestInit {
  * 携带 HTTP 状态码的错误。
  * 调用方应按 `err.status` 判断状态，而不是匹配 message 文本：
  * 本模块仅在响应体不是 JSON 时才生成含状态码的 message，
- * 走 JSON 信封的响应会抛出业务 message（不含 "404" 等字样），
+ * 走 JSON 信封的响应会抛出业务 message（不含「404」等字样），
  * 依赖文本判断的分支会永久失效。
  *
  * 注：不用构造函数参数属性（`constructor(public status: number)`）——
