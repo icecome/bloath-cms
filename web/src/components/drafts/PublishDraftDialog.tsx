@@ -8,6 +8,8 @@ import { AlertTriangle } from 'lucide-react';
 export interface PublishConfirmEntry {
   path: string;
   name: string;
+  /** 草稿当前位置（缓冲或仓库中的源路径） */
+  currentPath?: string;
   /** 已预发布的目标目录 */
   previewTarget: string;
   /** 预发布后内容是否已变更 */
@@ -34,7 +36,7 @@ export function PublishDraftDialog({ entries, loading, onConfirm, onClose }: Pro
           发布 {entries.length} 篇草稿
         </h3>
         <p className="text-xs text-muted-foreground mb-3">
-          以下草稿将按各自预发布的目标移动并提交。如需修改目标，请先取消预发布。
+          以下草稿将按「发布至」列的目标路径提交。如需修改目标，请先取消预发布。
         </p>
 
         {staleEntries.length > 0 && (
@@ -54,13 +56,25 @@ export function PublishDraftDialog({ entries, loading, onConfirm, onClose }: Pro
               {entries.map((entry) => (
                 <div
                   key={entry.path}
-                  className="flex items-center gap-2 px-3 py-2 border border-border rounded-sm"
+                  className="flex items-start gap-2 px-3 py-2 border border-border rounded-sm"
                 >
-                  <span className="text-sm text-foreground truncate flex-1">{entry.name}</span>
-                  {entry.stale && <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />}
-                  <span className="text-[11px] font-mono text-muted-foreground truncate max-w-[45%]">
-                    → {entry.previewTarget || '（未指定）'}
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm text-foreground truncate">{entry.name}</span>
+                      {entry.stale && <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />}
+                    </div>
+                    {entry.currentPath && (
+                      <p className="text-[11px] font-mono text-muted-foreground truncate mt-0.5">
+                        当前位置：{entry.currentPath}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0 max-w-[45%]">
+                    <span className="text-[10px] text-muted-foreground block">发布至</span>
+                    <span className="text-[11px] font-mono text-foreground break-all">
+                      {entry.previewTarget || '（未指定）'}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>

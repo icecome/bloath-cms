@@ -903,6 +903,7 @@ export default function DraftsPage() {
             .map((f) => ({
               path: f.path,
               name: f.name,
+              currentPath: f.path,
               previewTarget: f.previewTarget ?? '',
               stale: (f.previewState ?? 'draft') === 'preview-stale',
             }))}
