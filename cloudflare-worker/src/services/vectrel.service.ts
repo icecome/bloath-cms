@@ -62,7 +62,7 @@ function firstLinePreview(text: string): string {
 }
 
 export async function sendPushNotification(env: Env, msg: MessageRow): Promise<void> {
-  const title = `博客新留言 - ${msg.visitor_name}`.slice(0, 200);
+  const title = `博客新留言：${msg.visitor_name}`.slice(0, 200);
   const time = formatBeijing(msg.created_at);
   const preview = firstLinePreview(msg.content);
   const card = [`昵称：${msg.visitor_name}`, `内容：${preview}`, `来源：${msg.page_title}`, `时间：${time}`].join(NL);

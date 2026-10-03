@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import type { MessageRow, ReplyRow, MessageWithReplies, ListParams, PaginatedResult } from '../comment/types';
-import { ErrorCode } from '../comment/types';
+import { ErrorCode, MESSAGE_STATUS_LABEL } from '../comment/types';
 import { ApiError } from '../comment/utils/errors';
 import { validateCreateMessage } from '../comment/utils/validators';
 import { verifyToken } from './turnstile.service';
@@ -127,6 +127,10 @@ export const ACTION_STATUS_MAP: Record<string, string> = {
   approve: 'approved', feature: 'featured', spam: 'spam', restore: 'pending',
 };
 
+/** 状态值转界面文案；未知值原样返回，避免错误提示暴露英文枚举 */
+const statusLabel = (status: string): string =>
+  (MESSAGE_STATUS_LABEL as Record<string, string | undefined>)[status] ?? status;
+
 export async function updateMessageStatus(db: D1Database, id: number, action: string, operator: string): Promise<void> {
   if (!VALID_ACTIONS.includes(action as typeof VALID_ACTIONS[number])) {
     throw new ApiError(ErrorCode.INVALID_STATUS_TRANSITION, `无效的操作：${action}`, 400);
@@ -142,7 +146,7 @@ export async function updateMessageStatus(db: D1Database, id: number, action: st
   };
   const allowedFrom = validTransitions[targetStatus] || [];
   if (!allowedFrom.includes(existing.status)) {
-    throw new ApiError(ErrorCode.INVALID_STATUS_TRANSITION, `无法从「${existing.status}」转换为「${targetStatus}」`, 400);
+    throw new ApiError(ErrorCode.INVALID_STATUS_TRANSITION, `无法从「${statusLabel(existing.status)}」转换为「${statusLabel(targetStatus)}」`, 400);
   }
   if (targetStatus === 'spam') {
     const recordStmts = await buildRecordSpamSourceStmts(db, { name: existing.visitor_name, email: existing.visitor_email || '', ip: existing.visitor_ip || '', content: existing.content || '' });

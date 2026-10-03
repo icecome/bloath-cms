@@ -15,7 +15,7 @@ export const errorHandler = (err: Error, c: Context<HonoEnv>): Response => {
     return c.json(error(ErrorCode.VALIDATION_ERROR, err.message), err.statusCode as ContentfulStatusCode);
   }
   if (err instanceof ZodError) {
-    const message = err.errors[0]?.message || '参数校验失败';
+    const message = err.errors[0]?.message || '请求参数校验失败';
     return c.json(error(ErrorCode.VALIDATION_ERROR, message), 400);
   }
   console.error('[errorHandler] 未捕获异常：', err);

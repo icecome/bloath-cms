@@ -120,7 +120,7 @@ authApp.get('/api/auth/callback', async (c: Context<HonoEnv>) => {
 // POST /api/auth/logout
 authApp.post('/api/auth/logout', async (c: Context<HonoEnv>) => {
   if (!checkCsrf(c.req.raw)) {
-    return c.json({ error: 'CSRF validation failed' }, 403);
+    return c.json({ error: '请求来源校验未通过，请刷新页面后重试' }, 403);
   }
   // 服务端吊销：仅清 cookie 无法使被窃取的 token 失效，登出必须同时推进该账号的吊销门槛
   const sessionToken = getSessionTokenFromCookie(c.req.raw);
@@ -142,7 +142,7 @@ authApp.post('/api/auth/logout', async (c: Context<HonoEnv>) => {
 // 这里在 authenticate 之前先手动探测 dev token，绕过指纹校验
 authApp.get('/api/me', async (c: Context<HonoEnv>) => {
   if (!checkCsrf(c.req.raw)) {
-    return c.json({ error: 'CSRF validation failed' }, 403);
+    return c.json({ error: '请求来源校验未通过，请刷新页面后重试' }, 403);
   }
   const sessionToken = getSessionTokenFromCookie(c.req.raw);
   if (!sessionToken) {
@@ -207,7 +207,7 @@ authApp.delete('/api/auth/devices/:fingerprint', async (c: Context<HonoEnv>) => 
   if (authResult instanceof Response) return authResult;
   const fingerprint = decodeURIComponent(c.req.param('fingerprint') || '');
   if (!fingerprint || !/^[a-f0-9]{16}$/i.test(fingerprint)) return c.json(error(ErrorCode.VALIDATION_ERROR, '无效的设备标识'), 400);
-  if (fingerprint === authResult.deviceFingerprint) return c.json(error(ErrorCode.VALIDATION_ERROR, '不能删除当前设备，请使用登出'), 400);
+  if (fingerprint === authResult.deviceFingerprint) return c.json(error(ErrorCode.VALIDATION_ERROR, '不能删除当前设备，请改用登出'), 400);
   if (!c.env.DEVICES_KV) return c.json(error(ErrorCode.VALIDATION_ERROR, '设备管理未启用'), 400);
   const ok = await deleteDeviceRecord(c.env.DEVICES_KV, fingerprint);
   if (!ok) return c.json(error(ErrorCode.INTERNAL_ERROR, '删除失败'), 500);

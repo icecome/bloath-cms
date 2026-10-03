@@ -1,19 +1,15 @@
 import type { AdminMessage } from './commentApi';
+import { MESSAGE_STATUS_LABEL } from '../../../shared/types';
 
 export const STATUS_TABS = [
   { key: '', label: '全部' },
-  { key: 'pending', label: '待审核' },
-  { key: 'approved', label: '已通过' },
-  { key: 'featured', label: '精选' },
-  { key: 'spam', label: '垃圾' },
+  { key: 'pending', label: MESSAGE_STATUS_LABEL.pending },
+  { key: 'approved', label: MESSAGE_STATUS_LABEL.approved },
+  { key: 'featured', label: MESSAGE_STATUS_LABEL.featured },
+  { key: 'spam', label: MESSAGE_STATUS_LABEL.spam },
 ] as const;
 
-export const STATUS_LABEL: Record<string, string> = {
-  pending: '待审核',
-  approved: '已通过',
-  featured: '精选',
-  spam: '垃圾',
-};
+export const STATUS_LABEL: Record<string, string> = MESSAGE_STATUS_LABEL;
 
 export type ThreadPart = {
   type: 'visitor' | 'blogger' | 'inbound';

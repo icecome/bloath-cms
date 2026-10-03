@@ -87,7 +87,7 @@ adminApp.post('/api/admin/batch', async (c: Context<HonoEnv>) => {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请选择要操作的留言'), 400);
   }
   if (ids.length > 100 || !ids.every((id) => Number.isInteger(id) && id > 0)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '批量操作上限 100 条且 ID 须为正整数'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '批量操作最多 100 条，且 ID 须为正整数'), 400);
   }
   if (!ADMIN_BATCH_ACTIONS.includes(action)) {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '无效的操作'), 400);
@@ -95,9 +95,9 @@ adminApp.post('/api/admin/batch', async (c: Context<HonoEnv>) => {
   // 状态变更与审计日志由 service 在同一批次提交，此处不再单独写入
   const { missingIds } = await batchOperateMessages(c.env.DB, ids, action);
   if (missingIds.length > 0) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, `以下留言不存在：${missingIds.join(', ')}`), 404);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, `以下留言不存在：${missingIds.join('、')}`), 404);
   }
-  return c.json(success(null, `已批量${action === 'delete' ? '删除' : ACTION_STATUS_MAP[action] || action} ${ids.length} 条`));
+  return c.json(success(null, `已批量${action === 'delete' ? '删除' : ACTION_STATUS_MAP[action] || '处理'} ${ids.length} 条留言`));
 });
 
 // GET /api/admin/settings/push
@@ -106,8 +106,8 @@ adminApp.get('/api/admin/settings/push', async (c: Context<HonoEnv>) => {
 });
 
 const pushSettingsSchema = z.object({
-  enabled: z.boolean({ required_error: '参数错误：enabled 需为布尔' }),
-  channelIds: z.array(z.number().int().positive(), { required_error: '参数错误：channelIds 需为正整数数组' }),
+  enabled: z.boolean({ required_error: 'enabled 须为布尔值' }),
+  channelIds: z.array(z.number().int().positive(), { required_error: 'channelIds 须为正整数数组' }),
   emailEnabled: z.boolean().optional(),
 });
 
@@ -116,7 +116,7 @@ adminApp.put('/api/admin/settings/push', async (c: Context<HonoEnv>) => {
   const body = await c.req.json().catch(() => null);
   const parsed = pushSettingsSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, parsed.error.errors[0]?.message ?? '参数错误'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, parsed.error.errors[0]?.message ?? '请求参数无效'), 400);
   }
   const current = await getBlogPushSetting(c.env.DB);
   await saveBlogPushSetting(c.env.DB, {

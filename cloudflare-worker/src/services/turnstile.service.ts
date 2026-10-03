@@ -13,8 +13,8 @@ export async function verifyToken(token: string, ip: string, secret: string): Pr
     return data.success === true;
   } catch (err) {
     if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
-      throw new ApiError(ErrorCode.TURNSTILE_FAILED, '人机验证请求超时', 500);
+      throw new ApiError(ErrorCode.TURNSTILE_FAILED, '人机验证请求超时，请稍后重试', 500);
     }
-    throw new ApiError(ErrorCode.TURNSTILE_FAILED, '人机验证服务异常', 500);
+    throw new ApiError(ErrorCode.TURNSTILE_FAILED, '人机验证服务异常，请稍后重试', 500);
   }
 }

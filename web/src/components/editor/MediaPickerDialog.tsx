@@ -44,7 +44,7 @@ export default function MediaPickerDialog({ open, onClose, onPick }: MediaPicker
         setItems(media);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : '媒体库加载失败');
+        if (!cancelled) setError(err instanceof Error ? err.message : '媒体库加载失败，请关闭后重试');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -83,7 +83,7 @@ export default function MediaPickerDialog({ open, onClose, onPick }: MediaPicker
               {error}
             </p>
           ) : items.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-8">媒体库暂无图片</p>
+            <p className="text-xs text-muted-foreground text-center py-8">媒体库中暂无图片</p>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {items.map((item) => (

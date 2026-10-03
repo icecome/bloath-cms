@@ -192,7 +192,7 @@ export function DirectoryTreePicker({ nodes, value, onChange, placeholder }: Pro
       />
       {isNewDir && (
         <p className="text-[11px] text-muted-foreground">
-          该目录当前不存在，发布时将自动创建
+          该目录当前不存在，发布时会自动创建
         </p>
       )}
     </div>

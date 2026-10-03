@@ -126,7 +126,7 @@ export default function EditorPage() {
       })
       .catch((err) => {
         console.error('加载文件失败：', err);
-        setError(err.message || '加载失败');
+        setError(err.message || '文章加载失败，请返回列表后重试');
       })
       .finally(() => setLoading(false));
   }, [isNew, slug, user, basePath, owner, repo, branch, hasLoadedOnce, bufferEnabled, bufferConfigLoading]);
@@ -156,7 +156,7 @@ export default function EditorPage() {
       delete next.url;
     }
     if (result.coreDropped) {
-      addToast({ message: '核心词需为 a-z0-9，已忽略无效字符', type: 'warning' });
+      addToast({ message: '核心词仅限字母 a 至 z 与数字 0 至 9，已忽略无效字符', type: 'warning' });
     }
     return next;
   };
@@ -217,7 +217,7 @@ export default function EditorPage() {
             setCurrentFilePath(newPath);
             setCurrentFileSha('');
             syncUrlState(effectiveFm.url);
-            addToast({ message: '已存入缓冲（文件名已更新）', type: 'success' });
+            addToast({ message: '已存入缓冲，文件名已更新', type: 'success' });
             navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}${basePath ? `&basePath=${basePath}` : ''}`);
           }
         } else {
@@ -254,7 +254,7 @@ export default function EditorPage() {
           setCurrentFilePath(newPath);
           setCurrentFileSha('');
           syncUrlState(effectiveFm.url);
-          addToast({ message: '保存成功（文件名已更新）', type: 'success' });
+          addToast({ message: '保存成功，文件名已更新', type: 'success' });
           navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}${basePath ? `&basePath=${basePath}` : ''}`);
         }
       } else {
@@ -278,7 +278,7 @@ export default function EditorPage() {
             setCurrentFilePath(`${draftDir}/${targetSlug}.md`);
             navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}&basePath=${encodeURIComponent(draftDir)}`);
           } else {
-            const toastMsg = isContentLibraryArticle ? '保存成功（将触发重新部署）' : '草稿保存成功';
+            const toastMsg = isContentLibraryArticle ? '保存成功，将触发重新部署' : '草稿保存成功';
             addToast({ message: toastMsg, type: 'success' });
           }
         }
@@ -311,10 +311,10 @@ export default function EditorPage() {
         const onlyInBuffer = !currentFileSha;
         if (onlyInBuffer) {
           await writeBufferFile({ owner, repo, branch, path: currentFilePath, op: 'delete' });
-          addToast({ message: '已删除（未提交到仓库）', type: 'success' });
+          addToast({ message: '已删除，未提交到仓库', type: 'success' });
         } else {
           await writeBufferFile({ owner, repo, branch, path: trashFile, op: 'move', fromPath: currentFilePath });
-          addToast({ message: '已存入缓冲（移至回收站）', type: 'success' });
+          addToast({ message: '已存入缓冲，移至回收站', type: 'success' });
         }
         await refreshChanges();
         handleBack();
@@ -322,7 +322,7 @@ export default function EditorPage() {
       }
       await commitBatch({
         owner, repo, branch,
-        message: buildCommitMessage(`移至回收站: ${targetSlug}`, { skipCi: true }),
+        message: buildCommitMessage(`移至回收站：${targetSlug}`, { skipCi: true }),
         ops: [{ op: 'move', fromPath: currentFilePath, path: trashFile }],
         userName: user?.login
       });
@@ -430,7 +430,7 @@ export default function EditorPage() {
           >
             <Save className="w-4 h-4" />
             <span className="hidden md:inline">
-              {saving ? '保存中……' : bufferConfigLoading ? '缓冲就绪中……' : bufferEnabled ? '保存到缓冲' : '保存'}
+              {saving ? '保存中……' : bufferConfigLoading ? '缓冲配置加载中……' : bufferEnabled ? '保存到缓冲' : '保存'}
             </span>
           </button>
           {!isNew && (

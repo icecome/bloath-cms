@@ -397,7 +397,7 @@ export default function DraftsPage() {
       addToast({
         message: bufferedCount > 0
           ? `已移动 ${filesToMove.length} 篇草稿，${bufferedCount} 篇缓冲中的文章未处理`
-          : `成功移动 ${filesToMove.length} 篇草稿`,
+          : `已移动 ${filesToMove.length} 篇草稿`,
         type: 'success'
       });
       setSelectedFiles(new Set());
@@ -451,7 +451,7 @@ export default function DraftsPage() {
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           branch: selectedRepo.branch,
-          message: buildCommitMessage(`移至回收站: ${repoItems.length} 篇草稿`, { skipCi: true }),
+          message: buildCommitMessage(`移至回收站：${repoItems.length} 篇草稿`, { skipCi: true }),
           ops: repoItems.map((file, i) => ({
             op: 'move',
             fromPath: file.path,
@@ -516,7 +516,7 @@ export default function DraftsPage() {
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         branch: selectedRepo.branch,
-        message: buildCommitMessage(`移至回收站: ${file.name}`, { skipCi: true }),
+        message: buildCommitMessage(`移至回收站：${file.name}`, { skipCi: true }),
         ops: [{ op: 'move', fromPath: file.path, path: trashFile }],
         userName: user?.login
       });
@@ -610,7 +610,7 @@ export default function DraftsPage() {
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           branch: selectedRepo.branch,
-          message: buildCommitMessage(`重命名: ${oldName} -> ${newName}`, { skipCi: true }),
+          message: buildCommitMessage(`重命名：${oldName} → ${newName}`, { skipCi: true }),
           ops: [
             { op: 'write', path: newPath, content: fileContent },
             { op: 'delete', path: renameFile.path }

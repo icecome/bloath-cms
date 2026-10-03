@@ -85,7 +85,7 @@ export function PreviewDraftDialog({
           预发布 {entries.length} 篇草稿
         </h3>
         <p className="text-xs text-muted-foreground mb-1">
-          预发布仅标记目标位置，不会产生提交；确认后需再点「发布」或「发布变更」才会移至目标目录。
+          预发布仅标记目标位置，不会产生提交；确认后还需点击「发布」或「发布变更」，才会移至目标目录。
         </p>
         {skippedCount > 0 && (
           <p className="text-xs text-muted-foreground mb-2">已跳过 {skippedCount} 篇已预发布的草稿。</p>

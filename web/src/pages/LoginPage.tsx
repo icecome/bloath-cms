@@ -17,7 +17,7 @@ function LoginPage() {
       <div className="w-full max-w-md p-8">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-semibold text-foreground">Bloath CMS</h1>
-          <p className="text-base text-muted-foreground mt-2">Hugo 博客内容管理系统</p>
+          <p className="text-base text-muted-foreground mt-2">静态博客内容管理系统</p>
         </div>
 
         <button
@@ -31,7 +31,7 @@ function LoginPage() {
         </button>
 
         <p className="text-xs text-muted-foreground text-center mt-4">
-          内容存储在您的 GitHub 仓库中，安全可控
+          内容存储在你的 GitHub 仓库中，安全可控
         </p>
       </div>
     </div>

@@ -9,7 +9,7 @@ const createMessageSchema = z.object({
   visitor_name: z.string().min(1, '昵称不能为空').max(20, '昵称不能超过 20 个字符'),
   visitor_email: z
     .union([
-      z.string().max(100, '邮箱不能超过 100 个字符').email({ message: '邮箱格式不正确' }),
+      z.string().max(100, '邮箱不能超过 100 个字符').email({ message: '邮箱格式有误' }),
       z.literal(''),
     ])
     .optional()
@@ -18,9 +18,9 @@ const createMessageSchema = z.object({
   quoted_text: z.string().max(500, '引用内容不能超过 500 个字符').optional().default(''),
   page_url: z
     .string()
-    .url('页面 URL 格式不正确')
+    .url('页面 URL 格式有误')
     .max(500, '页面 URL 不能超过 500 个字符')
-    .refine((val) => /^https?:\/\//.test(val), { message: '页面 URL 仅支持 http/https 协议' }),
+    .refine((val) => /^https?:\/\//.test(val), { message: '页面 URL 仅支持 http 或 https 协议' }),
   visitor_website: z
     .string()
     .max(200, '站点地址不能超过 200 个字符')
@@ -32,7 +32,7 @@ const createMessageSchema = z.object({
         if (!/^https?:\/\/[^\s]+\.[^\s]+/.test(val)) return false;
         try { return isPublicWebHost(new URL(val).hostname); } catch { return false; }
       },
-      { message: '站点地址格式不正确' }
+      { message: '站点地址格式有误' }
     ),
   page_title: z.string().min(1, '页面标题不能为空').max(200, '页面标题不能超过 200 个字符'),
   turnstile_token: z.string().optional().default(''),

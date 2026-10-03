@@ -116,7 +116,7 @@ export default function MessagesPage() {
     setActionLoading(true);
     try {
       await patchMessageAction(id, action);
-      addToast({ message: '操作成功', type: 'success' });
+      addToast({ message: '操作已完成', type: 'success' });
       await loadMessages(activeTab);
     } catch (err) {
       addToast({ message: `操作失败：${(err as Error).message}`, type: 'error' });
@@ -130,7 +130,7 @@ export default function MessagesPage() {
     setActionLoading(true);
     try {
       await batchOperateMessages([...selectedIds], action);
-      addToast({ message: `已批量操作 ${selectedIds.size} 条`, type: 'success' });
+      addToast({ message: `已批量处理 ${selectedIds.size} 条留言`, type: 'success' });
       setSelectedIds(new Set());
       await loadMessages(activeTab);
     } catch (err) {
@@ -149,7 +149,7 @@ export default function MessagesPage() {
     setActionLoading(true);
     try {
       await createReply(id, replyContent.trim());
-      addToast({ message: '回复成功', type: 'success' });
+      addToast({ message: '回复已发送', type: 'success' });
       setReplyingId(null);
       setReplyContent('');
       setReplyExpanded(false);

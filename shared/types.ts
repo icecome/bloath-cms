@@ -138,6 +138,14 @@ export const FRONTMATTER_TOML_REGEX = /^\+\+\+\r?\n([\s\S]*?)\r?\n\+\+\+/;
 
 export type MessageStatus = 'pending' | 'approved' | 'featured' | 'spam';
 
+/** 留言状态的界面文案（前后端共用，避免错误提示与列表标签出现两套译名） */
+export const MESSAGE_STATUS_LABEL: Record<MessageStatus, string> = {
+  pending: '待审核',
+  approved: '已通过',
+  featured: '精选',
+  spam: '垃圾留言',
+};
+
 /** replies 表行结构 */
 export interface MessageReplyRow {
   id: number;

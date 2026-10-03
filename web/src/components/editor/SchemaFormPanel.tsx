@@ -132,7 +132,7 @@ export default function SchemaFormPanel({ frontmatter, setFm, profile }: SchemaF
         );
       })}
       <p className="text-[10px] text-muted-foreground border-t border-border pt-2">
-        当前站点：{profile.label} · 表单未覆盖的已有字段会原样保留
+        当前站点：{profile.label} · 表单未覆盖的字段会原样保留
       </p>
     </div>
   );
@@ -654,7 +654,7 @@ function CustomFieldsField({ frontmatter, setFm }: {
           </div>
         ))}
         {rows.length === 0 && (
-          <p className="text-xs text-muted-foreground">暂无自定义字段，点击上方「添加」按钮创建</p>
+          <p className="text-xs text-muted-foreground">暂无自定义字段，点击上方「添加」按钮即可创建</p>
         )}
       </div>
     </div>

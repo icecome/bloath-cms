@@ -362,7 +362,7 @@ export async function createBranch(
   sourceBranch: string = 'main'
 ): Promise<void> {
   if (!isValidGitRefName(branchName)) {
-    throw new GithubApiError('分支名包含非法字符', 400);
+    throw new GithubApiError('分支名包含无效字符', 400);
   }
 
   // 获取源分支最新 commit SHA

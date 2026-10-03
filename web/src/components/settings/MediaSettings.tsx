@@ -47,7 +47,7 @@ export function MediaSettings() {
 
   const handleInitBranch = async () => {
     if (!selectedRepo) {
-      addToast({ message: '请先在仪表盘选择博客仓库', type: 'warning' });
+      addToast({ message: '请先在侧边栏选择博客仓库', type: 'warning' });
       return;
     }
     const branchName = mediaConfig.imageBranchName || DEFAULT_BRANCH_NAME;
@@ -65,7 +65,7 @@ export function MediaSettings() {
       if (msg.includes('已存在')) {
         addToast({ message: `分支 ${branchName} 已存在，可直接使用`, type: 'success' });
       } else {
-        addToast({ message: msg || '初始化失败', type: 'error' });
+        addToast({ message: msg || `分支 ${branchName} 初始化失败`, type: 'error' });
       }
     } finally {
       setInitializing(false);
@@ -126,7 +126,7 @@ export function MediaSettings() {
             <Image className="w-3 h-3" />
             图床仓库
           </div>
-          <p className="text-xs text-muted-foreground mb-3">图片将上传到此 GitHub 仓库，请确保 Token 有该仓库的写入权限</p>
+          <p className="text-xs text-muted-foreground mb-3">图片将上传到此 GitHub 仓库，请确保 Token 拥有该仓库的写入权限</p>
           <div className="flex gap-2">
             <input
               type="text"
@@ -169,7 +169,7 @@ export function MediaSettings() {
               当前仓库：<code className="text-foreground font-mono">{selectedRepo.owner}/{selectedRepo.repo}</code>
             </p>
           ) : (
-            <p className="text-xs text-amber-600 mb-3">请先在仪表盘选择博客仓库</p>
+            <p className="text-xs text-amber-600 mb-3">请先在侧边栏选择博客仓库</p>
           )}
           <input
             type="text"
@@ -178,7 +178,7 @@ export function MediaSettings() {
             className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
             placeholder={DEFAULT_MEDIA_PATH}
           />
-          <p className="text-xs text-muted-foreground mt-1">默认 {DEFAULT_MEDIA_PATH}，Hugo 博客可填 static/images</p>
+          <p className="text-xs text-muted-foreground mt-1">默认为 {DEFAULT_MEDIA_PATH}；若为 Hugo 博客，可填 static/images</p>
         </section>
       )}
 
@@ -196,7 +196,7 @@ export function MediaSettings() {
               当前仓库：<code className="text-foreground font-mono">{selectedRepo.owner}/{selectedRepo.repo}</code>
             </p>
           ) : (
-            <p className="text-xs text-amber-600 mb-3">请先在仪表盘选择博客仓库</p>
+            <p className="text-xs text-amber-600 mb-3">请先在侧边栏选择博客仓库</p>
           )}
           <div className="flex gap-2">
             <input
@@ -277,7 +277,7 @@ export function MediaSettings() {
           />
           <span className="text-xs text-foreground font-mono w-8 text-right">{mediaConfig.quality}%</span>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">WebP 输出质量，值越高画质越好但文件越大</p>
+        <p className="text-xs text-muted-foreground mt-1">WebP 输出质量，值越高画质越好，文件也越大</p>
       </section>
 
       <section>

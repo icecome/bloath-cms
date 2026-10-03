@@ -2,7 +2,7 @@
 
 export const MEDIA_PAGE_SIZE = 40;
 export const MAX_IMAGE_DIM = 4096;
-export const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+export const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 export interface MediaFile {
   name: string;
@@ -30,7 +30,7 @@ export function compressImage(file: File, quality: number): Promise<Blob> {
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         URL.revokeObjectURL(url);
-        reject(new Error('Canvas 不可用'));
+        reject(new Error('当前浏览器不支持 Canvas，无法压缩图片'));
         return;
       }
       ctx.drawImage(img, 0, 0, width, height);
@@ -38,7 +38,7 @@ export function compressImage(file: File, quality: number): Promise<Blob> {
         (blob) => {
           URL.revokeObjectURL(url);
           if (blob) resolve(blob);
-          else reject(new Error('压缩失败'));
+          else reject(new Error('图片压缩失败，请更换图片后重试'));
         },
         'image/webp',
         quality / 100
@@ -46,7 +46,7 @@ export function compressImage(file: File, quality: number): Promise<Blob> {
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('图片加载失败'));
+      reject(new Error('图片加载失败，请确认文件未损坏'));
     };
     img.src = url;
   });
@@ -60,7 +60,7 @@ export function blobToBase64(blob: Blob): Promise<string> {
       const commaIndex = result.indexOf(',');
       resolve(commaIndex >= 0 ? result.substring(commaIndex + 1) : result);
     };
-    reader.onerror = () => reject(new Error('Base64 转换失败'));
+    reader.onerror = () => reject(new Error('图片编码失败，请重新选择文件'));
     reader.readAsDataURL(blob);
   });
 }

@@ -79,7 +79,7 @@ export default function TrashPage() {
         ops: [{ op: 'move', fromPath: file.path, path: newPath }],
         userName: user?.login
       });
-      addToast({ message: `已将 ${file.name} 移动到 ${targetDir}`, type: 'success' });
+      addToast({ message: `已将 ${file.name} 恢复到 ${targetDir}`, type: 'success' });
       clearCache(selectedRepo);
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
@@ -209,7 +209,7 @@ export default function TrashPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-destructive">
             <p className="text-sm text-foreground mb-4">
-              确定要永久删除 {singleDeleteFile.name} 吗？<br />
+              确定要永久删除「{singleDeleteFile.name}」吗？<br />
               <span className="text-destructive">此操作不可恢复。</span>
             </p>
             <div className="flex justify-end gap-2">

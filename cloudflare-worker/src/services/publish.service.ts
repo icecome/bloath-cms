@@ -110,7 +110,7 @@ export async function publishBuffer(
 
   if (ops.length > 0) {
     const author = buildCommitAuthor(userName);
-    const message = `发布缓冲变更 (${ops.length} 项)`;
+    const message = `发布缓冲变更（${ops.length} 项）`;
     const result = await batchCommit(githubToken, owner, repo, branch, message, ops, author);
     commitSha = result.sha;
     published = ops.length;

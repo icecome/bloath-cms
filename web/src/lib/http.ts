@@ -34,11 +34,11 @@ export class HttpError extends Error {
 export function parseEnvelope<T>(payload: Envelope): T {
   if (typeof (payload as { code?: unknown }).code === 'number') {
     const body = payload as { code: number; message: string; data: T };
-    if (body.code !== 0) throw new Error(body.message || '请求失败');
+    if (body.code !== 0) throw new Error(body.message || '请求失败，请稍后重试');
     return body.data;
   }
   const body = payload as { success: boolean; data?: T; error?: string };
-  if (body.success === false) throw new Error(body.error || '请求失败');
+  if (body.success === false) throw new Error(body.error || '请求失败，请稍后重试');
   return body.data as T;
 }
 
@@ -65,8 +65,8 @@ export async function requestJson<T>(
       signal: controller.signal,
     });
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw new Error('请求超时');
-    throw new Error('网络连接失败');
+    if (err instanceof DOMException && err.name === 'AbortError') throw new Error('请求超时，请检查网络后重试');
+    throw new Error('网络连接失败，请检查网络后重试');
   } finally {
     clearTimeout(timer);
   }
@@ -97,7 +97,7 @@ export async function requestJson<T>(
   try {
     const data = parseEnvelope<T>(payload);
     if (!skipDataCheck && data === undefined) {
-      throw new Error('响应数据为空');
+      throw new Error('响应数据为空，请稍后重试');
     }
     return data;
   } catch (err) {

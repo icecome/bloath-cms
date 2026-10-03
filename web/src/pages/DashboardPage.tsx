@@ -184,7 +184,7 @@ if (!currentDir) {
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         branch: selectedRepo.branch,
-        message: buildCommitMessage(`移至回收站: ${filesToDelete.length} 篇文章`, { skipCi: true }),
+        message: buildCommitMessage(`移至回收站：${filesToDelete.length} 篇文章`, { skipCi: true }),
         ops: filesToDelete.map((f, i) => ({
           op: 'move',
           fromPath: f.path,
@@ -237,7 +237,7 @@ if (!selectedRepo || !currentDir) return;
         owner: selectedRepo.owner,
         repo: selectedRepo.repo,
         branch: selectedRepo.branch,
-        message: buildCommitMessage(`移至回收站: ${file.name}`, { skipCi: true }),
+        message: buildCommitMessage(`移至回收站：${file.name}`, { skipCi: true }),
         ops: [{ op: 'move', fromPath: file.path, path: trashPath }],
         userName: user?.login
       });
@@ -304,7 +304,7 @@ if (!selectedRepo || !currentDir) return;
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="按文件名或提交信息筛选……"
+              placeholder="按文件名或路径筛选……"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
@@ -356,7 +356,7 @@ if (!selectedRepo || !currentDir) return;
             {/* 桌面端表头 */}
             <div className="hidden md:flex items-center py-3 px-4 text-sm font-medium text-muted-foreground bg-accent border-b border-border">
               <div className="w-[40%]">文件名</div>
-              <div className="w-[40%]">提交路径</div>
+              <div className="w-[40%]">路径</div>
               <div className="w-[20%] text-right">操作</div>
             </div>
 

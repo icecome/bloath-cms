@@ -22,7 +22,7 @@ inboundApp.post('/api/inbound/replies', async (c: Context<HonoEnv>) => {
   try {
     event = JSON.parse(rawBody);
   } catch {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '非法请求体'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
   }
 
   if (event.type !== 'email.received') {

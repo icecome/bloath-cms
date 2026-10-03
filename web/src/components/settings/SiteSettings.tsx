@@ -93,7 +93,7 @@ export function SiteSettings() {
     const profile = listProfiles().find((p) => p.id === profileId);
     if (!profile || profile.contentPaths.length === 0) return;
     updateConfig({ paths: [...profile.contentPaths] });
-    addToast({ message: `已应用 ${profile.label} 内容路径：${profile.contentPaths.join(', ')}`, type: 'success' });
+    addToast({ message: `已应用 ${profile.label} 内容路径：${profile.contentPaths.join('、')}`, type: 'success' });
   }, [profileId, updateConfig, addToast]);
 
   const handleStrategyChange = useCallback((next: DeployStrategy) => {
@@ -120,7 +120,7 @@ export function SiteSettings() {
       addToast({ message: '部署已触发，可在 GitHub Actions 查看进度', type: 'success' });
     } catch (err) {
       addToast({
-        message: `触发失败：${(err as Error).message}。请确认 workflow 含 workflow_dispatch 触发器。`,
+        message: `触发失败：${(err as Error).message}。请确认该 workflow 含 workflow_dispatch 触发器。`,
         type: 'error'
       });
     } finally {
@@ -134,7 +134,7 @@ export function SiteSettings() {
       <section className="space-y-2">
         <h3 className="text-sm font-medium text-foreground">站点 Profile</h3>
         <p className="text-xs text-muted-foreground">
-          决定编辑器表单字段与 front-matter 格式（YAML/TOML）。自动识别失败或站点结构特殊时可手动指定。
+          决定编辑器表单字段与 front-matter 格式（YAML 或 TOML）。自动识别失败或站点结构特殊时，可手动指定。
         </p>
         {!selectedRepo ? (
           <p className="text-xs text-muted-foreground">请先选择仓库</p>
@@ -164,7 +164,7 @@ export function SiteSettings() {
               onClick={handleApplyContentPaths}
               className="text-xs text-muted-foreground hover:text-foreground hover:underline"
             >
-              应用该框架推荐内容路径（当前：{config.paths.join(', ')}）
+              应用该框架推荐的内容路径（当前：{config.paths.join('、')}）
             </button>
           </div>
         )}
@@ -206,8 +206,8 @@ export function SiteSettings() {
           </p>
         ) : workflows.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            仓库中没有可用的 GitHub Actions workflow。手动部署需要在仓库 .github/workflows/ 下配置含
-            workflow_dispatch 触发器的部署 workflow。
+            仓库中没有可用的 GitHub Actions workflow。手动部署需在仓库的 .github/workflows/ 目录下配置
+            含 workflow_dispatch 触发器的部署 workflow。
           </p>
         ) : (
           <div className="flex items-center gap-2">

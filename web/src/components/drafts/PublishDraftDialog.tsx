@@ -43,7 +43,7 @@ export function PublishDraftDialog({ entries, loading, onConfirm, onClose }: Pro
           <div className="flex items-start gap-2 px-3 py-2 mb-3 bg-amber-50 border border-amber-200 rounded-sm">
             <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-amber-700">
-              其中 {staleEntries.length} 篇在预发布后已被修改，目标路径可能已不适用。
+              其中 {staleEntries.length} 篇在预发布后已被修改，目标路径可能不再适用。
             </p>
           </div>
         )}

@@ -1,7 +1,7 @@
 export function sanitizePath(input: string): string {
   const cleaned = input.trim().replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
   if (cleaned.includes('..')) {
-    throw new Error('路径不允许包含 ..');
+    throw new Error('路径不能包含 ..（上级目录）');
   }
   return cleaned;
 }
@@ -15,7 +15,7 @@ export function sanitizePath(input: string): string {
 export function sanitizeSlug(slug: string): string {
   const cleaned = slug.replace(/\.md$/, '').trim();
   if (/[/\\]|\.\./.test(cleaned)) {
-    throw new Error('URL 不允许包含路径分隔符或 ..');
+    throw new Error('URL 不能包含路径分隔符或 ..（上级目录）');
   }
   return cleaned;
 }

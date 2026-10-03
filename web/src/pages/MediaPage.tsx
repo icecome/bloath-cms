@@ -133,7 +133,7 @@ export default function MediaPage() {
       if (silent) {
         return null;
       }
-      setError(err instanceof Error ? err.message : '加载失败');
+      setError(err instanceof Error ? err.message : '媒体列表加载失败，请稍后重试');
       return null;
     } finally {
       if (!silent) {
@@ -167,7 +167,7 @@ export default function MediaPage() {
 
     for (const file of filesArray) {
       if (file.size > MAX_FILE_SIZE) {
-        errors.push(`${file.name}：超过 20MB 限制`);
+        errors.push(`${file.name}：超过 20 MB 限制`);
         continue;
       }
       try {
@@ -190,7 +190,7 @@ export default function MediaPage() {
           repo: source.repo,
           path: filePath,
           base64Content: base64,
-          message: `[skip ci] 上传: ${fileName}`,
+          message: `[skip ci] 上传：${fileName}`,
           branch: source.branch,
           userName: user.login,
           sha: existing?.sha
@@ -208,7 +208,7 @@ export default function MediaPage() {
           currentFiles = [newEntry, ...currentFiles];
         }
       } catch (err) {
-        errors.push(`${file.name}：${err instanceof Error ? err.message : '上传失败'}`);
+        errors.push(`${file.name}：${err instanceof Error ? err.message : '上传失败，请稍后重试'}`);
       }
     }
 
@@ -217,7 +217,7 @@ export default function MediaPage() {
       await loadFiles();
     }
     if (errors.length > 0) {
-      setError(errors.join('; '));
+      setError(errors.join('；'));
     }
 
     setUploading(false);
@@ -239,13 +239,13 @@ export default function MediaPage() {
         repo: source.repo,
         path: file.path,
         sha: file.sha,
-        message: `[skip ci] 删除: ${file.name}`,
+        message: `[skip ci] 删除：${file.name}`,
         userName: user.login
       });
       setFiles((prev) => prev.filter((f) => f.sha !== file.sha));
       setSuccess(`已删除 ${file.name}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败');
+      setError(err instanceof Error ? err.message : '删除失败，请稍后重试');
     }
   };
 
@@ -254,7 +254,7 @@ export default function MediaPage() {
       await navigator.clipboard.writeText(file.url);
       flashCopied(file.sha, 'url');
     } catch {
-      setError('复制失败');
+      setError('复制失败，请手动选中内容复制');
     }
   };
 
@@ -264,7 +264,7 @@ export default function MediaPage() {
       await navigator.clipboard.writeText(markdownLink);
       flashCopied(file.sha, 'markdown');
     } catch {
-      setError('复制失败');
+      setError('复制失败，请手动选中内容复制');
     }
   };
 
@@ -279,7 +279,7 @@ export default function MediaPage() {
           <div className="border border-border rounded-sm p-12 text-center">
             <ImageIcon className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
             <p className="text-sm text-muted-foreground mb-1">{source.missingHint || '请先完成媒体库配置'}</p>
-            <p className="text-xs text-muted-foreground">前往设置页配置媒体源后即可使用</p>
+            <p className="text-xs text-muted-foreground">先在设置页配置媒体源，即可开始使用</p>
           </div>
         </div>
       </div>
@@ -365,7 +365,7 @@ export default function MediaPage() {
           </div>
         ) : files.length === 0 ? (
           <div className="text-center py-12 text-sm text-muted-foreground">
-            暂无图片，上传第一张图片开始使用
+            暂无图片。上传第一张图片即可开始使用
           </div>
         ) : (
           <>
@@ -447,7 +447,7 @@ export default function MediaPage() {
                   onClick={() => setCurrentPage((p) => p + 1)}
                   className="px-6 py-2 text-sm bg-foreground text-white rounded-sm hover:bg-foreground/90 transition-colors"
                 >
-                  加载更多 ({files.length - currentPage * MEDIA_PAGE_SIZE} 张剩余)
+                  加载更多，剩余 {files.length - currentPage * MEDIA_PAGE_SIZE} 张
                 </button>
               </div>
             )}

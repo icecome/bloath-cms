@@ -90,7 +90,7 @@ const hugoProfile: SiteProfile = {
   format: 'yaml',
   fields: [
     // 基础信息
-    slugField('Slug', '核心词仅限 a-z0-9；留空为 日期-时间，填写则为 日期-核心词'),
+    slugField('Slug', '核心词仅限字母 a 至 z 与数字 0 至 9；留空取 日期-时间，填写则取 日期-核心词'),
     titleField(),
     dateField(),
     authorField(),

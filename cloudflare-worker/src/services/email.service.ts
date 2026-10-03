@@ -141,7 +141,7 @@ export async function sendReplyEmail(env: Env, msg: MessageRow): Promise<void> {
   const original = originalText.length > 200 ? `${originalText.slice(0, 200)}…` : originalText;
   const body = field('你的留言', renderMarkdown(original))
     + field('博主回复', renderMarkdown(msg.reply_content))
-    + field('原文', articleLink);
+    + field('来源文章', articleLink);
   await sendViaResend(env, {
     from: env.RESEND_FROM || 'noreply@icecome.com',
     to: [msg.visitor_email],

@@ -233,7 +233,7 @@ function SidebarContent({
               disabled={branches.length === 0}
               className="w-full h-8 px-3 text-sm border border-border-subtle bg-accent rounded-sm text-foreground hover:bg-muted transition-colors flex items-center gap-2 truncate disabled:opacity-50"
             >
-              <span className="truncate">分支: {selectedRepo.branch}</span>
+              <span className="truncate">分支：{selectedRepo.branch}</span>
               <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground flex-shrink-0 transition-transform ${showBranchDropdown ? 'rotate-180' : ''}`} />
             </button>
 
@@ -318,7 +318,7 @@ function SidebarContent({
                 onClick={() => { navigate('/settings'); onNavClick(); }}
                 className="mx-3 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
               >
-                未配置内容路径，去设置添加
+                未配置内容路径，请前往设置添加
               </button>
             )}
           </div>

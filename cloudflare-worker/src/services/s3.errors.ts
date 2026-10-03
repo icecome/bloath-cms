@@ -4,7 +4,7 @@ export class S3Error extends Error {
   readonly detail: string;
 
   constructor(op: string, status: number, detail: string) {
-    super(`${op} 失败 (${status})`);
+    super(`${op} 失败（${status}）`);
     this.name = 'S3Error';
     this.op = op;
     this.status = status;

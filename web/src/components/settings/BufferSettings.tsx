@@ -82,7 +82,7 @@ export function BufferSettings() {
       </div>
       <p className="text-[11px] text-muted-foreground leading-relaxed">
         启用后，编辑器保存不再直接提交 GitHub，而是写入 S3 缓冲；点击侧边栏「发布」时一次性提交全部变更。
-        建议 bucket 设为私有；若 bucket 公开可读，系统会用随机段隐藏路径，并在发布后立即清理缓冲文件。
+        建议将 bucket 设为私有；若 bucket 可公开读取，系统会用随机段隐藏路径，并在发布后立即清理缓冲文件。
       </p>
 
       {config?.enabled && config.rand && (
@@ -109,7 +109,7 @@ export function BufferSettings() {
           <input id="buffer-access-key" className={inputCls} value={form.accessKeyId} onChange={(e) => update({ accessKeyId: e.target.value })} />
         </div>
         <div>
-          <label htmlFor="buffer-secret-key" className={labelCls}>Secret Access Key{config?.secretAccessKeyMasked ? `（已存 ${config.secretAccessKeyMasked}，留空沿用）` : ''}</label>
+          <label htmlFor="buffer-secret-key" className={labelCls}>Secret Access Key{config?.secretAccessKeyMasked ? `（已存 ${config.secretAccessKeyMasked}，留空则沿用）` : ''}</label>
           <input id="buffer-secret-key" className={inputCls} type="password" value={form.secretAccessKey} onChange={(e) => update({ secretAccessKey: e.target.value })} autoComplete="new-password" />
         </div>
         <div className="col-span-2">

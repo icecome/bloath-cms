@@ -141,7 +141,7 @@ export async function moveFile(
     branch: params.branch
   });
 
-  const resolvedMessage = params.message || `Move: ${params.fromPath} -> ${params.toPath}`;
+  const resolvedMessage = params.message || `移动：${params.fromPath} → ${params.toPath}`;
 
   await writeFile({
     owner: params.owner,
@@ -165,7 +165,7 @@ export async function moveFile(
     });
   } catch (err) {
     // 写入成功但删除失败：向上传播错误，让调用者提示用户手动清理
-    throw new Error(`文件已写入 ${params.toPath}，但删除源文件 ${params.fromPath} 失败，仓库可能存在重复文件。原因：${err instanceof Error ? err.message : '未知错误'}`);
+    throw new Error(`文件已写入 ${params.toPath}，但删除源文件 ${params.fromPath} 失败，仓库中可能存在重复文件。原因：${err instanceof Error ? err.message : '未知错误'}`);
   }
 }
 
@@ -175,7 +175,7 @@ export async function moveFile(
 export async function renameFile(
   params: RepoInfo & { oldPath: string; newPath: string; content: string; sha?: string; message?: string; branch?: string; userName?: string }
 ) {
-  const resolvedMessage = params.message || `Rename: ${params.oldPath} -> ${params.newPath}`;
+  const resolvedMessage = params.message || `重命名：${params.oldPath} → ${params.newPath}`;
 
   await writeFile({
     owner: params.owner,
@@ -203,7 +203,7 @@ export async function renameFile(
     }
   } catch (err) {
     // 写入成功但删除失败：向上传播错误，让调用者提示用户手动清理
-    throw new Error(`文件已写入 ${params.newPath}，但删除旧文件 ${params.oldPath} 失败，仓库可能存在重复文件。原因：${err instanceof Error ? err.message : '未知错误'}`);
+    throw new Error(`文件已写入 ${params.newPath}，但删除旧文件 ${params.oldPath} 失败，仓库中可能存在重复文件。原因：${err instanceof Error ? err.message : '未知错误'}`);
   }
 }
 
@@ -249,7 +249,7 @@ export async function getTree(params: RepoInfo & { mode?: 'filename' }): Promise
   const result = await apiFetch<TreeItem[]>(`${API_BASE}/api/repos/tree?${searchParams}`);
 
   if (result.length > MAX_TREE_ITEMS) {
-    throw new Error(`目录文件数超过 ${MAX_TREE_ITEMS} 个上限，请检查仓库是否过大`);
+    throw new Error(`目录文件数超过 ${MAX_TREE_ITEMS} 个上限，请检查仓库规模`);
   }
 
   return result;

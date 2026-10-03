@@ -47,17 +47,17 @@ function RepoSyncSection() {
   };
 
   if (!selectedRepo) {
-    return <p className="text-xs text-muted-foreground pt-2">选择仓库后可将配置同步到仓库，实现多设备共享。</p>;
+    return <p className="text-xs text-muted-foreground pt-2">选择仓库后，可将配置同步到仓库，供其他设备共享。</p>;
   }
 
   return (
     <div className="pt-3 border-t border-border space-y-2">
       <h3 className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
         <UploadCloud className="w-3 h-3" />
-        配置仓库化
+        配置同步到仓库
       </h3>
       <p className="text-xs text-muted-foreground">
-        切换仓库时自动以仓库配置为准；本地修改内容路径/媒体配置后，点此推送到仓库（其他设备生效）。
+        切换仓库时以仓库配置为准；在本地修改内容路径或媒体配置后，点此推送到仓库，其他设备即可生效。
       </p>
       <button
         type="button"
@@ -149,7 +149,7 @@ export default function SettingsPage() {
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
               <FileText className="w-3 h-3" />
-              已添加的路径 ({config.paths.length} 个)
+              已添加的路径（{config.paths.length} 个）
             </div>
 
             <div className="space-y-px">

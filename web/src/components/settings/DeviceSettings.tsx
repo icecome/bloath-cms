@@ -92,7 +92,7 @@ export function DeviceSettings() {
 
   const handleDelete = useCallback(async (device: DeviceEntry) => {
     if (device.isCurrent) return;
-    if (!window.confirm(`确定要移除设备「${describeDevice(device.ua)}」吗？该设备将降级为未信任（会话缩短至 6 小时）。`)) {
+    if (!window.confirm(`确定要移除设备「${describeDevice(device.ua)}」吗？移除后该设备降级为未信任，会话有效期缩短至 6 小时。`)) {
       return;
     }
     setSavingFingerprint(device.fingerprint);
@@ -122,7 +122,7 @@ export function DeviceSettings() {
     <section className="space-y-2">
       <h3 className="text-sm font-medium text-foreground">登录设备</h3>
       <p className="text-xs text-muted-foreground">
-        共 {devices.length} 台设备。受信任的设备登录有效期 7 天，未信任的 6 小时；期限内访问均自动续期。移除设备将降低其信任级别，已签发的会话在到期前仍可使用。
+        共 {devices.length} 台设备。受信任的设备登录有效期 7 天，未信任的设备为 6 小时；有效期内访问会自动续期。移除设备会降低其信任级别，已签发的会话在到期前仍可使用。
       </p>
 
       {devices.length === 0 ? (

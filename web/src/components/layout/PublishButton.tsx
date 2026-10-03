@@ -4,7 +4,7 @@ import { Upload, Loader2, X, FileText, FilePlus2, FileMinus } from 'lucide-react
 import type { BufferOp } from '../../lib/bufferApi';
 
 const OP_META: Record<BufferOp, { label: string; icon: React.ReactNode; className: string }> = {
-  write: { label: '新增/修改', icon: <FileText className="w-3 h-3" />, className: 'text-blue-600' },
+  write: { label: '新增或修改', icon: <FileText className="w-3 h-3" />, className: 'text-blue-600' },
   delete: { label: '删除', icon: <FileMinus className="w-3 h-3" />, className: 'text-red-600' },
   move: { label: '移动', icon: <FilePlus2 className="w-3 h-3" />, className: 'text-orange-600' },
 };
@@ -29,7 +29,7 @@ function PublishDialog() {
         </div>
         <div className="px-4 py-3 max-h-80 overflow-y-auto">
           <p className="text-xs text-muted-foreground mb-3">
-            以下缓冲变更将合并为一次提交推送至 GitHub（触发一次 CI 部署），发布后缓冲文件立即清理。已设置预发布目标的条目会移动到对应目录。
+            以下缓冲变更将合并为一次提交推送至 GitHub，并触发一次 CI 部署；发布后立即清理缓冲文件。已设置预发布目标的条目会移动到对应目录。
           </p>
           <div className="space-y-1">
             {changes.map((item) => {

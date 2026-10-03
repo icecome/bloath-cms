@@ -42,7 +42,7 @@ export function resolveMediaSource(
         branch: config.imageBranch || DEFAULT_STANDALONE_BRANCH,
         pathPrefix: '',
         configured,
-        missingHint: configured ? undefined : '请在设置页配置图床仓库所有者和仓库名'
+        missingHint: configured ? undefined : '请在设置页配置图床仓库的所有者和仓库名'
       };
     }
     case 'repo-dir': {
@@ -50,7 +50,7 @@ export function resolveMediaSource(
         return {
           owner: '', repo: '', branch: 'main', pathPrefix: '',
           configured: false,
-          missingHint: '请先在仪表盘选择博客仓库'
+          missingHint: '请先在侧边栏选择博客仓库'
         };
       }
       const pathPrefix = (config.mediaPath || DEFAULT_MEDIA_PATH).replace(/^\/+|\/+$/g, '');
@@ -67,7 +67,7 @@ export function resolveMediaSource(
         return {
           owner: '', repo: '', branch: '', pathPrefix: '',
           configured: false,
-          missingHint: '请先在仪表盘选择博客仓库'
+          missingHint: '请先在侧边栏选择博客仓库'
         };
       }
       return {

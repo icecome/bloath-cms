@@ -13,7 +13,7 @@ export function DeleteConfirmDialog({ file, onCancel, onConfirm }: DeleteConfirm
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-card rounded-sm shadow-sm p-4 w-full max-w-sm mx-4 border border-border">
         <p className="text-sm text-foreground mb-4">
-          确定要删除 <span className="font-mono text-muted-foreground">{file.name}</span> 吗？该文件将从仓库中删除，媒体库内无法恢复。
+          确定要删除 <span className="font-mono text-muted-foreground">{file.name}</span> 吗？该文件将从仓库中删除，且无法在媒体库中恢复。
         </p>
         <div className="flex justify-end gap-2">
           <button

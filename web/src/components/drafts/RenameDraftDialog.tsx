@@ -24,7 +24,7 @@ export function RenameDraftDialog({ value, loading, onChange, onConfirm, onClose
               if (e.key === 'Escape') onClose();
             }}
           />
-          <p className="text-xs text-muted-foreground mt-1">仅修改文件名，不修改 frontmatter</p>
+          <p className="text-xs text-muted-foreground mt-1">仅修改文件名，不修改 front-matter</p>
         </div>
         <div className="flex justify-end gap-2">
           <button

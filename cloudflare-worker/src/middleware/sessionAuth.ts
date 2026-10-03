@@ -40,7 +40,7 @@ export interface AuthResult {
 }
 
 export async function authenticate(request: Request, env: HonoEnv['Bindings']): Promise<AuthResult | Response> {
-  if (!checkCsrf(request)) return Response.json({ error: 'CSRF validation failed' }, { status: 403 });
+  if (!checkCsrf(request)) return Response.json({ error: '请求来源校验未通过，请刷新页面后重试' }, { status: 403 });
   const sessionToken = getSessionTokenFromCookie(request);
   if (!sessionToken) return Response.json({ error: 'Unauthorized' }, { status: 401 });
   const currentFingerprint = await generateDeviceFingerprint(request);
@@ -83,7 +83,7 @@ export const requireAuth: MiddlewareHandler<HonoEnv> = async (c: Context<HonoEnv
 
 export const requireAdminAuth: MiddlewareHandler<HonoEnv> = async (c: Context<HonoEnv>, next: Next) => {
   if (!checkCsrf(c.req.raw)) {
-    return c.json(errorResp(ErrorCode.VALIDATION_ERROR, 'CSRF validation failed'), 403);
+    return c.json(errorResp(ErrorCode.VALIDATION_ERROR, '请求来源校验未通过，请刷新页面后重试'), 403);
   }
   const sessionToken = getSessionTokenFromCookie(c.req.raw);
   if (!sessionToken) {

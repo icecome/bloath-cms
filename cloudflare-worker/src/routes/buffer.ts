@@ -73,18 +73,18 @@ bufferApp.put('/api/buffer/config', async (c: Context<HonoEnv>) => {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
   }
   const { enabled, endpoint, region, bucket, accessKeyId, secretAccessKey, prefix } = body;
-  if (typeof enabled !== 'boolean') return c.json(error(ErrorCode.VALIDATION_ERROR, 'enabled 需为布尔'), 400);
+  if (typeof enabled !== 'boolean') return c.json(error(ErrorCode.VALIDATION_ERROR, 'enabled 须为布尔值'), 400);
   if (enabled) {
     if (!endpoint || !bucket || !accessKeyId) {
-      return c.json(error(ErrorCode.VALIDATION_ERROR, 'endpoint / bucket / accessKeyId 不能为空'), 400);
+      return c.json(error(ErrorCode.VALIDATION_ERROR, 'endpoint、bucket 与 accessKeyId 不能为空'), 400);
     }
     if (!/^https?:\/\//.test(endpoint) || isBlockedS3Endpoint(endpoint)) {
-      return c.json(error(ErrorCode.VALIDATION_ERROR, 'endpoint 须为公网 http(s) URL，不允许内网/本机地址'), 400);
+      return c.json(error(ErrorCode.VALIDATION_ERROR, 'endpoint 须为公网 http(s) URL，不允许内网或本机地址'), 400);
     }
     // secretAccessKey 允许为空（沿用已存值），但首次启用必须提供
     const existing = await getBufferConfig(c.env);
     if (!secretAccessKey && !existing) {
-      return c.json(error(ErrorCode.VALIDATION_ERROR, '首次启用需提供 secretAccessKey'), 400);
+      return c.json(error(ErrorCode.VALIDATION_ERROR, '首次启用须提供 secretAccessKey'), 400);
     }
   }
   try {
@@ -141,7 +141,7 @@ bufferApp.post('/api/buffer/config/test', async (c: Context<HonoEnv>) => {
   }
   const normalizedEndpoint = endpoint.replace(/\/+$/, '');
   if (isBlockedS3Endpoint(normalizedEndpoint)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, 'endpoint 不允许内网/本机地址'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, 'endpoint 不允许内网或本机地址'), 400);
   }
   try {
     // 用实际会执行的动作（PutObject 写 .keep）探测，仅需对象读写权限，
@@ -167,7 +167,7 @@ bufferApp.get('/api/buffer/file', async (c: Context<HonoEnv>) => {
   const branch = c.req.query('branch') || 'main';
   const path = c.req.query('path');
   if (!areRepoAndPathValid(owner, repo, branch, path)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '请求参数无效'), 400);
   }
   try {
     const result = await readFileWithBuffer(c.env, auth(c).githubToken, owner!, repo!, branch, path!);
@@ -185,26 +185,26 @@ bufferApp.put('/api/buffer/file', async (c: Context<HonoEnv>) => {
   }
   const { owner, repo, branch = 'main', path, op, content, fromPath, baseSha, publishTarget } = body;
   if (!areRepoAndPathValid(owner, repo, branch, path)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '请求参数无效'), 400);
   }
   if (op !== 'write' && op !== 'delete' && op !== 'move') {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, 'op 须为 write/delete/move'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, 'op 须为 write、delete 或 move'), 400);
   }
   if (op === 'write') {
     if (typeof content !== 'string') {
-      return c.json(error(ErrorCode.VALIDATION_ERROR, 'write 操作需提供 content'), 400);
+      return c.json(error(ErrorCode.VALIDATION_ERROR, 'write 操作须提供 content'), 400);
     }
     if (content.length > MAX_CONTENT_SIZE) {
-      return c.json(error(ErrorCode.VALIDATION_ERROR, '文件过大（单文件上限 10MB）'), 400);
+      return c.json(error(ErrorCode.VALIDATION_ERROR, '文件过大（单文件上限 10 MB）'), 400);
     }
   }
   if (op === 'move') {
     if (!fromPath || !isSafePathParam(fromPath, true)) {
-      return c.json(error(ErrorCode.VALIDATION_ERROR, 'move 操作需合法 fromPath'), 400);
+      return c.json(error(ErrorCode.VALIDATION_ERROR, 'move 操作须提供有效的 fromPath'), 400);
     }
   }
   if (publishTarget !== undefined && !isSafePathParam(publishTarget, true)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '非法 publishTarget'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, 'publishTarget 格式无效'), 400);
   }
   try {
     // write 未显式携带 publishTarget 时保留原目标，避免再次保存冲掉预发布目录
@@ -234,7 +234,7 @@ bufferApp.delete('/api/buffer/file', async (c: Context<HonoEnv>) => {
   const branch = c.req.query('branch') || 'main';
   const path = c.req.query('path');
   if (!areRepoAndPathValid(owner, repo, branch, path)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '请求参数无效'), 400);
   }
   try {
     await deleteBufferEntry(c.env, owner!, repo!, branch, path!);
@@ -250,7 +250,7 @@ bufferApp.get('/api/buffer/changes', async (c: Context<HonoEnv>) => {
   const repo = c.req.query('repo');
   const branch = c.req.query('branch') || 'main';
   if (!areRepoParamsValid(owner, repo, branch)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '请求参数无效'), 400);
   }
   try {
     const items = await listBufferChanges(c.env, owner!, repo!, branch);
@@ -271,18 +271,18 @@ bufferApp.post('/api/buffer/publish', async (c: Context<HonoEnv>) => {
   }
   const { owner, repo, branch = 'main', userName, items } = body;
   if (!areRepoParamsValid(owner, repo, branch)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '请求参数无效'), 400);
   }
   if (items !== undefined) {
     if (!Array.isArray(items) || items.length > 100) {
-      return c.json(error(ErrorCode.VALIDATION_ERROR, 'items 需为数组且不超过 100 项'), 400);
+      return c.json(error(ErrorCode.VALIDATION_ERROR, 'items 须为数组且不超过 100 项'), 400);
     }
     for (const item of items) {
       if (!item || !isSafePathParam(item.path, true)) {
-        return c.json(error(ErrorCode.VALIDATION_ERROR, 'items 中存在非法 path'), 400);
+        return c.json(error(ErrorCode.VALIDATION_ERROR, 'items 中存在无效的 path'), 400);
       }
       if (item.publishTarget !== undefined && !isSafePathParam(item.publishTarget, true)) {
-        return c.json(error(ErrorCode.VALIDATION_ERROR, 'items 中存在非法 publishTarget'), 400);
+        return c.json(error(ErrorCode.VALIDATION_ERROR, 'items 中存在无效的 publishTarget'), 400);
       }
     }
   }
@@ -302,10 +302,10 @@ bufferApp.put('/api/buffer/target', async (c: Context<HonoEnv>) => {
   }
   const { owner, repo, branch = 'main', path, publishTarget } = body;
   if (!areRepoAndPathValid(owner, repo, branch, path)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '参数不合法'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, '请求参数无效'), 400);
   }
   if (publishTarget !== null && publishTarget !== undefined && !isSafePathParam(publishTarget, true)) {
-    return c.json(error(ErrorCode.VALIDATION_ERROR, '非法 publishTarget'), 400);
+    return c.json(error(ErrorCode.VALIDATION_ERROR, 'publishTarget 格式无效'), 400);
   }
   try {
     const updated = await setBufferPublishTarget(c.env, owner!, repo!, branch, path!, publishTarget ?? null);

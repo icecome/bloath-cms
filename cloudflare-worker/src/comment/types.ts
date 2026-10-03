@@ -11,6 +11,7 @@ export enum ErrorCode {
 
 // 行结构定义在 shared/types.ts，前后端共用一份，避免字段漂移需两处同步修改
 export type { MessageRecord as MessageRow, MessageReplyRow as ReplyRow, MessageStatus } from '../../../shared/types';
+export { MESSAGE_STATUS_LABEL } from '../../../shared/types';
 import type { MessageRecord, MessageReplyRow } from '../../../shared/types';
 
 export type MessageWithReplies = MessageRecord & { replies: MessageReplyRow[] };
