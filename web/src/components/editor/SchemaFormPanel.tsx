@@ -229,7 +229,7 @@ function SchemaField({
           <button
             type="button"
             onClick={() => setValue(formatDate(new Date()))}
-            className="mt-1.5 text-xs text-primary hover:underline flex items-center gap-1"
+            className="mt-1.5 text-xs text-primary-text hover:underline flex items-center gap-1"
           >
             <CalendarClock className="w-3 h-3" />
             使用当前时间
@@ -243,7 +243,7 @@ function SchemaField({
           <select
             value={typeof rawValue === 'string' ? rawValue : ''}
             onChange={(e) => setValue(e.target.value || undefined)}
-            className={`${inputClass} bg-white`}
+            className={`${inputClass} bg-card`}
           >
             <option value="">（未设置）</option>
             {(field.options ?? []).map((opt) => (
@@ -310,7 +310,7 @@ function SchemaField({
   }
 }
 
-const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-white text-foreground placeholder:text-muted-foreground';
+const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder:text-muted-foreground';
 
 /**
  * 字段外壳：label + 控件。
@@ -381,7 +381,7 @@ function TagListField({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-white text-foreground placeholder:text-muted-foreground"
+          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder:text-muted-foreground"
           placeholder={placeholder}
         />
         <button onClick={add} className="px-2 py-1 text-xs bg-foreground text-background rounded-sm hover:bg-foreground/90 transition-colors">添加</button>
@@ -428,7 +428,7 @@ function ImageFieldShell({
         <button
           type="button"
           onClick={() => setPickerOpen(true)}
-          className="text-xs text-primary hover:underline flex items-center gap-1"
+          className="text-xs text-primary-text hover:underline flex items-center gap-1"
         >
           <ImageIcon className="w-3 h-3" />
           从媒体库选择
@@ -478,7 +478,7 @@ function ImageListField({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-white text-foreground placeholder:text-muted-foreground"
+          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder:text-muted-foreground"
           placeholder={field.placeholder}
         />
         <button onClick={add} className="px-2 py-1 text-xs bg-foreground text-background rounded-sm hover:bg-foreground/90 transition-colors">添加</button>
@@ -486,7 +486,7 @@ function ImageListField({
       <button
         type="button"
         onClick={() => setPickerOpen(true)}
-        className="mt-1.5 text-xs text-primary hover:underline flex items-center gap-1"
+        className="mt-1.5 text-xs text-primary-text hover:underline flex items-center gap-1"
       >
         <ImageIcon className="w-3 h-3" />
         从媒体库选择
@@ -600,7 +600,7 @@ function CustomFieldsField({ frontmatter, setFm }: {
           <Settings2 className="w-3 h-3" />
           自定义字段
         </label>
-        <button type="button" onClick={addRow} className="text-xs text-primary hover:underline flex items-center gap-1">
+        <button type="button" onClick={addRow} className="text-xs text-primary-text hover:underline flex items-center gap-1">
           <PlusCircle className="w-3 h-3" /> 添加
         </button>
       </div>
@@ -613,12 +613,12 @@ function CustomFieldsField({ frontmatter, setFm }: {
                 value={row.key}
                 onChange={(e) => update(index, { key: e.target.value })}
                 placeholder="键名"
-                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground placeholder:text-muted-foreground"
               />
               <select
                 value={row.type}
                 onChange={(e) => update(index, { type: e.target.value as CustomFieldRow['type'] })}
-                className="w-[72px] px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground"
+                className="w-[72px] px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground"
               >
                 <option value="string">文本</option>
                 <option value="number">数字</option>
@@ -637,7 +637,7 @@ function CustomFieldsField({ frontmatter, setFm }: {
               <select
                 value={row.value}
                 onChange={(e) => update(index, { value: e.target.value })}
-                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground"
+                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground"
               >
                 <option value="true">true</option>
                 <option value="false">false</option>
@@ -648,7 +648,7 @@ function CustomFieldsField({ frontmatter, setFm }: {
                 value={row.value}
                 onChange={(e) => update(index, { value: e.target.value })}
                 placeholder="值"
-                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground placeholder:text-muted-foreground"
               />
             )}
           </div>

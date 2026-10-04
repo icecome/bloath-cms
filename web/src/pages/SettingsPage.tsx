@@ -72,6 +72,14 @@ function RepoSyncSection() {
   );
 }
 
+// 设置页分类：模块级常量，供 Tab 渲染与面板 aria 关联共用
+const SETTINGS_TABS = [
+  { key: 'content', label: '内容路径', icon: FileText },
+  { key: 'media', label: '媒体库', icon: Image },
+  { key: 'site', label: '站点与部署', icon: Globe },
+  { key: 'buffer', label: '缓冲层', icon: HardDrive },
+] as const;
+
 export default function SettingsPage() {
   const { config, addPath, removePath } = useCollections();
   const [newPath, setNewPath] = useState('');
@@ -87,64 +95,44 @@ export default function SettingsPage() {
   return (
     <div className="flex-1 overflow-auto">
       {/* 顶部栏 */}
-      <header className="px-8 py-5 flex-shrink-0">
+      <header className="px-4 md:px-8 py-5 flex-shrink-0">
         <h1 className="text-base font-medium text-foreground">设置</h1>
         <p className="text-sm text-muted-foreground mt-1">配置内容与媒体库</p>
       </header>
 
-      {/* Tab 切换 */}
-      <div className="px-8 pb-4 flex gap-1">
-        <button
-          type="button"
-          onClick={() => setActiveTab('content')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-sm transition-colors ${
-            activeTab === 'content'
-              ? 'bg-foreground text-white'
-              : 'text-muted-foreground hover:bg-accent'
-          }`}
-        >
-          <FileText className="w-3.5 h-3.5" />
-          内容路径
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('media')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-sm transition-colors ${
-            activeTab === 'media'
-              ? 'bg-foreground text-white'
-              : 'text-muted-foreground hover:bg-accent'
-          }`}
-        >
-          <Image className="w-3.5 h-3.5" />
-          媒体库
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('site')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-sm transition-colors ${
-            activeTab === 'site'
-              ? 'bg-foreground text-white'
-              : 'text-muted-foreground hover:bg-accent'
-          }`}
-        >
-          <Globe className="w-3.5 h-3.5" />
-          站点与部署
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('buffer')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-sm transition-colors ${
-            activeTab === 'buffer'
-              ? 'bg-foreground text-white'
-              : 'text-muted-foreground hover:bg-accent'
-          }`}
-        >
-          <HardDrive className="w-3.5 h-3.5" />
-          缓冲层
-        </button>
+      {/* Tab 切换：窄屏可横向滚动 */}
+      <div className="px-4 md:px-8 pb-4 flex gap-1 overflow-x-auto" role="tablist" aria-label="设置分类">
+        {SETTINGS_TABS.map((tab) => {
+          const Icon = tab.icon;
+          const selected = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              id={`settings-tab-${tab.key}`}
+              aria-selected={selected}
+              aria-controls={`settings-panel-${tab.key}`}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-sm transition-colors whitespace-nowrap ${
+                selected
+                  ? 'bg-foreground text-white'
+                  : 'text-muted-foreground hover:bg-accent'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="px-8">
+      <div className="px-4 md:px-8">
+        <div
+          role="tabpanel"
+          id={`settings-panel-${activeTab}`}
+          aria-labelledby={`settings-tab-${activeTab}`}
+        >
         {activeTab === 'content' && (
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
@@ -162,7 +150,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => removePath(path)}
                     disabled={config.paths.length <= 1}
-                    className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all disabled:opacity-0 disabled:cursor-not-allowed"
+                    className="text-muted-foreground hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity disabled:sm:opacity-0 disabled:cursor-not-allowed"
                     aria-label="删除路径"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -176,12 +164,13 @@ export default function SettingsPage() {
                 type="text"
                 value={newPath}
                 onChange={(e) => setNewPath(e.target.value)}
+                aria-label="添加新内容路径"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     handleAddPath();
                   }
                 }}
-                className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder-muted-foreground"
+                className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-muted text-foreground placeholder-muted-foreground"
                 placeholder="添加新路径，如 content/articles"
               />
               <button
@@ -208,6 +197,7 @@ export default function SettingsPage() {
         </>}
 
         {activeTab === 'buffer' && <BufferSettings />}
+        </div>
       </div>
     </div>
   );

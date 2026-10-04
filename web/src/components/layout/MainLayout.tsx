@@ -112,6 +112,38 @@ function SidebarContent({
     if (!showRepoDropdown) setSearchQuery('');
   }, [showRepoDropdown]);
 
+  // 点击下拉外部时关闭（仓库/分支/账户三个下拉共用）
+  useEffect(() => {
+    if (!showRepoDropdown && !showBranchDropdown && !showAccountDropdown) return;
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement;
+      // 下拉面板与触发按钮在 .dropdown-root 内部，不视为外部点击
+      if (target.closest('.dropdown-root')) return;
+      setShowRepoDropdown(false);
+      setShowBranchDropdown(false);
+      setShowAccountDropdown(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, [showRepoDropdown, showBranchDropdown, showAccountDropdown, setShowRepoDropdown, setShowBranchDropdown, setShowAccountDropdown]);
+
+  // Escape 优先关闭最后打开的下拉
+  useEffect(() => {
+    if (!showRepoDropdown && !showBranchDropdown && !showAccountDropdown) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (showAccountDropdown) setShowAccountDropdown(false);
+      else if (showBranchDropdown) setShowBranchDropdown(false);
+      else setShowRepoDropdown(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showRepoDropdown, showBranchDropdown, showAccountDropdown, setShowRepoDropdown, setShowBranchDropdown, setShowAccountDropdown]);
+
   const filteredRepos = useMemo(() => {
     if (!searchQuery.trim()) return repos;
     const query = searchQuery.toLowerCase();
@@ -154,9 +186,12 @@ function SidebarContent({
       <PublishButton />
 
       <div className="px-4 pb-2">
-        <div className="relative">
+        <div className="relative dropdown-root">
           <button
-            onClick={() => { setShowRepoDropdown(!showRepoDropdown); setShowBranchDropdown(false); }}
+            onClick={() => { setShowRepoDropdown(!showRepoDropdown); setShowBranchDropdown(false); setShowAccountDropdown(false); }}
+            aria-expanded={showRepoDropdown}
+            aria-haspopup="listbox"
+            aria-label="选择仓库"
             className="w-full h-9 px-3 text-sm border border-border rounded-sm text-foreground hover:bg-accent transition-colors flex items-center gap-2 truncate"
           >
             <Folder className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -181,7 +216,8 @@ function SidebarContent({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="搜索仓库……"
-                    className="w-full pl-7 pr-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-white text-foreground placeholder:text-muted-foreground"
+                    aria-label="搜索仓库"
+                    className="w-full pl-7 pr-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground placeholder:text-muted-foreground"
                     autoFocus
                   />
                 </div>
@@ -227,10 +263,13 @@ function SidebarContent({
       {/* 分支选择器 */}
       {selectedRepo && (
         <div className="px-4 pb-2">
-          <div className="relative">
+          <div className="relative dropdown-root">
             <button
-              onClick={() => { setShowBranchDropdown(!showBranchDropdown); setShowRepoDropdown(false); }}
+              onClick={() => { setShowBranchDropdown(!showBranchDropdown); setShowRepoDropdown(false); setShowAccountDropdown(false); }}
               disabled={branches.length === 0}
+              aria-expanded={showBranchDropdown}
+              aria-haspopup="listbox"
+              aria-label="选择分支"
               className="w-full h-8 px-3 text-sm border border-border-subtle bg-accent rounded-sm text-foreground hover:bg-muted transition-colors flex items-center gap-2 truncate disabled:opacity-50"
             >
               <span className="truncate">分支：{selectedRepo.branch}</span>
@@ -329,6 +368,7 @@ function SidebarContent({
             key={item.path}
             to={item.path}
             onClick={onNavClick}
+            aria-current={isActive(item.path) ? 'page' : undefined}
             className={`flex items-center gap-2 px-3 py-2 rounded-sm text-sm transition-colors ${
               isActive(item.path)
                 ? 'bg-accent text-foreground font-medium'
@@ -343,9 +383,12 @@ function SidebarContent({
 
       <div className="border-t border-border-subtle px-4 py-3">
         {user && (
-          <div className="relative">
+          <div className="relative dropdown-root">
             <button
               onClick={() => setShowAccountDropdown(!showAccountDropdown)}
+              aria-expanded={showAccountDropdown}
+              aria-haspopup="menu"
+              aria-label="账户菜单"
               className="w-full flex items-center gap-2 hover:bg-accent rounded-sm p-2 transition-colors text-left"
             >
               <div className="w-7 h-7 rounded-sm overflow-hidden flex-shrink-0">
@@ -560,6 +603,8 @@ export default function MainLayout() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
+              aria-label={sidebarOpen ? '关闭菜单' : '打开菜单'}
+              aria-expanded={sidebarOpen}
               className="md:hidden text-muted-foreground hover:text-foreground transition-colors"
             >
               {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}

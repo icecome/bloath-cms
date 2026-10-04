@@ -101,7 +101,7 @@ function NewSubDirInput({ onConfirm }: { onConfirm: (name: string) => void }) {
         if (e.key === 'Enter' && name.trim()) onConfirm(name.trim());
       }}
       placeholder="新目录名"
-      className="w-24 px-1.5 py-0.5 text-xs border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary"
+      className="w-24 px-1.5 py-0.5 text-xs border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary"
     />
   );
 }
@@ -188,7 +188,7 @@ export function DirectoryTreePicker({ nodes, value, onChange, placeholder }: Pro
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || '如 content/posts/sub'}
-        className="w-full px-2.5 py-1.5 text-sm border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary transition-colors"
+        className="w-full px-2.5 py-1.5 text-sm border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary transition-colors"
       />
       {isNewDir && (
         <p className="text-[11px] text-muted-foreground">

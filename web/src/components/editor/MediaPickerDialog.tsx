@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { getTree } from '../../lib/api';
 import { sortByLastModified } from '../../lib/sortFiles';
 import { resolveMediaSource, mediaCdnUrl } from '../../lib/resolveMediaSource';
+import Modal from '../ui/Modal';
 import { X, Loader2, AlertCircle } from 'lucide-react';
 
 interface MediaPickerDialogProps {
@@ -55,11 +56,11 @@ export default function MediaPickerDialog({ open, onClose, onPick }: MediaPicker
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div
-        className="bg-card rounded-md shadow-lg w-full max-w-2xl mx-4 max-h-[70vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal
+      ariaLabel="从媒体库选择图片"
+      onClose={onClose}
+      className="bg-card rounded-md shadow-lg w-full max-w-2xl mx-4 max-h-[70vh] flex flex-col"
+    >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-medium text-foreground">从媒体库选择图片</h3>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors" aria-label="关闭">
@@ -99,7 +100,6 @@ export default function MediaPickerDialog({ open, onClose, onPick }: MediaPicker
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

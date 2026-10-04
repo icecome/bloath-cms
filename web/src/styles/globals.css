@@ -14,7 +14,10 @@
     --card-foreground: 0 0% 18%;
 
     /* 主色调：品牌蓝 */
-    --primary: 214 100% 56%; /* #207DFF 交互强调 */
+    --primary: 214 100% 56%; /* #207DFF 交互强调（填充/图形/图标点） */
+    /* 浅底上的品牌蓝文字变体：#1558B5，与白色 6.79:1，满足 4.5:1 正文对比度。
+       原 #207DFF 压白仅 3.86:1，故 text-primary 仅用于大号/图形，文字链接改用本变体。 */
+    --primary-text: 213 79% 39%; /* #1558B5 深品牌蓝，用于浅底文字 */
     --primary-foreground: 0 0% 100%;
 
     /* 次级色 */
@@ -36,17 +39,21 @@
     /* 焦点环 */
     --ring: 214 100% 56%;
 
-    /* 语义色 */
-    --success: 97 63% 50%; /* #75C33A 绿色 */
-    --warning: 37 75% 55%; /* #E0A23A 琥珀色 */
-    --destructive: 359 75% 59%; /* #E5484D 红色 */
+    /* 语义色：已调深至与白色 ≥4.5:1，满足 WCAG 正文/白字对比度；
+       同时保证浅色卡片上作文字使用时也达标（旧值仅 2.2~3.9:1） */
+    --success: 99 60% 30%; /* #3F7A1F 深绿 */
+    --warning: 39 100% 27%; /* #8A5A00 深琥珀 */
+    --destructive: 358 65% 46%; /* #C0282D 深红 */
 
     /* 圆角：极小圆角，偏扁平 */
     --radius: 0.25rem; /* 4px */
     --radius-lg: 0.375rem; /* 6px */
     --radius-xl: 0.5rem; /* 8px */
+    --radius-full: 9999px; /* 圆形：开关旋钮 / 状态点 / 计数角标，此前未定义导致渲染为直角 */
 
-    /* 扁平阴影（几乎不用） */
+    /* 扁平阴影：以下变量不参与 Tailwind utility 生成（utility 读 @theme 而非 :root），
+       仅作为语义占位保留。实际阴影由 shadow-sm / shadow-lg 按 Tailwind 默认值输出，
+       用于对话框与浮层的层次提升。若需真正统一阴影，请改用 @theme 块声明。 */
     --shadow-sm: none;
     --shadow-md: none;
     --shadow-lg: none;
@@ -66,8 +73,20 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* 尊重系统级减弱动效：关闭旋转、位移、过渡等装饰性动画。
+   放在 utilities 之后（未被 @layer 包裹）才能压过 Tailwind utility 的 transition-duration；
+   单靠 @layer base 会被 utilities 层覆盖，因此此处不用层内规则。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
   }
 }
 
@@ -86,80 +105,6 @@
     .media-grid {
       grid-template-columns: repeat(var(--mgrid, 3), minmax(0, 1fr));
     }
-  }
-
-  /* --- 按钮系统 --- */
-  
-  /* 主按钮：扁平，无阴影 */
-  .btn-primary {
-    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium 
-           bg-foreground text-white rounded-sm 
-           hover:bg-neutral-800 active:bg-neutral-900
-           transition-colors duration-150
-           disabled:opacity-40 disabled:cursor-not-allowed;
-  }
-
-  /* 幽灵按钮 */
-  .btn-ghost {
-    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium 
-           text-muted-foreground hover:text-foreground hover:bg-accent
-           transition-colors duration-150 rounded-sm;
-  }
-
-  /* 危险按钮 */
-  .btn-danger {
-    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium 
-           text-white rounded-sm
-           transition-colors duration-150
-           bg-destructive hover:bg-destructive/90;
-  }
-
-  /* --- 输入框系统 --- */
-  
-  .input-notion {
-    @apply w-full px-4 py-2 text-sm 
-           bg-card text-foreground placeholder-muted-foreground 
-           border border-border rounded-sm
-           focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary
-           transition-colors duration-150;
-  }
-
-  /* --- 列表行：极细分割线 --- */
-  
-  /* 表格行（极细边框 + 悬停高亮） */
-  .table-row-flat {
-    @apply flex items-center px-4 py-3 cursor-pointer
-           border-b border-border
-           transition-colors duration-150;
-  }
-  .table-row-flat:hover {
-    @apply bg-secondary;
-  }
-
-  /* 聚光灯效果 - 整行高亮（扁平化） */
-  .spotlight-row {
-    @apply flex items-center px-0 py-3 cursor-pointer
-           border-b border-border
-           transition-colors duration-150;
-  }
-  .spotlight-row:hover {
-    @apply bg-secondary;
-  }
-
-  /* --- 导航项 --- */
-  
-  .nav-item {
-    @apply flex items-center gap-2 px-3 py-2 text-sm 
-           transition-colors duration-150 rounded-sm;
-    @apply text-muted-foreground;
-    background: transparent;
-  }
-  .nav-item:hover {
-    @apply bg-accent;
-  }
-  .nav-item-active {
-    @apply font-medium text-foreground;
-    @apply bg-secondary;
   }
 
   /* 折叠 Vditor 工具栏（仅隐藏工具栏，保留编辑区） */
@@ -183,7 +128,7 @@
     --vditor-strike-color: #888;
     --vditor-code-bg: #F5F5F5;
     --vditor-code-color: #1558B5;
-    --vditor-link-color: #207DFF;
+    --vditor-link-color: #1558B5;
     --vditor-quote-border: #D6D6D6;
     --vditor-quote-color: #777169;
     --vditor-hr-color: #E0E0E0;
@@ -526,7 +471,7 @@
   .msg-part {
     @apply px-4 py-3.5 rounded-md border border-border-subtle bg-secondary;
   }
-  .msg-part.blogger { border-left: 3px solid hsl(var(--muted-foreground) / 0.4); }
+  .msg-part.blogger,
   .msg-part.inbound { border-left: 3px solid hsl(var(--muted-foreground) / 0.4); }
   .msg-part.visitor { border-left: 3px solid hsl(var(--border)); }
 

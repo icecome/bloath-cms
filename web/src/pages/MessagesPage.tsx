@@ -281,7 +281,7 @@ export default function MessagesPage() {
               onClick={() => setActiveTab(tab.key)}
               className={`px-3 py-1.5 text-xs font-medium transition-colors border-b-2 whitespace-nowrap ${
                 activeTab === tab.key
-                  ? 'text-primary border-primary'
+                  ? 'text-primary-text border-primary'
                   : 'text-muted-foreground border-transparent hover:text-foreground'
               }`}
             >
@@ -301,6 +301,7 @@ export default function MessagesPage() {
             type="checkbox"
             checked={selectedIds.size === messages.length && messages.length > 0}
             onChange={toggleSelectAll}
+            aria-label="全选留言"
             className="rounded"
           />
           <span className="text-xs text-muted-foreground">
@@ -386,6 +387,7 @@ export default function MessagesPage() {
                         checked={selectedIds.has(msg.id)}
                         onChange={() => toggleSelect(msg.id)}
                         onClick={(e) => e.stopPropagation()}
+                        aria-label={`选择留言 ${msg.visitor_name}`}
                         className="mt-0.5 rounded flex-shrink-0"
                       />
                       <div className="flex-1 min-w-0">
@@ -414,7 +416,7 @@ export default function MessagesPage() {
               </div>
               <div className="flex items-center justify-center gap-3 px-4 py-2.5 border-t border-border bg-card flex-shrink-0">
                 {hasMore ? (
-                  <button onClick={loadMore} className="text-xs text-primary hover:underline">
+                  <button onClick={loadMore} className="text-xs text-primary-text hover:underline">
                     加载更多
                   </button>
                 ) : (
@@ -472,7 +474,7 @@ export default function MessagesPage() {
                       href={selectedMessage.page_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 mt-2 text-xs text-primary hover:underline"
+                      className="inline-flex items-center gap-1 mt-2 text-xs text-primary-text hover:underline"
                     >
                       <ExternalLink className="w-3 h-3" />{selectedMessage.page_title}
                     </a>
@@ -497,7 +499,7 @@ export default function MessagesPage() {
                               <button
                                 onClick={() => openEditEditor(selectedMessage.id, part.replyId!, part.content)}
                                 disabled={actionLoading}
-                                className="text-[11px] text-primary hover:underline"
+                                className="text-[11px] text-primary-text hover:underline"
                               >
                                 编辑
                               </button>
@@ -567,6 +569,7 @@ export default function MessagesPage() {
                         setReplyingId(null);
                       }}
                       className="text-muted-foreground hover:text-foreground flex-shrink-0"
+                      aria-label="收起回复面板"
                     >
                       <ChevronDown className="w-4 h-4" />
                     </button>
@@ -576,7 +579,7 @@ export default function MessagesPage() {
                       {selectedMessage.content.slice(0, 40)}
                     </span>
                     {editingReplyId !== null && (
-                      <span className="text-[11px] text-primary flex-shrink-0">编辑中</span>
+                      <span className="text-[11px] text-primary-text flex-shrink-0">编辑中</span>
                     )}
                     <button
                       onClick={() => {
@@ -587,6 +590,7 @@ export default function MessagesPage() {
                         setReplyingId(null);
                       }}
                       className="text-muted-foreground hover:text-foreground flex-shrink-0"
+                      aria-label="关闭回复面板"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -594,14 +598,14 @@ export default function MessagesPage() {
 
                   {/* Markdown toolbar */}
                   <div className="flex items-center gap-0.5 px-5 py-1.5 border-b border-border-subtle">
-                    <button onClick={() => insertMarkdown('**', '**', '加粗文本')} className="msg-rt-btn" title="加粗"><Bold /></button>
-                    <button onClick={() => insertMarkdown('*', '*', '斜体文本')} className="msg-rt-btn" title="斜体"><Italic /></button>
-                    <button onClick={() => insertMarkdown('`', '`', 'code')} className="msg-rt-btn" title="行内代码"><Code /></button>
-                    <button onClick={() => insertMarkdown('[', '](url)', '链接文本')} className="msg-rt-btn" title="链接"><LinkIcon /></button>
+                    <button onClick={() => insertMarkdown('**', '**', '加粗文本')} className="msg-rt-btn" title="加粗" aria-label="加粗"><Bold /></button>
+                    <button onClick={() => insertMarkdown('*', '*', '斜体文本')} className="msg-rt-btn" title="斜体" aria-label="斜体"><Italic /></button>
+                    <button onClick={() => insertMarkdown('`', '`', 'code')} className="msg-rt-btn" title="行内代码" aria-label="行内代码"><Code /></button>
+                    <button onClick={() => insertMarkdown('[', '](url)', '链接文本')} className="msg-rt-btn" title="链接" aria-label="链接"><LinkIcon /></button>
                     <div className="w-px h-5 bg-border-subtle mx-1" />
-                    <button onClick={() => insertMarkdown('## ', '', '标题')} className="msg-rt-btn" title="标题"><Heading /></button>
-                    <button onClick={() => insertMarkdown('- ', '', '列表项')} className="msg-rt-btn" title="列表"><List /></button>
-                    <button onClick={() => insertMarkdown('> ', '', '引用')} className="msg-rt-btn" title="引用"><Quote /></button>
+                    <button onClick={() => insertMarkdown('## ', '', '标题')} className="msg-rt-btn" title="标题" aria-label="标题"><Heading /></button>
+                    <button onClick={() => insertMarkdown('- ', '', '列表项')} className="msg-rt-btn" title="列表" aria-label="列表"><List /></button>
+                    <button onClick={() => insertMarkdown('> ', '', '引用')} className="msg-rt-btn" title="引用" aria-label="引用"><Quote /></button>
                   </div>
 
                   {/* Textarea */}
@@ -612,7 +616,7 @@ export default function MessagesPage() {
                       setReplyContent(e.target.value);
                       setEditReplyContent(e.target.value);
                     }}
-                    className="w-full min-h-[200px] px-5 py-3 text-sm bg-transparent border-none resize-y focus:outline-none"
+                    className="w-full min-h-[200px] px-5 py-3 text-sm bg-card border-none resize-y focus:outline-none focus:ring-1 focus:ring-inset focus:ring-primary"
                     placeholder="输入回复内容……"
                   />
 

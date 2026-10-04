@@ -339,14 +339,14 @@ export default function MediaPage() {
 
       <div className="flex-1 overflow-auto px-4 md:px-8 space-y-4">
         {error && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-sm text-xs text-red-700">
+          <div className="flex items-center gap-2 px-3 py-2 bg-destructive/10 border border-destructive/25 rounded-sm text-xs text-destructive">
             <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
             <span>{error}</span>
             <button type="button" onClick={() => setError('')} className="ml-auto" aria-label="关闭错误提示"><X className="w-3 h-3" /></button>
           </div>
         )}
         {success && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-sm text-xs text-green-700">
+          <div className="flex items-center gap-2 px-3 py-2 bg-success/10 border border-success/25 rounded-sm text-xs text-success">
             <Check className="w-3.5 h-3.5 flex-shrink-0" />
             <span>{success}</span>
             <button type="button" onClick={() => setSuccess('')} className="ml-auto" aria-label="关闭成功提示"><X className="w-3 h-3" /></button>
@@ -403,7 +403,8 @@ export default function MediaPage() {
                   <p className="text-xs text-muted-foreground">{formatSize(file.size)} · {formatDate(file.lastModified)}</p>
                 </div>
 
-                <div className="px-2 pb-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* 触屏无常驻 hover：窄屏常显操作区，桌面端仅悬浮/聚焦时显示 */}
+                <div className="px-2 pb-2 flex gap-1 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                   <button
                     type="button"
                     onClick={() => handleCopy(file)}
@@ -411,7 +412,7 @@ export default function MediaPage() {
                     title="复制 URL"
                   >
                     {copiedId === file.sha && copiedType === 'url' ? (
-                      <Check className="w-3 h-3 text-green-600" />
+                      <Check className="w-3 h-3 text-success" />
                     ) : (
                       <Copy className="w-3 h-3" />
                     )}
@@ -423,7 +424,7 @@ export default function MediaPage() {
                     title="复制 Markdown 链接"
                   >
                     {copiedId === file.sha && copiedType === 'markdown' ? (
-                      <Check className="w-3 h-3 text-green-600" />
+                      <Check className="w-3 h-3 text-success" />
                     ) : (
                       <span className="text-[10px] font-bold">#</span>
                     )}
@@ -431,7 +432,7 @@ export default function MediaPage() {
                   <button
                     type="button"
                     onClick={() => handleDelete(file)}
-                    className="flex items-center justify-center px-2 py-1 border border-border rounded-sm hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors text-muted-foreground"
+                    className="flex items-center justify-center px-2 py-1 border border-border rounded-sm hover:bg-destructive/10 hover:border-destructive/25 hover:text-destructive transition-colors text-muted-foreground"
                     title="删除"
                   >
                     <Trash2 className="w-3 h-3" />

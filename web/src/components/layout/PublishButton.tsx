@@ -1,12 +1,13 @@
 import { useBuffer } from '../../contexts/BufferContext';
 import { useAuth } from '../../hooks/useAuth';
+import Modal from '../ui/Modal';
 import { Upload, Loader2, X, FileText, FilePlus2, FileMinus } from 'lucide-react';
 import type { BufferOp } from '../../lib/bufferApi';
 
 const OP_META: Record<BufferOp, { label: string; icon: React.ReactNode; className: string }> = {
-  write: { label: '新增或修改', icon: <FileText className="w-3 h-3" />, className: 'text-blue-600' },
-  delete: { label: '删除', icon: <FileMinus className="w-3 h-3" />, className: 'text-red-600' },
-  move: { label: '移动', icon: <FilePlus2 className="w-3 h-3" />, className: 'text-orange-600' },
+  write: { label: '新增或修改', icon: <FileText className="w-3 h-3" />, className: 'text-primary-text' },
+  delete: { label: '删除', icon: <FileMinus className="w-3 h-3" />, className: 'text-destructive' },
+  move: { label: '移动', icon: <FilePlus2 className="w-3 h-3" />, className: 'text-warning' },
 };
 
 function PublishDialog() {
@@ -19,8 +20,11 @@ function PublishDialog() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowPublishDialog(false)}>
-      <div className="bg-card border border-border rounded-sm w-full max-w-lg mx-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
+    <Modal
+      ariaLabel={`发布 ${changesCount} 项变更`}
+      onClose={() => setShowPublishDialog(false)}
+      className="bg-card border border-border rounded-sm w-full max-w-lg mx-4 shadow-lg"
+    >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-medium text-foreground">发布 {changesCount} 项变更</h3>
           <button type="button" onClick={() => setShowPublishDialog(false)} aria-label="关闭发布对话框" className="text-muted-foreground hover:text-foreground">
@@ -64,8 +68,7 @@ function PublishDialog() {
             {publishing ? '发布中……' : '确认发布'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -86,7 +89,7 @@ export function PublishButton() {
           {publishing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
           <span>发布变更</span>
           {changesCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-medium bg-blue-600 text-white rounded-full">
+            <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-medium bg-primary text-white rounded-full">
               {changesCount > 99 ? '99+' : changesCount}
             </span>
           )}

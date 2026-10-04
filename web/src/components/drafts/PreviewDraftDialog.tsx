@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Layers, ListTree } from 'lucide-react';
 import { DirectoryTreePicker } from './DirectoryTreePicker';
+import Modal from '../ui/Modal';
 import type { DirNode } from '../../lib/dirTree';
 
 export interface PreviewTargetEntry {
@@ -76,11 +77,11 @@ export function PreviewDraftDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div
-        className="bg-card rounded-lg p-5 w-full max-w-lg mx-4 max-h-[85vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal
+      ariaLabel="预发布草稿"
+      onClose={onClose}
+      className="bg-card rounded-lg p-5 w-full max-w-lg mx-4 max-h-[85vh] flex flex-col"
+    >
         <h3 className="text-lg font-medium text-foreground mb-1">
           预发布 {entries.length} 篇草稿
         </h3>
@@ -184,8 +185,7 @@ export function PreviewDraftDialog({
             {loading ? '处理中……' : '确认预发布'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

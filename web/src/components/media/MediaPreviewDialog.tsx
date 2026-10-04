@@ -1,6 +1,7 @@
 import { X, Copy, Check, Trash2 } from 'lucide-react';
 import type { MediaFile } from '../../lib/mediaUtils';
 import { formatSize, formatDate } from '../../lib/mediaUtils';
+import Modal from '../ui/Modal';
 
 interface MediaPreviewDialogProps {
   file: MediaFile | null;
@@ -18,14 +19,12 @@ export function MediaPreviewDialog({
   if (!file) return null;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      ariaLabel={`预览 ${file.name}`}
+      onClose={onClose}
+      overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+      className="bg-card rounded-sm max-w-3xl w-full max-h-[90vh] overflow-auto"
     >
-      <div
-        className="bg-card rounded-sm max-w-3xl w-full max-h-[90vh] overflow-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <p className="text-sm font-medium text-foreground truncate font-mono">{file.name}</p>
           <button
@@ -77,13 +76,12 @@ export function MediaPreviewDialog({
             <button
               type="button"
               onClick={() => { onDelete(file); onClose(); }}
-              className="flex items-center gap-1 text-red-600 hover:text-red-700 transition-colors"
+              className="flex items-center gap-1 text-destructive hover:opacity-80 transition-colors"
             >
               <Trash2 className="w-3 h-3" /> 删除
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </Modal>
   );
 }

@@ -64,7 +64,7 @@ export default function DirectorySelectorDropdown({
           value={customValue}
           onChange={(e) => setCustomValue(e.target.value)}
           placeholder={placeholder}
-          className="w-full px-2.5 py-1.5 text-xs border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
+          className="w-full px-2.5 py-1.5 text-xs border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
         />
         <button
           onClick={(e) => {

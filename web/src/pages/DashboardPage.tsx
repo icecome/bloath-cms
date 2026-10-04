@@ -305,9 +305,10 @@ if (!selectedRepo || !currentDir) return;
             <input
               type="text"
               placeholder="按文件名或路径筛选……"
+              aria-label="按文件名或路径筛选"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
             />
           </div>
         </div>
@@ -334,7 +335,7 @@ if (!selectedRepo || !currentDir) return;
           <button
             onClick={handleBatchDelete}
             disabled={batchLoading}
-            className="flex items-center gap-1.5 text-sm px-3 py-1.5 text-white bg-red-600 hover:bg-red-700 rounded-sm transition-colors disabled:opacity-40"
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
           >
             <Trash2 className="w-3.5 h-3.5" />
             {batchLoading ? '处理中……' : '移至回收站'}
@@ -389,7 +390,7 @@ if (!selectedRepo || !currentDir) return;
                       e.stopPropagation();
                       handleEdit(file);
                     }}
-                    className="text-sm text-primary hover:underline"
+                    className="text-sm text-primary-text hover:underline"
                   >
                     编辑
                   </button>
@@ -430,7 +431,7 @@ if (!selectedRepo || !currentDir) return;
                         e.stopPropagation();
                         handleEdit(file);
                       }}
-                      className="p-1.5 text-primary hover:bg-accent rounded transition-colors"
+                      className="p-1.5 text-primary-text hover:bg-accent rounded transition-colors"
                       title="编辑"
                     >
                       <Pencil className="w-4 h-4" />

@@ -3,16 +3,16 @@ import type { EnhancedFileItem, FileSource } from '../lib/extractFrontMatter';
 import type { DraftPreviewState } from '../lib/draftPreviewStore';
 
 const SOURCE_META: Record<FileSource, { label: string; className: string }> = {
-  repo: { label: '仓库', className: 'bg-secondary text-muted-foreground' },
-  buffer: { label: '缓冲', className: 'bg-orange-100 text-orange-700' },
-  'buffer-modified': { label: '缓冲·有改动', className: 'bg-orange-100 text-orange-700' },
-  'buffer-deleted': { label: '缓冲·待删除', className: 'bg-red-100 text-red-700' },
+  repo: { label: '仓库', className: 'bg-secondary text-muted-foreground border border-border' },
+  buffer: { label: '缓冲', className: 'bg-warning/10 text-warning border border-warning/25' },
+  'buffer-modified': { label: '缓冲·有改动', className: 'bg-warning/10 text-warning border border-warning/25' },
+  'buffer-deleted': { label: '缓冲·待删除', className: 'bg-destructive/10 text-destructive border border-destructive/25' },
 };
 
 // 预发布状态徽标：draft 不显示徽标（避免噪声），仅在有预发布动作时提示
 const PREVIEW_META: Record<Exclude<DraftPreviewState, 'draft'>, { label: string; className: string }> = {
-  previewed: { label: '已预发布', className: 'bg-blue-100 text-blue-700' },
-  'preview-stale': { label: '预发布过期', className: 'bg-amber-100 text-amber-700' },
+  previewed: { label: '已预发布', className: 'bg-primary-text/10 text-primary-text border border-primary-text/25' },
+  'preview-stale': { label: '预发布过期', className: 'bg-warning/10 text-warning border border-warning/25' },
 };
 
 function SourceBadge({ file }: { file: EnhancedFileItem }) {
@@ -50,7 +50,7 @@ function previewPathDisplay(file: EnhancedFileItem): { text: string; className: 
     return { text: '—', className: 'text-muted-foreground' };
   }
   if (state === 'preview-stale') {
-    return { text: `${file.previewTarget} ⚠`, className: 'text-amber-700' };
+    return { text: `${file.previewTarget} ⚠`, className: 'text-warning' };
   }
   return { text: file.previewTarget, className: 'text-foreground' };
 }
@@ -102,6 +102,7 @@ export default function FileTable({
             type="checkbox"
             checked={selectedFiles.size === filteredCount && filteredCount > 0}
             onChange={onSelectAll}
+            aria-label="全选本页文件"
             className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
           />
         </div>
@@ -131,6 +132,7 @@ export default function FileTable({
               type="checkbox"
               checked={selectedFiles.has(file.path)}
               onChange={() => onSelectFile(file.path)}
+              aria-label={`选择 ${file.name}`}
               className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary"
             />
           </div>
@@ -180,6 +182,7 @@ export default function FileTable({
               type="checkbox"
               checked={selectedFiles.has(file.path)}
               onChange={() => onSelectFile(file.path)}
+              aria-label={`选择 ${file.name}`}
               className="w-4 h-4 rounded-sm border-border bg-card text-primary focus:ring-primary flex-shrink-0"
             />
             {rowIcon}

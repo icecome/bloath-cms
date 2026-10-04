@@ -143,7 +143,7 @@ export function DeviceSettings() {
                     {describeDevice(device.ua)}
                   </span>
                   {device.isCurrent && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-primary/10 text-primary">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-primary/10 text-primary-text">
                       当前设备
                     </span>
                   )}
@@ -178,7 +178,7 @@ export function DeviceSettings() {
                   type="button"
                   onClick={() => handleDelete(device)}
                   disabled={savingFingerprint === device.fingerprint}
-                  className="mt-0.5 text-muted-foreground hover:text-destructive focus-visible:text-destructive opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-all disabled:opacity-0 disabled:cursor-not-allowed"
+                  className="mt-0.5 text-muted-foreground hover:text-destructive focus-visible:text-destructive sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity disabled:sm:opacity-0 disabled:cursor-not-allowed"
                   aria-label="移除设备"
                   title="移除该设备"
                 >

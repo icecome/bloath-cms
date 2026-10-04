@@ -33,7 +33,7 @@ export function MediaUploader({ uploading, quality, onUpload }: MediaUploaderPro
       }}
       className={`border-2 border-dashed rounded-sm p-8 text-center cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
         dragOver
-          ? 'border-primary bg-blue-50'
+          ? 'border-primary bg-primary/5'
           : 'border-border hover:border-border hover:bg-accent'
       } ${uploading ? 'pointer-events-none opacity-60' : ''}`}
     >

@@ -132,7 +132,7 @@ export function MediaSettings() {
               type="text"
               value={mediaConfig.imageOwner}
               onChange={(e) => updateMediaConfig({ imageOwner: e.target.value.trim() })}
-              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder-muted-foreground"
+              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-muted text-foreground placeholder-muted-foreground"
               placeholder="仓库所有者"
             />
             <span className="flex items-center text-muted-foreground">/</span>
@@ -140,7 +140,7 @@ export function MediaSettings() {
               type="text"
               value={mediaConfig.imageRepo}
               onChange={(e) => updateMediaConfig({ imageRepo: e.target.value.trim() })}
-              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder-muted-foreground"
+              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-muted text-foreground placeholder-muted-foreground"
               placeholder="仓库名，如 blog-images"
             />
             <span className="flex items-center text-muted-foreground">@</span>
@@ -148,7 +148,7 @@ export function MediaSettings() {
               type="text"
               value={mediaConfig.imageBranch}
               onChange={(e) => updateMediaConfig({ imageBranch: e.target.value.trim() || 'main' })}
-              className="w-24 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder-muted-foreground"
+              className="w-24 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-muted text-foreground placeholder-muted-foreground"
               placeholder="分支"
             />
           </div>
@@ -169,7 +169,7 @@ export function MediaSettings() {
               当前仓库：<code className="text-foreground font-mono">{selectedRepo.owner}/{selectedRepo.repo}</code>
             </p>
           ) : (
-            <p className="text-xs text-amber-600 mb-3">请先在侧边栏选择博客仓库</p>
+            <p className="text-xs text-warning mb-3">请先在侧边栏选择博客仓库</p>
           )}
           <input
             type="text"
@@ -196,7 +196,7 @@ export function MediaSettings() {
               当前仓库：<code className="text-foreground font-mono">{selectedRepo.owner}/{selectedRepo.repo}</code>
             </p>
           ) : (
-            <p className="text-xs text-amber-600 mb-3">请先在侧边栏选择博客仓库</p>
+            <p className="text-xs text-warning mb-3">请先在侧边栏选择博客仓库</p>
           )}
           <div className="flex gap-2">
             <input
@@ -250,7 +250,7 @@ export function MediaSettings() {
               type="text"
               value={mediaConfig.customCdnTemplate}
               onChange={(e) => updateMediaConfig({ customCdnTemplate: e.target.value })}
-              className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder-muted-foreground mt-1"
+              className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-muted text-foreground placeholder-muted-foreground mt-1"
               placeholder="模板变量：{owner} {repo} {branch} {path}"
             />
           )}

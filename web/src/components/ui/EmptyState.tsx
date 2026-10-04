@@ -18,7 +18,7 @@ export default function EmptyState({ icon, title, description, actionLabel, onAc
         {actionLabel && onAction && (
           <button
             onClick={onAction}
-            className="text-sm text-primary hover:text-primary font-medium"
+            className="text-sm text-primary-text hover:text-primary-text font-medium"
           >
             {actionLabel}
           </button>

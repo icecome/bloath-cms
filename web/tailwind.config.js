@@ -8,13 +8,13 @@ export default {
       colors: {
         border: 'hsl(var(--border))',
         'border-subtle': 'hsl(var(--border-subtle))',
-        input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))'
+          foreground: 'hsl(var(--primary-foreground))',
+          text: 'hsl(var(--primary-text))'
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',

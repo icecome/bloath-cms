@@ -8,6 +8,7 @@ import { sanitizeSlug, filterValidDirs, fileStemFromPath } from '../lib/path';
 import { resolvePathAndSlug } from '../lib/articleSlug';
 import VditorEditor from '../components/editor/VditorEditor';
 import SchemaFormPanel from '../components/editor/SchemaFormPanel';
+import Modal from '../components/ui/Modal';
 import { ArrowLeft, Save, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import Vditor from 'vditor';
 import {
@@ -398,7 +399,7 @@ export default function EditorPage() {
       <div className="flex-1 flex items-center justify-center h-full">
         <div className="text-center">
           <p className="text-sm text-destructive">{error}</p>
-          <button onClick={handleBack} className="mt-2 text-sm text-primary hover:underline">返回列表</button>
+          <button onClick={handleBack} className="mt-2 text-sm text-primary-text hover:underline">返回列表</button>
         </div>
       </div>
     );
@@ -445,9 +446,12 @@ export default function EditorPage() {
                 <Trash2 className="w-4 h-4" />
               </button>
               {showDeleteConfirm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
-                  <div className="bg-white rounded-md shadow-sm p-4 w-full max-w-sm mx-4">
-                    <p className="text-sm text-foreground mb-4">确定要将「{frontmatter.title || frontmatter.url || slug}」移至回收站吗？</p>
+                <Modal
+                  ariaLabel="移至回收站确认"
+                  onClose={() => setShowDeleteConfirm(false)}
+                  className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4"
+                >
+                  <p className="text-sm text-foreground mb-4">确定要将「{frontmatter.title || frontmatter.url || slug}」移至回收站吗？</p>
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => setShowDeleteConfirm(false)}
@@ -459,13 +463,12 @@ export default function EditorPage() {
                       <button
                         onClick={handleDeleteArticle}
                         disabled={saving}
-                        className="px-3 py-1.5 text-sm text-white bg-red-600 hover:bg-red-700 rounded-sm transition-colors disabled:opacity-40"
+                        className="px-3 py-1.5 text-sm text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
                       >
                         {saving ? '处理中……' : '确认删除'}
                       </button>
                     </div>
-                  </div>
-                </div>
+                </Modal>
               )}
             </>
           )}
@@ -494,7 +497,7 @@ export default function EditorPage() {
           </div>
         </div>
 
-        <div className="hidden md:block w-72 bg-white border-l border-border overflow-auto flex-shrink-0">
+        <div className="hidden md:block w-72 bg-card border-l border-border overflow-auto flex-shrink-0">
           <SchemaFormPanel frontmatter={frontmatter} setFm={setFm} profile={profile} />
         </div>
       </div>
@@ -502,8 +505,8 @@ export default function EditorPage() {
       {showMetadataPanel && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setShowMetadataPanel(false)} />
-          <div className="fixed top-0 right-0 bottom-0 w-[85vw] max-w-sm bg-white z-50 md:hidden overflow-auto">
-            <div className="sticky top-0 bg-white border-b border-border px-4 py-3 flex items-center justify-between">
+          <div className="fixed top-0 right-0 bottom-0 w-[85vw] max-w-sm bg-card z-50 md:hidden overflow-auto">
+            <div className="sticky top-0 bg-card border-b border-border px-4 py-3 flex items-center justify-between">
               <h3 className="text-sm font-medium text-foreground">文章配置</h3>
               <button onClick={() => setShowMetadataPanel(false)} className="text-muted-foreground hover:text-foreground transition-colors" aria-label="关闭面板">
                 <X className="w-5 h-5" />

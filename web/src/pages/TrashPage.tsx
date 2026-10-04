@@ -14,6 +14,7 @@ import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Pagination from '../components/ui/Pagination';
 import DirectorySelectorDropdown from '../components/ui/DirectorySelectorDropdown';
+import Modal from '../components/ui/Modal';
 import FileTable from '../components/FileTable';
 import { PAGE_SIZE } from '../lib/constants';
 import { FileText, Search, Trash2, RotateCcw, X } from 'lucide-react';
@@ -179,61 +180,65 @@ export default function TrashPage() {
   return (
     <div className="h-full flex flex-col" onClick={() => setShowFileRestoreDropdown('')}>
       {permanentDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-destructive">
-            <p className="text-sm text-foreground mb-4">
-              确定要永久删除选中的 {selectedFiles.size} 个文件吗？<br />
-              <span className="text-destructive">此操作不可恢复。</span>
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setPermanentDeleteConfirm(false)}
-                disabled={actionLoading}
-                className="px-3 py-1.5 text-sm border border-border text-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleBulkPermanentDelete}
-                disabled={actionLoading}
-                className="px-3 py-1.5 text-sm text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
-              >
-                {actionLoading ? '删除中……' : '永久删除'}
-              </button>
-            </div>
+        <Modal
+          ariaLabel="永久删除确认"
+          onClose={() => setPermanentDeleteConfirm(false)}
+          className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-destructive"
+        >
+          <p className="text-sm text-foreground mb-4">
+            确定要永久删除选中的 {selectedFiles.size} 个文件吗？<br />
+            <span className="text-destructive">此操作不可恢复。</span>
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setPermanentDeleteConfirm(false)}
+              disabled={actionLoading}
+              className="px-3 py-1.5 text-sm border border-border text-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleBulkPermanentDelete}
+              disabled={actionLoading}
+              className="px-3 py-1.5 text-sm text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
+            >
+              {actionLoading ? '删除中……' : '永久删除'}
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {singleDeleteFile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-destructive">
-            <p className="text-sm text-foreground mb-4">
-              确定要永久删除「{singleDeleteFile.name}」吗？<br />
-              <span className="text-destructive">此操作不可恢复。</span>
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setSingleDeleteFile(null)}
-                disabled={actionLoading}
-                className="px-3 py-1.5 text-sm border border-border text-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
-              >
-                取消
-              </button>
-              <button
-                onClick={async () => {
-                  const file = singleDeleteFile;
-                  setSingleDeleteFile(null);
-                  await handlePermanentDelete(file);
-                }}
-                disabled={actionLoading}
-                className="px-3 py-1.5 text-sm text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
-              >
-                {actionLoading ? '删除中……' : '永久删除'}
-              </button>
-            </div>
+        <Modal
+          ariaLabel="永久删除确认"
+          onClose={() => setSingleDeleteFile(null)}
+          className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-destructive"
+        >
+          <p className="text-sm text-foreground mb-4">
+            确定要永久删除「{singleDeleteFile.name}」吗？<br />
+            <span className="text-destructive">此操作不可恢复。</span>
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setSingleDeleteFile(null)}
+              disabled={actionLoading}
+              className="px-3 py-1.5 text-sm border border-border text-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
+            >
+              取消
+            </button>
+            <button
+              onClick={async () => {
+                const file = singleDeleteFile;
+                setSingleDeleteFile(null);
+                await handlePermanentDelete(file);
+              }}
+              disabled={actionLoading}
+              className="px-3 py-1.5 text-sm text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
+            >
+              {actionLoading ? '删除中……' : '永久删除'}
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {selectedRepo && (
@@ -243,9 +248,10 @@ export default function TrashPage() {
             <input
               type="text"
               placeholder="搜索回收站……"
+              aria-label="搜索回收站"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
+              className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
             />
           </div>
 
@@ -281,7 +287,7 @@ export default function TrashPage() {
                 <button
                   onClick={() => setShowRestoreDropdown(!showRestoreDropdown)}
                   disabled={actionLoading}
-                  className="text-sm px-3 py-1.5 text-primary hover:bg-accent rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                  className="text-sm px-3 py-1.5 text-primary-text hover:bg-accent rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   恢复
@@ -339,14 +345,17 @@ export default function TrashPage() {
               <>
                 <div className="relative inline-block">
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      // 阻止冒泡到根容器的「点击空白关闭」处理器：否则同一事件内
+                      // 先设置 file.path 又被重置为 ''，下拉永远打不开
+                      e.stopPropagation();
                       if (showFileRestoreDropdown === file.path) {
                         setShowFileRestoreDropdown('');
                       } else {
                         setShowFileRestoreDropdown(file.path);
                       }
                     }}
-                    className="text-sm text-primary hover:underline cursor-pointer"
+                    className="text-sm text-primary-text hover:underline cursor-pointer"
                     title="恢复到指定目录"
                   >
                     恢复
@@ -390,14 +399,16 @@ export default function TrashPage() {
               <>
                 <div className="relative inline-block">
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      // 同桌面端：阻止冒泡，避免被根容器重置导致下拉打不开
+                      e.stopPropagation();
                       if (showFileRestoreDropdown === file.path) {
                         setShowFileRestoreDropdown('');
                       } else {
                         setShowFileRestoreDropdown(file.path);
                       }
                     }}
-                    className="p-1.5 text-primary hover:bg-accent rounded transition-colors"
+                    className="p-1.5 text-primary-text hover:bg-accent rounded transition-colors"
                     title="恢复"
                   >
                     <RotateCcw className="w-4 h-4" />
@@ -429,6 +440,7 @@ export default function TrashPage() {
                 <button
                   onClick={() => setSingleDeleteFile(file)}
                   disabled={actionLoading}
+                  aria-label="永久删除"
                 >
                   <X className="w-4 h-4" />
                 </button>

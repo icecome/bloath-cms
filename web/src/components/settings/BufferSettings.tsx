@@ -60,7 +60,7 @@ export function BufferSettings() {
     }
   };
 
-  const inputCls = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground placeholder-muted-foreground';
+  const inputCls = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-muted text-foreground placeholder-muted-foreground';
   const labelCls = 'block text-[11px] text-muted-foreground mb-1';
 
   return (

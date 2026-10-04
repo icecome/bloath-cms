@@ -650,9 +650,10 @@ export default function DraftsPage() {
             <input
               type="text"
               placeholder="搜索草稿……"
+              aria-label="搜索草稿"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
+              className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
             />
           </div>
 
@@ -675,7 +676,7 @@ export default function DraftsPage() {
                 onClick={() => setShowPublishDropdown(true)}
                 disabled={actionLoading || publishBlocked}
                 title={publishBlocked ? '有草稿尚未预发布，请先预发布' : undefined}
-                className="text-sm px-3 py-1.5 text-primary hover:bg-accent rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="text-sm px-3 py-1.5 text-primary-text hover:bg-accent rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 发布
               </button>
@@ -710,7 +711,7 @@ export default function DraftsPage() {
                       value={moveTarget}
                       onChange={(e) => setMoveTarget(e.target.value)}
                       placeholder="输入目标路径，如 content/.draft/sub"
-                      className="w-full px-2.5 py-1.5 text-sm border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
+                      className="w-full px-2.5 py-1.5 text-sm border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
                     />
                     <button
                       onClick={handleMove}
@@ -751,7 +752,7 @@ export default function DraftsPage() {
                   }
                 }}
                 disabled={selectedFiles.size !== 1 || actionLoading}
-                className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-primary rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-primary-text rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
                 title="重命名"
               >
                 <Pencil className="w-3.5 h-3.5" />
@@ -789,7 +790,7 @@ export default function DraftsPage() {
               <>
                 <button
                   onClick={() => handleEdit(file)}
-                  className="text-sm text-primary hover:underline cursor-pointer whitespace-nowrap"
+                  className="text-sm text-primary-text hover:underline cursor-pointer whitespace-nowrap"
                 >
                   编辑
                 </button>
@@ -823,7 +824,7 @@ export default function DraftsPage() {
               <>
                 <button
                   onClick={() => handleEdit(file)}
-                  className="p-1.5 text-primary hover:bg-accent rounded transition-colors"
+                  className="p-1.5 text-primary-text hover:bg-accent rounded transition-colors"
                   title="编辑"
                 >
                   <Pencil className="w-4 h-4" />

@@ -155,7 +155,7 @@ export function SiteSettings() {
                 {profileSource === 'detected' ? '（自动识别）' : '（手动指定）'}
               </span>
               {profileSource === 'manual' && (
-                <button onClick={handleRedetect} className="text-xs text-primary hover:underline">
+                <button onClick={handleRedetect} className="text-xs text-primary-text hover:underline">
                   重新识别
                 </button>
               )}
