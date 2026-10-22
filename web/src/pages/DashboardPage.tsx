@@ -117,7 +117,9 @@ if (!currentDir) {
         sessionStorage.removeItem(key);
         lastDeletedRef.current = null;
       }, UNDO_TTL_MS - elapsed);
-    } catch {
+    } catch (err) {
+      // sessionStorage 不可用（隐私模式/配额）：撤销功能降级为不可用，主流程不受影响
+      console.warn('[dashboard] 撤销记录读取失败：', err);
     }
     return () => {
       if (undoCleanupRef.current) clearTimeout(undoCleanupRef.current);
@@ -252,7 +254,9 @@ if (!selectedRepo || !currentDir) return;
             deletedAt: Date.now(),
             branch: selectedRepo.branch || 'main',
           }));
-        } catch {
+        } catch (err) {
+          // sessionStorage 不可用：撤销功能降级（删除本身已成功），主流程不受影响
+          console.warn('[dashboard] 撤销记录写入失败：', err);
         }
       }
 

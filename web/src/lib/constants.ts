@@ -6,7 +6,8 @@ export const DEFAULT_MEDIA_PATH = 'assets';
 export const DEFAULT_BRANCH_NAME = 'assets';
 export const DEFAULT_STANDALONE_BRANCH = 'main';
 
-export const UNDO_STORAGE_PREFIX = 'bloath_undo';
-export const UNDO_TTL_MS = 60_000;
+// 撤销存储常量已迁移到 undoConstants.ts（避免 import.meta.env 阻断 node 测试链路），
+// 此处 re-export 保持既有导入点兼容。
+export { UNDO_STORAGE_PREFIX, UNDO_TTL_MS } from './undoConstants';
 
 export const MAX_TREE_ITEMS = 800;

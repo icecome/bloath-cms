@@ -10,6 +10,8 @@ import { useFileListPage } from '../hooks/useFileListPage';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { clearCache } from '../lib/fileCache';
 import { sanitizePath, filterValidDirs, dedupeTargetPaths } from '../lib/path';
+import { mapLimit } from '../lib/concurrency';
+import { readUndoRecord, writeUndoRecord, clearUndoRecord } from '../lib/undoStore';
 import EmptyState from '../components/ui/EmptyState';
 import LoadingState from '../components/ui/LoadingState';
 import Pagination from '../components/ui/Pagination';
@@ -425,8 +427,9 @@ export default function DraftsPage() {
     setActionLoading(true);
     try {
       // 缓冲项：零 commit。仅在缓冲的直接丢弃记录；
-      // 仓库有旧版的写 delete 墓碑，留待发布时一并删除
-      for (const file of bufferItems) {
+      // 仓库有旧版的写 delete 墓碑，留待发布时一并删除。
+      // mapLimit 并发 4：替代 for-await 串行，批量删除耗时约降 3/4（P2-6）
+      await mapLimit(bufferItems, 4, async (file) => {
         if (file.source === 'buffer-modified') {
           await writeBufferFile({
             owner: selectedRepo.owner,
@@ -443,7 +446,7 @@ export default function DraftsPage() {
             path: file.path,
           });
         }
-      }
+      });
 
       if (repoItems.length > 0) {
         const targets = dedupeTargetPaths(repoItems.map((file) => `${trashPath}/${file.name}`));
@@ -469,7 +472,52 @@ export default function DraftsPage() {
       const parts: string[] = [];
       if (repoItems.length > 0) parts.push(`${repoItems.length} 篇已移至回收站`);
       if (bufferItems.length > 0) parts.push(`${bufferItems.length} 篇缓冲已删除`);
-      addToast({ message: parts.join('，') || '未删除任何文件', type: 'success' });
+      addToast({
+        message: parts.join('，') || '未删除任何文件',
+        type: 'success',
+        // 仓库草稿批量删除的撤销：sessionStorage 持久化（P3-4 undoStore），
+        // 刷新后 60s 内仍可撤销（原 ref 方案刷新即丢）
+        onUndo: repoItems.length > 0 ? async () => {
+          try {
+            if (!selectedRepo) return;
+            const record = readUndoRecord<EnhancedFileItem>(selectedRepo, sessionStorage);
+            if (!record || record.branch !== selectedRepo.branch) return;
+            const targets = dedupeTargetPaths(record.originalPaths);
+            await commitBatch({
+              owner: selectedRepo.owner,
+              repo: selectedRepo.repo,
+              branch: selectedRepo.branch,
+              message: buildCommitMessage(`撤销删除：恢复 ${record.files.length} 篇草稿`, { skipCi: true }),
+              ops: record.files.map((f, i) => ({
+                op: 'move' as const,
+                fromPath: `${trashPath}/${f.name}`,
+                path: targets[i] ?? record.originalPaths[i] ?? `${trashPath}/${f.name}`
+              })),
+              userName: user?.login
+            });
+            setFiles((prev) => [...prev, ...record.files]);
+            clearUndoRecord(selectedRepo, sessionStorage);
+            clearCache(selectedRepo);
+            addToast({ message: '已恢复全部草稿', type: 'success' });
+          } catch (err) {
+            addToast({ message: `恢复失败：${(err as Error).message}`, type: 'error' });
+          }
+        } : undefined
+      });
+
+      // 仓库草稿写入撤销记录（sessionStorage，TTL 60s，键含 branch）
+      if (repoItems.length > 0 && selectedRepo) {
+        writeUndoRecord<EnhancedFileItem>(
+          selectedRepo,
+          {
+            files: repoItems,
+            originalPaths: repoItems.map((f) => f.path),
+            deletedAt: Date.now(),
+            branch: selectedRepo.branch
+          },
+          sessionStorage
+        );
+      }
 
       setSelectedFiles(new Set());
     } catch (err) {

@@ -6,9 +6,10 @@ import { success, error } from '../comment/utils/response';
 import {
   getUserRepos, readFile, writeFile, deleteFile, listDir,
   getRepoBranches, getTree, createBranch, batchCommit, extractFrontMatters,
-  listWorkflows, dispatchWorkflow, buildCommitAuthor,
+  listWorkflows, dispatchWorkflow, buildCommitAuthor, listFileCommits,
 } from '../services/github';
 import type { CommitOp } from '../services/github';
+import { fetchRecentRuns } from '../services/deploy-status';
 import { requireAuth, type AuthResult } from '../middleware/sessionAuth';
 import { isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE } from '../middleware/pathGuard';
 
@@ -163,6 +164,27 @@ reposApp.post('/api/repos/deploy', async (c: Context<HonoEnv>) => {
   }
   await dispatchWorkflow(auth(c).githubToken, owner!, repo!, workflowId, ref);
   return c.json(success(null));
+});
+
+// GET /api/repos/deploy-status —— 最近 Actions runs（前端部署徽章数据源）
+reposApp.get('/api/repos/deploy-status', async (c: Context<HonoEnv>) => {
+  const owner = c.req.query('owner');
+  const repo = c.req.query('repo');
+  if (!isSafePathParam(owner) || !isSafePathParam(repo)) return c.json(badRequest('缺少 owner 或 repo 参数'), 400);
+  const result = await fetchRecentRuns(fetch, auth(c).githubToken, owner!, repo!);
+  return c.json(success(result));
+});
+
+// GET /api/repos/commits —— 单文件提交历史（编辑器历史侧栏数据源）
+reposApp.get('/api/repos/commits', async (c: Context<HonoEnv>) => {
+  const owner = c.req.query('owner');
+  const repo = c.req.query('repo');
+  const branch = c.req.query('branch') || 'main';
+  const filePath = c.req.query('path');
+  if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath) return c.json(badRequest('缺少必填参数'), 400);
+  if (!isSafePathParam(filePath, true) || !isSafePathParam(branch)) return c.json(badRequest('path 或 branch 参数无效'), 400);
+  const commits = await listFileCommits(auth(c).githubToken, owner!, repo!, branch, filePath);
+  return c.json(success(commits));
 });
 
 // GET /api/repos/:owner/:repo/branches

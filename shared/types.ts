@@ -34,6 +34,16 @@ export interface FieldConfig {
   group?: FieldGroup;
   /** 满足条件才显示；不满足时字段在前端隐藏但已存值保留 */
   showWhen?: ShowWhen;
+  /** 正则校验（string/url/slug 类字段）；完整匹配语义由 SchemaFormPanel 实现 */
+  pattern?: string;
+  /** pattern 校验失败时的提示文案（缺省用通用文案） */
+  patternMessage?: string;
+  /** number 数值下限（含） */
+  min?: number;
+  /** number 数值上限（含） */
+  max?: number;
+  /** 文本最大长度（string/text/url/slug）；超出禁止输入并提示 */
+  maxLength?: number;
 }
 
 export interface User {
@@ -74,7 +84,21 @@ export type CdnProvider = 'jsdmirror' | 'github_raw' | 'custom';
 
 export type DuplicateStrategy = 'skip' | 'overwrite';
 
-export type MediaSourceType = 'standalone' | 'repo-dir' | 'image-branch';
+export type MediaSourceType = 'standalone' | 'repo-dir' | 'image-branch' | 's3';
+
+/** S3 兼容图床的连接配置（sourceType = 's3' 时生效；凭据仅存 localStorage，与缓冲层同安全级别） */
+export interface S3MediaConfig {
+  /** S3 兼容端点，如 https://s3.example.com 或 R2 的 https://<account>.r2.cloudflarestorage.com */
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  /** 对象键前缀（可空，等于桶根） */
+  prefix: string;
+  /** 公网访问基址（含 {path} 占位符；如 https://cdn.example.com/{path}）。缺省时不可复制外链 */
+  publicBaseUrl: string;
+}
 
 export interface MediaConfig {
   sourceType: MediaSourceType;
@@ -88,6 +112,8 @@ export interface MediaConfig {
   quality: number;
   renameTemplate: string;
   duplicateStrategy: DuplicateStrategy;
+  /** S3 兼容图床配置（sourceType='s3' 时必填） */
+  s3?: S3MediaConfig;
 }
 
 export interface ArticleFrontmatter {

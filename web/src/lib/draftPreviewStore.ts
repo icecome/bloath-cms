@@ -37,12 +37,9 @@ export interface DraftPreviewStore {
 export const PREVIEW_KEY_PREFIX = 'bloath_previews';
 const STORE_VERSION = 1;
 
-/** 最小化的 storage 接口，便于测试注入内存实现 */
-export interface StorageLike {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
-}
+// StorageLike 与 resolveStorage 统一由 storageLike.ts 提供（三处 store 同构抽象的去重）
+import { resolveStorage, type StorageLike } from './storageLike.ts';
+export type { StorageLike };
 
 interface RepoScope {
   owner: string;
@@ -58,13 +55,6 @@ interface RepoScope {
  */
 export function previewStorageKey(repo: RepoScope): string {
   return `${PREVIEW_KEY_PREFIX}_${repo.owner}_${repo.repo}_${repo.branch || 'main'}`;
-}
-
-/** 解析 storage：显式传入优先，否则取全局 localStorage（不可用时返回 null） */
-function resolveStorage(storage?: StorageLike): StorageLike | null {
-  if (storage) return storage;
-  const g = globalThis as { localStorage?: StorageLike };
-  return g.localStorage ?? null;
 }
 
 function emptyStore(): DraftPreviewStore {

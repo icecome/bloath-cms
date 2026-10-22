@@ -1,4 +1,5 @@
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
+import { invalidateSnapshot } from './fileSnapshot';
 import type { RepoInfo } from '../../../shared/types';
 
 interface CacheEntry {
@@ -42,4 +43,7 @@ export function clearCache(repo: RepoInfo): void {
       cache.delete(key);
     }
   }
+  // 同步失效树级 SHA 快照：提交变更后必须全量刷新，
+  // 否则下一轮扫描会复用旧 sha 的 front-matter，造成内容与元数据不一致。
+  invalidateSnapshot(repo);
 }

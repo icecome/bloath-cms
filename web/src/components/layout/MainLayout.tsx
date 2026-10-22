@@ -8,6 +8,8 @@ import { detectFrameworks, type DetectedRepo } from '../../lib/detectFramework';
 import { pullRepoConfig } from '../../lib/repoConfigSync';
 import { filterValidDirs } from '../../lib/path';
 import { PublishButton } from './PublishButton';
+import { DeployBadge } from './DeployBadge';
+import { GlobalSearchDialog } from './GlobalSearchDialog';
 import {
   FilePlus2,
   Settings,
@@ -434,7 +436,7 @@ function SidebarContent({
 export default function MainLayout() {
   const { user, logout } = useAuth();
   const { selectedRepo, setSelectedRepo, branches, loadBranches } = useRepo();
-  const { updateConfig, updateMediaConfig } = useCollections();
+  const { updateConfig, updateMediaConfig, config: layoutCollectionsConfig } = useCollections();
   const location = useLocation();
   const navigate = useNavigate();
   const [repos, setRepos] = useState<DetectedRepo[]>([]);
@@ -443,8 +445,22 @@ export default function MainLayout() {
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  /** 全局搜索对话框（Ctrl/Cmd+K 或顶栏搜索按钮） */
+  const [searchOpen, setSearchOpen] = useState(false);
   const detectedFrameworksRef = useRef(false);
   const syncedRepoKeyRef = useRef('');
+
+  // Ctrl/Cmd+K 打开全局搜索
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // 切换仓库时自动拉取仓库内配置（.bloath/config.json），仓库为准实现多设备同步
   useEffect(() => {
@@ -614,8 +630,32 @@ export default function MainLayout() {
               <span className="text-border">/</span>
               <span className="text-foreground font-medium">{getCurrentNavLabel(location.pathname)}</span>
             </div>
+            {selectedRepo && (
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className="hidden sm:flex items-center gap-1.5 text-[11px] text-muted-foreground border border-border rounded-sm px-2 py-1 hover:bg-accent transition-colors"
+                title="全局搜索（Ctrl+K）"
+                aria-label="打开全局搜索"
+              >
+                <Search className="w-3 h-3" />
+                搜索
+                <kbd className="text-[10px] opacity-60">Ctrl K</kbd>
+              </button>
+            )}
           </div>
+          {selectedRepo && <DeployBadge repo={selectedRepo} />}
         </header>
+
+        {selectedRepo && (
+          <GlobalSearchDialog
+            open={searchOpen}
+            onClose={() => setSearchOpen(false)}
+            repo={selectedRepo}
+            contentPaths={filterValidDirs(layoutCollectionsConfig.paths || [])}
+            draftPath={layoutCollectionsConfig.draftPath}
+          />
+        )}
 
         <div className="flex-1 overflow-auto">
           <Outlet />

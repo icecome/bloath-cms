@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import type { MediaConfig } from '../../../shared/types';
+import { parseStoredMediaConfig } from '../lib/configSchema';
 import { DEFAULT_MEDIA_PATH, DEFAULT_BRANCH_NAME } from '../lib/constants';
 
 interface CollectionConfig {
@@ -70,7 +71,15 @@ function loadMediaConfig(): MediaConfig {
           filtered[key] = parsed[key];
         }
       }
-      return { ...DEFAULT_MEDIA_CONFIG, ...filtered } as MediaConfig;
+      const candidate = { ...DEFAULT_MEDIA_CONFIG, ...filtered } as MediaConfig;
+      // Zod 结构校验（P3-5）：类型漂移（如 quality 存成字符串）时拒绝并回退默认值，
+      // 与 worker 侧 parseStoredConfig 同语义；校验失败留日志便于定位脏数据
+      const validated = parseStoredMediaConfig(candidate);
+      if (!validated) {
+        console.warn('[collections] media 配置结构非法，已回退默认值：', candidate);
+        return DEFAULT_MEDIA_CONFIG;
+      }
+      return validated;
     }
   } catch (err) {
     console.error('Failed to load media config', err);

@@ -3,6 +3,10 @@
 export const MEDIA_PAGE_SIZE = 40;
 export const MAX_IMAGE_DIM = 4096;
 export const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+/** 列表缩略图最长边（px） */
+export const THUMBNAIL_DIM = 400;
+/** 缩略图文件名前缀 */
+export const THUMBNAIL_PREFIX = 'thumb-';
 
 export interface MediaFile {
   name: string;
@@ -11,6 +15,43 @@ export interface MediaFile {
   size?: number;
   url: string;
   lastModified: number;
+}
+
+/**
+ * 判断某文件是否有对应的列表缩略图（thumb-<name>.webp 同目录约定）。
+ * 缩略图上传失败不阻断原图上传，列表端按存在性回退原图。
+ */
+export function thumbnailPathFor(path: string): string {
+  const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+  const name = path.split('/').pop() || path;
+  return `${dir}${THUMBNAIL_PREFIX}${name.replace(/\.[^.]+$/, '')}.webp`;
+}
+
+/**
+ * 从原图路径推导缩略图路径，并判断媒体文件是否应使用缩略图展示。
+ * 规则：仅对光栅图启用；SVG（矢量、体积小）与缩略图自身（thumb-*）不用。
+ */
+export function listImageUrlFor(file: MediaFile, filesInRepo: Set<string>): string {
+  if (!/\.(png|jpe?g|webp|avif|bmp)$/i.test(file.name)) return file.url;
+  if (file.name.startsWith(THUMBNAIL_PREFIX)) return file.url;
+  const thumbPath = thumbnailPathFor(file.path);
+  return filesInRepo.has(thumbPath) ? getCdnUrlForPath(thumbPath, file.url) : file.url;
+}
+
+/**
+ * 由原图 URL 推导缩略图 URL：共享 CDN 前缀，替换末段路径。
+ * CDN 模板形如 .../{owner}/{repo}@{branch}/{path}——直接替换最后一段不可靠，
+ * 因此由调用方传入「按路径构造 URL」的函数更稳。
+ */
+let cdnUrlBuilder: ((path: string) => string) | null = null;
+
+/** 注册路径→URL 构造器（MediaPage 挂载时注入，避免本模块反向依赖 React 上下文） */
+export function registerCdnUrlBuilder(builder: (path: string) => string): void {
+  cdnUrlBuilder = builder;
+}
+
+function getCdnUrlForPath(path: string, fallback: string): string {
+  return cdnUrlBuilder ? cdnUrlBuilder(path) : fallback;
 }
 
 export function compressImage(file: File, quality: number): Promise<Blob> {
@@ -50,6 +91,41 @@ export function compressImage(file: File, quality: number): Promise<Blob> {
     };
     img.src = url;
   });
+}
+
+/**
+ * 生成列表缩略图：最长边压到 THUMBNAIL_DIM，输出 webp。
+ * 失败返回 null（缩略图属增强能力，不阻断上传主流程）。
+ */
+export async function createThumbnail(file: File): Promise<Blob | null> {
+  try {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    const loaded = new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('load failed'));
+      img.src = url;
+    });
+    await loaded;
+
+    const scale = Math.min(1, THUMBNAIL_DIM / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      URL.revokeObjectURL(url);
+      return null;
+    }
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+
+    return await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), 'image/webp', 0.75);
+    });
+  } catch {
+    return null;
+  }
 }
 
 export function blobToBase64(blob: Blob): Promise<string> {

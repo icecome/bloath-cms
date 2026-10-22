@@ -397,3 +397,54 @@ export async function triggerDeploy(params: {
     body: JSON.stringify(params)
   }, true);
 }
+
+// ---------- 文件提交历史（编辑器历史侧栏数据源） ----------
+
+export interface FileCommitInfo {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  htmlUrl: string;
+}
+
+/** 列出某文件的提交历史（commits API 按 path 过滤，最多 30 条） */
+export async function listFileCommits(
+  params: RepoInfo & { path: string }
+): Promise<FileCommitInfo[]> {
+  const searchParams = new URLSearchParams({
+    owner: params.owner,
+    repo: params.repo,
+    branch: params.branch || 'main',
+    path: params.path
+  });
+  return apiFetch<FileCommitInfo[]>(`${API_BASE}/api/repos/commits?${searchParams}`);
+}
+
+// ---------- 部署状态（顶栏徽章数据源） ----------
+
+export interface DeployRunView {
+  id: number;
+  name: string;
+  headBranch: string;
+  status: 'queued' | 'in_progress' | 'completed' | 'cancelled' | 'unknown';
+  conclusion: string | null;
+  createdAt: string;
+  updatedAt: string;
+  htmlUrl: string;
+  displayTitle: string;
+}
+
+/** 拉取仓库最近的 Actions runs（失败降级为空 runs + error 说明） */
+export async function getDeployStatus(
+  params: RepoInfo
+): Promise<{ runs: DeployRunView[]; error: string }> {
+  const searchParams = new URLSearchParams({
+    owner: params.owner,
+    repo: params.repo
+  });
+  return apiFetch<{ runs: DeployRunView[]; error: string }>(
+    `${API_BASE}/api/repos/deploy-status?${searchParams}`,
+    { timeoutMs: 8000 }
+  );
+}

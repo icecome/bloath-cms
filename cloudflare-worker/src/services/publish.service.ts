@@ -5,6 +5,8 @@ import { batchCommit, buildCommitAuthor, getTree, GithubApiError } from './githu
 import {
   requireBufferConfig, readBufferFull, cleanupBufferKeys,
 } from './buffer.service';
+// 路径解析语义抽到零依赖模块：可被 node strip-types 单测直接锁定（见 publish-ops.test.ts）
+import { resolveMoveTarget, resolvePublishPath } from './publish-paths.ts';
 
 export interface PublishResult {
   commitSha: string | null;
@@ -21,12 +23,8 @@ export interface PublishItem {
   publishTarget?: string;
 }
 
-// 目标目录 + 原文件名 → 发布路径；无目标时保持原路径（降级落草稿目录）
-export function resolvePublishPath(path: string, publishTarget?: string | null): string {
-  if (!publishTarget) return path;
-  const name = path.split('/').pop() || path;
-  return `${publishTarget.replace(/\/+$/, '')}/${name}`;
-}
+// resolvePublishPath 已上移到 ./publish-paths（顶部 import），此处仅 re-export 保持兼容
+export { resolvePublishPath } from './publish-paths.ts';
 
 export async function publishBuffer(
   env: Env, githubToken: string,
@@ -92,10 +90,10 @@ export async function publishBuffer(
     } else if (entry.op === 'move') {
       const from = entry.fromPath;
       // move 条目写入缓冲时，path 存的已是目标路径（见 EditorPage 的移入回收站调用）。
-      // 因此仅当显式指定 publishTarget 时才重写目标；否则沿用 path 本身。
-      // 若此处对无 target 的情况再调 resolvePublishPath，会把目标解析回源路径，
-      // 产生 fromPath === path 的移动，最终在 Git tree 中同路径写成「先写后删」→ 文件丢失。
-      const toPath = target ? resolvePublishPath(path, target) : path;
+      // resolveMoveTarget 封装了「仅显式 target 才重写」的语义——若对无 target 的情况
+      // 再调 resolvePublishPath，会把目标解析回源路径，产生 fromPath === path 的移动，
+      // 最终在 Git tree 中同路径写成「先写后删」→ 文件丢失（M-R2，已由测试锁定）。
+      const toPath = resolveMoveTarget(path, target);
       if (from && from !== toPath && remoteShas.has(from)) {
         ops.push({ op: 'move', fromPath: from, path: toPath });
       } else {

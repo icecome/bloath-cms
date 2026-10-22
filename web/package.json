@@ -8,10 +8,11 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/lib/path.test.ts src/lib/frontmatter.test.ts src/lib/http.test.ts src/lib/draftPreviewStore.test.ts",
+    "test": "node --experimental-strip-types --test \"src/lib/*.test.ts\"",
     "lint": "eslint ."
   },
   "dependencies": {
+    "aws4fetch": "^1.0.20",
     "js-yaml": "^4.3.0",
     "lucide-react": "^1.21.0",
     "markdown-it": "^15.0.2",

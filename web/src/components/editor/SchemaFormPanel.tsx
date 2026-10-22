@@ -43,6 +43,24 @@ function fieldHasValue(fm: Frontmatter, field: FieldConfig): boolean {
   return value !== undefined && value !== null && value !== '';
 }
 
+// ---------- 校验（P2-4）：pattern / min / max / maxLength ----------
+// 纯逻辑抽到 lib/validate.ts（可单测）；此处组合 showWhen 判定后转发。
+import { clampText, validateFrontmatterFields } from '../../lib/validate';
+
+/**
+ * 保存前对整个 front-matter 做字段级校验，返回首个错误消息（无错误返回 null）。
+ * 供 EditorPage.handleSave 在提交前调用；只校验 profile.fields 中可见的字段。
+ */
+export function validateFrontmatter(
+  fm: Frontmatter,
+  profile: SiteProfile
+): string | null {
+  const entries = profile.fields
+    .filter((field) => isFieldVisible(fm, field))
+    .map((field) => ({ field, value: (fm as Record<string, unknown>)[field.name] }));
+  return validateFrontmatterFields(entries);
+}
+
 // 本地时区偏移（如 +08:00 / -05:30），替代硬编码 UTC+8
 function localTimezoneOffset(date: Date): string {
   const diffMin = -date.getTimezoneOffset();
@@ -156,7 +174,7 @@ function SchemaField({
             id={fieldControlId(field)}
             type="text"
             value={typeof rawValue === 'string' ? rawValue : ''}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => setValue(clampText(e.target.value, field))}
             className={inputClass}
             placeholder={field.placeholder}
           />
@@ -171,7 +189,7 @@ function SchemaField({
             id={fieldControlId(field)}
             type="text"
             value={typeof rawValue === 'string' ? rawValue : ''}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => setValue(clampText(e.target.value, field))}
             className={inputClass}
             placeholder={field.placeholder}
           />
@@ -184,7 +202,7 @@ function SchemaField({
           <textarea
             id={fieldControlId(field)}
             value={typeof rawValue === 'string' ? rawValue : ''}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => setValue(clampText(e.target.value, field))}
             rows={2}
             className={`${inputClass} resize-none`}
             placeholder={field.placeholder}
@@ -200,6 +218,8 @@ function SchemaField({
             type="number"
             value={typeof rawValue === 'number' ? rawValue : ''}
             onChange={(e) => setValue(e.target.value ? Number(e.target.value) : undefined)}
+            min={field.min}
+            max={field.max}
             className={inputClass}
             placeholder={field.placeholder}
           />

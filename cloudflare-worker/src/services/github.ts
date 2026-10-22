@@ -589,6 +589,51 @@ export async function extractFrontMatters(
   return { results, errors };
 }
 
+// ---------- 文件级提交历史（P3-1：编辑器「历史」侧栏数据源）----------
+
+/** 单条文件提交记录（编辑器历史侧栏展示用） */
+export interface FileCommitInfo {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  /** 该提交的详情页 URL（前端跳转 GitHub 用） */
+  htmlUrl: string;
+}
+
+/**
+ * 列出某文件的提交历史（commits API 原生支持 path 过滤）。
+ * per_page 上限 30：侧栏展示足够，且把响应体量控制在轻量级。
+ */
+export async function listFileCommits(
+  token: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  filePath: string
+): Promise<FileCommitInfo[]> {
+  const params = new URLSearchParams({ path: filePath, sha: branch, per_page: '30' });
+  const data = await githubApi<Array<{
+    sha: string;
+    html_url?: string;
+    commit?: {
+      message?: string;
+      author?: { name?: string };
+      committer?: { date?: string };
+    };
+  }>>(
+    `https://api.github.com/repos/${owner}/${repo}/commits?${params}`, token
+  );
+
+  return (Array.isArray(data) ? data : []).map((entry) => ({
+    sha: entry.sha,
+    message: (entry.commit?.message ?? '').split('\n')[0] ?? '',
+    author: entry.commit?.author?.name ?? '',
+    date: entry.commit?.committer?.date ?? '',
+    htmlUrl: entry.html_url ?? '',
+  }));
+}
+
 // ---------- 手动部署（workflow dispatch）----------
 
 export interface WorkflowInfo {

@@ -7,7 +7,8 @@ import { buildCommitMessage } from '../lib/deploySettings';
 import { sanitizeSlug, filterValidDirs, fileStemFromPath } from '../lib/path';
 import { resolvePathAndSlug } from '../lib/articleSlug';
 import VditorEditor from '../components/editor/VditorEditor';
-import SchemaFormPanel from '../components/editor/SchemaFormPanel';
+import SchemaFormPanel, { validateFrontmatter } from '../components/editor/SchemaFormPanel';
+import { HistoryPanel } from '../components/editor/HistoryPanel';
 import Modal from '../components/ui/Modal';
 import { ArrowLeft, Save, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import Vditor from 'vditor';
@@ -20,6 +21,13 @@ import { getProfile, type SiteProfile } from '../../../shared/profiles';
 import { useToast } from '../contexts/ToastContext';
 import { useBuffer } from '../contexts/BufferContext';
 import { writeBufferFile, readBufferFile } from '../lib/bufferApi';
+import { checkConflictBeforeSave } from '../lib/conflict';
+import {
+  readEditorDraft,
+  writeEditorDraft,
+  clearEditorDraft,
+  type EditorDraftCopy,
+} from '../lib/editorDraftStore';
 
 export default function EditorPage() {
   const match = useMatch('/editor/*');
@@ -60,6 +68,12 @@ export default function EditorPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   /** 加载时的原始 slug；用于清空表单时不误删已有 front-matter slug */
   const initialSlugRef = useRef('');
+  /** 本地草稿副本自动保存的节流定时器（P1-4 防丢稿） */
+  const draftBackupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 待持久化的草稿状态（节流窗口内最新值），避免定时器回调读旧闭包 */
+  const draftBackupStateRef = useRef<EditorDraftCopy | null>(null);
+  /** 检测到本地有更新的未保存副本时提示恢复 */
+  const [draftRecovery, setDraftRecovery] = useState<EditorDraftCopy | null>(null);
 
   const basePath = useMemo(
     () => paramBasePath || (isNew ? (config.draftPath || '.draft') : (currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : '')),
@@ -124,6 +138,15 @@ export default function EditorPage() {
         if (vditorInstanceRef.current) {
           vditorInstanceRef.current.setValue(body);
         }
+
+        // 本地防丢稿副本检查：存在未消费的本地副本时提示恢复（P1-4）。
+        // 仓库侧 tree 的 lastModified 常缺省，无法做精确时间对比；
+        // 副本只在「加载后编辑过」或「崩溃前未保存」两种情况下存在，
+        // 而正常保存成功会清除副本，因此存在副本即值得让用户决策。
+        const localCopy = readEditorDraft({ owner, repo, branch }, filePath);
+        if (localCopy) {
+          setDraftRecovery(localCopy);
+        }
       })
       .catch((err) => {
         console.error('加载文件失败：', err);
@@ -168,6 +191,95 @@ export default function EditorPage() {
     }
   };
 
+  // ---------- 草稿本地自动保存（P1-4 防丢稿） ----------
+  const draftRepoKey = useMemo(() => ({ owner, repo, branch }), [owner, repo, branch]);
+
+  /** 节流写入本地副本：30s 窗口内的最后一次为准；组件卸载时立即落盘 */
+  const scheduleDraftBackup = useCallback((copy: EditorDraftCopy) => {
+    draftBackupStateRef.current = copy;
+    if (draftBackupTimerRef.current) return;
+    draftBackupTimerRef.current = setTimeout(() => {
+      draftBackupTimerRef.current = null;
+      if (draftBackupStateRef.current) {
+        writeEditorDraft(draftRepoKey, draftBackupStateRef.current);
+      }
+    }, 30_000);
+  }, [draftRepoKey]);
+
+  // 内容变化 → 重置节流；front-matter 与正文任一变化都触发（写同一个 ref，幂等）
+  useEffect(() => {
+    if (!hasLoadedOnce || !currentFilePath) return;
+    scheduleDraftBackup({
+      path: currentFilePath,
+      frontmatter,
+      body: bodyContent,
+      savedAt: Date.now(),
+    });
+  }, [frontmatter, bodyContent, currentFilePath, hasLoadedOnce, scheduleDraftBackup]);
+
+  // 卸载或切换仓库时：立即落盘 + 清定时器
+  useEffect(() => {
+    return () => {
+      if (draftBackupTimerRef.current) {
+        clearTimeout(draftBackupTimerRef.current);
+        draftBackupTimerRef.current = null;
+      }
+      if (draftBackupStateRef.current) {
+        // 卸载时的 draftRepoKey 是最新的（闭包捕获当前渲染）
+        writeEditorDraft(draftRepoKey, draftBackupStateRef.current);
+        draftBackupStateRef.current = null;
+      }
+    };
+  }, [draftRepoKey]);
+
+  /** 保存成功后清除本地副本（无未保存内容了） */
+  const discardDraftBackup = useCallback((path: string | undefined) => {
+    if (!path) return;
+    if (draftBackupTimerRef.current) {
+      clearTimeout(draftBackupTimerRef.current);
+      draftBackupTimerRef.current = null;
+    }
+    draftBackupStateRef.current = null;
+    clearEditorDraft(draftRepoKey, path);
+  }, [draftRepoKey]);
+
+  /** 恢复本地副本：覆盖当前编辑器状态 */
+  const recoverDraftBackup = () => {
+    const copy = draftRecovery;
+    if (!copy) return;
+    setFrontmatter(copy.frontmatter as Frontmatter);
+    setBodyContent(copy.body);
+    setDraftRecovery(null);
+    addToast({ message: '已恢复未保存的本地草稿', type: 'success' });
+  };
+
+  /**
+   * 保存前冲突检查（P1-3）：非缓冲模式下，若本地有基线 sha，
+   * 复核远端同路径文件的 sha 是否仍与本地一致。远端已被他人/其他设备修改
+   * 或删除时弹窗让用户决策，避免提交时才收到 409 硬失败。
+   */
+  const confirmNoRemoteConflict = async (targetPath: string): Promise<boolean> => {
+    if (bufferEnabled || isNew || !currentFileSha) return true;
+
+    const result = await checkConflictBeforeSave(readFile, {
+      repo: { owner, repo, branch },
+      path: targetPath,
+      baseSha: currentFileSha,
+    });
+
+    if (!result.conflicted) return true;
+
+    const kindMsg =
+      result.kind === 'deleted'
+        ? '该文章已被其他人删除。'
+        : '该文章已在其他设备被修改。';
+    // confirm 是最小可用实现：用户确认则覆盖远端，取消则中止保存
+    // （后续可升级为「加载最新到本地合并」的三选项对话框）
+    return window.confirm(
+      `${kindMsg}直接保存将覆盖对方的内容。\n\n确定要覆盖保存吗？（取消可复制正文后另行处理）`
+    );
+  };
+
   const handleSave = async () => {
     if (!user) return;
     // 缓冲配置未就绪时禁止写入：否则会静默走 GitHub，造成「S3 无文件却进了 .draft」
@@ -188,6 +300,13 @@ export default function EditorPage() {
     });
     const effectiveFm = applyResolvedSlug(rawFm, resolved);
 
+    // 字段级校验（P2-4）：pattern / min / max，失败阻止保存并提示首个错误
+    const validationError = validateFrontmatter(effectiveFm, profile);
+    if (validationError) {
+      addToast({ message: validationError, type: 'warning' });
+      return;
+    }
+
     let targetSlug: string;
     try {
       targetSlug = sanitizeSlug(resolved.fileStem);
@@ -199,6 +318,10 @@ export default function EditorPage() {
     const targetPath = isNew
       ? `${config.draftPath || '.draft'}/${targetSlug}.md`
       : currentFilePath || `${config.draftPath || '.draft'}/${targetSlug}.md`;
+
+    // 保存前冲突检查：远端已变/已删时由用户决策是否覆盖（缓冲模式走 S3 baseSha，无需此检查）
+    const noConflict = await confirmNoRemoteConflict(targetPath);
+    if (!noConflict) return;
 
     setSaving(true);
     const seq = ++saveSeqRef.current;
@@ -218,6 +341,8 @@ export default function EditorPage() {
             setCurrentFilePath(newPath);
             setCurrentFileSha('');
             syncUrlState(effectiveFm.url);
+            discardDraftBackup(currentFilePath);
+            discardDraftBackup(newPath);
             addToast({ message: '已存入缓冲，文件名已更新', type: 'success' });
             navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}${basePath ? `&basePath=${basePath}` : ''}`);
           }
@@ -225,6 +350,7 @@ export default function EditorPage() {
           await writeBufferFile({ owner, repo, branch, path: targetPath, op: 'write', content: fullContent, baseSha: currentFileSha || undefined });
           if (seq === saveSeqRef.current) {
             syncUrlState(effectiveFm.url);
+            discardDraftBackup(targetPath);
             if (isNew) {
               const draftDir = config.draftPath || '.draft';
               setCurrentFilePath(`${draftDir}/${targetSlug}.md`);
@@ -255,6 +381,9 @@ export default function EditorPage() {
           setCurrentFilePath(newPath);
           setCurrentFileSha('');
           syncUrlState(effectiveFm.url);
+          // 保存成功 → 内容已持久化，清除本地防丢稿副本（旧路径与新路径都清）
+          discardDraftBackup(oldPath);
+          discardDraftBackup(newPath);
           addToast({ message: '保存成功，文件名已更新', type: 'success' });
           navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}${basePath ? `&basePath=${basePath}` : ''}`);
         }
@@ -274,6 +403,8 @@ export default function EditorPage() {
 
         if (seq === saveSeqRef.current) {
           syncUrlState(effectiveFm.url);
+          // 保存成功 → 清除本地防丢稿副本
+          discardDraftBackup(targetPath);
           if (isNew) {
             const draftDir = config.draftPath || '.draft';
             setCurrentFilePath(`${draftDir}/${targetSlug}.md`);
@@ -472,6 +603,36 @@ export default function EditorPage() {
               )}
             </>
           )}
+
+          {/* 本地草稿恢复提示（P1-4）：检测到比仓库内容更新的未保存副本时弹出 */}
+          {draftRecovery && (
+            <Modal
+              ariaLabel="恢复本地草稿"
+              onClose={() => setDraftRecovery(null)}
+              className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4"
+            >
+              <p className="text-sm text-foreground mb-2">
+                检测到本机有一份未保存的草稿副本（{new Date(draftRecovery.savedAt).toLocaleString()}）。
+              </p>
+              <p className="text-xs text-muted-foreground mb-4">恢复将覆盖当前编辑器内容；忽略则继续使用仓库内容，副本保留到下次成功保存。</p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDraftRecovery(null)}
+                  className="px-3 py-1.5 text-sm border border-border text-muted-foreground hover:bg-secondary rounded-sm transition-colors"
+                >
+                  忽略
+                </button>
+                <button
+                  type="button"
+                  onClick={recoverDraftBackup}
+                  className="px-3 py-1.5 text-sm text-white bg-primary hover:bg-primary/90 rounded-sm transition-colors"
+                >
+                  恢复副本
+                </button>
+              </div>
+            </Modal>
+          )}
         </div>
       </header>
 
@@ -499,6 +660,15 @@ export default function EditorPage() {
 
         <div className="hidden md:block w-72 bg-card border-l border-border overflow-auto flex-shrink-0">
           <SchemaFormPanel frontmatter={frontmatter} setFm={setFm} profile={profile} />
+          {!isNew && currentFilePath && (
+            <div className="border-t border-border">
+              <HistoryPanel
+                repo={{ owner, repo, branch }}
+                filePath={currentFilePath}
+                active
+              />
+            </div>
+          )}
         </div>
       </div>
 

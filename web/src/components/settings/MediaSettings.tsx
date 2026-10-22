@@ -6,7 +6,7 @@ import { DEFAULT_MEDIA_PATH, DEFAULT_BRANCH_NAME } from '../../lib/constants';
 import { useToast } from '../../contexts/ToastContext';
 import {
   Image, Globe, Sliders, FileSignature,
-  AlertTriangle, GitBranch, FolderOpen, Loader2
+  AlertTriangle, GitBranch, FolderOpen, Loader2, Cloud
 } from 'lucide-react';
 import type { CdnProvider, DuplicateStrategy, MediaSourceType } from '../../../../shared/types';
 
@@ -14,7 +14,8 @@ import type { CdnProvider, DuplicateStrategy, MediaSourceType } from '../../../.
 const MEDIA_SOURCE_TYPES: { value: MediaSourceType; label: string; desc: string; icon: typeof Image }[] = [
   { value: 'standalone', label: '独立图床仓库', desc: '图片上传到单独的 GitHub 仓库，与博客内容完全隔离', icon: Image },
   { value: 'repo-dir', label: '博客仓库子目录', desc: '图片存入当前博客仓库的指定目录，无需额外建仓', icon: FolderOpen },
-  { value: 'image-branch', label: '博客仓库独立分支', desc: '在博客仓库创建独立分支存放图片，分支级隔离', icon: GitBranch }
+  { value: 'image-branch', label: '博客仓库独立分支', desc: '在博客仓库创建独立分支存放图片，分支级隔离', icon: GitBranch },
+  { value: 's3', label: 'S3 兼容图床', desc: '直接上传到 S3/R2/OSS 等对象存储，不经 GitHub（凭据仅存本机）', icon: Cloud }
 ];
 
 const CDN_PROVIDERS: { value: CdnProvider; label: string; template: string }[] = [
@@ -28,15 +29,18 @@ const DUPLICATE_STRATEGIES: { value: DuplicateStrategy; label: string; desc: str
   { value: 'overwrite', label: '覆盖', desc: '直接覆盖同名文件' },
 ];
 
+/** S3 配置区输入框统一样式（模块级，避免 JSX 内联重复） */
+const s3InputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground font-mono placeholder-muted-foreground';
+
 const PLACEHOLDER_DOCS = [
-  { token: '{Y}', desc: '年份，4 位数' },
-  { token: '{m}', desc: '月份，2 位数' },
-  { token: '{d}', desc: '日期，2 位数' },
-  { token: '{h}', desc: '小时，2 位数' },
-  { token: '{i}', desc: '分钟，2 位数' },
-  { token: '{s}', desc: '秒，2 位数' },
-  { token: '{filename}', desc: '原始文件名（无扩展名）' },
-  { token: '{str-n}', desc: 'n 位随机字符串，如 {str-4}' },
+  { token: '{{date:YYYY}}', desc: '年份，4 位数' },
+  { token: '{{date:MM}}', desc: '月份，2 位数' },
+  { token: '{{date:DD}}', desc: '日期，2 位数' },
+  { token: '{{date:HH}}', desc: '小时，2 位数' },
+  { token: '{{date:mm}}', desc: '分钟，2 位数' },
+  { token: '{{date:SS}}', desc: '秒，2 位数' },
+  { token: '{{filename}}', desc: '原始文件名（无扩展名）' },
+  { token: '{{random:N}}', desc: 'N 位随机字符串，如 {{random:8}}' },
 ];
 
 export function MediaSettings() {
@@ -217,6 +221,100 @@ export function MediaSettings() {
             </button>
           </div>
           <p className="text-xs text-muted-foreground mt-1">默认分支名 {DEFAULT_BRANCH_NAME}，可自定义</p>
+        </section>
+      )}
+
+      {mediaConfig.sourceType === 's3' && (
+        <section>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
+            <Cloud className="w-3 h-3" />
+            S3 兼容图床
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            支持 AWS S3 / Cloudflare R2 / 阿里 OSS / MinIO 等兼容存储。凭据仅保存在本机浏览器。
+          </p>
+          <div className="space-y-2">
+            <div>
+              <label htmlFor="s3-endpoint" className="block text-[11px] text-muted-foreground mb-1">端点 Endpoint</label>
+              <input
+                id="s3-endpoint"
+                type="text"
+                value={mediaConfig.s3?.endpoint ?? ''}
+                onChange={(e) => updateMediaConfig({ s3: { ...((mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' })), endpoint: e.target.value.trim() } })}
+                placeholder="https://s3.example.com 或 R2 端点"
+                className={s3InputClass}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label htmlFor="s3-bucket" className="block text-[11px] text-muted-foreground mb-1">桶名 Bucket</label>
+                <input
+                  id="s3-bucket"
+                  type="text"
+                  value={mediaConfig.s3?.bucket ?? ''}
+                  onChange={(e) => updateMediaConfig({ s3: { ...((mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' })), bucket: e.target.value.trim() } })}
+                  className={s3InputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="s3-region" className="block text-[11px] text-muted-foreground mb-1">区域 Region（可空 = auto）</label>
+                <input
+                  id="s3-region"
+                  type="text"
+                  value={mediaConfig.s3?.region ?? ''}
+                  onChange={(e) => updateMediaConfig({ s3: { ...(mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' }), region: e.target.value.trim() } })}
+                  placeholder="auto"
+                  className={s3InputClass}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label htmlFor="s3-ak" className="block text-[11px] text-muted-foreground mb-1">AccessKeyId</label>
+                <input
+                  id="s3-ak"
+                  type="password"
+                  value={mediaConfig.s3?.accessKeyId ?? ''}
+                  onChange={(e) => updateMediaConfig({ s3: { ...((mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' })), accessKeyId: e.target.value.trim() } })}
+                  className={s3InputClass}
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label htmlFor="s3-sk" className="block text-[11px] text-muted-foreground mb-1">SecretAccessKey</label>
+                <input
+                  id="s3-sk"
+                  type="password"
+                  value={mediaConfig.s3?.secretAccessKey ?? ''}
+                  onChange={(e) => updateMediaConfig({ s3: { ...((mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' })), secretAccessKey: e.target.value } })}
+                  className={s3InputClass}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="s3-prefix" className="block text-[11px] text-muted-foreground mb-1">目录前缀（可空 = 桶根）</label>
+              <input
+                id="s3-prefix"
+                type="text"
+                value={mediaConfig.s3?.prefix ?? ''}
+                onChange={(e) => updateMediaConfig({ s3: { ...(mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' }), prefix: e.target.value.trim() } })}
+                placeholder="images/2026"
+                className={s3InputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="s3-cdn" className="block text-[11px] text-muted-foreground mb-1">公网访问基址（含 {'{path}'}；用于复制外链）</label>
+              <input
+                id="s3-cdn"
+                type="text"
+                value={mediaConfig.s3?.publicBaseUrl ?? ''}
+                onChange={(e) => updateMediaConfig({ s3: { ...((mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' })), publicBaseUrl: e.target.value.trim() } })}
+                placeholder="https://cdn.example.com/{path}"
+                className={s3InputClass}
+              />
+            </div>
+          </div>
         </section>
       )}
 

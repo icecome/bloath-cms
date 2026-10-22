@@ -104,7 +104,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await apiLogout();
-    } catch {
+    } catch (err) {
+      // 服务端登出失败（网络/会话已失效）也照常清本地态：
+      // 用户体验上必须登出；服务端会话由过期时间与吊销门槛兜底
+      console.warn('[auth] 服务端登出失败（本地已清空登录态）：', err);
     }
     setState({ user: null, loading: false });
   }, []);

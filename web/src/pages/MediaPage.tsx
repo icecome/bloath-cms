@@ -2,15 +2,26 @@ import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties }
 import { useCollections } from '../contexts/CollectionsContext';
 import { useRepo } from '../contexts/RepoContext';
 import { useAuth } from '../hooks/useAuth';
-import { getTree, uploadImage, deleteFile } from '../lib/api';
+import type { EnhancedFileItem } from '../lib/extractFrontMatter';
+import { getTree, uploadImage, deleteFile, readFile } from '../lib/api';
 import { resolveMediaSource, mediaCdnUrl } from '../lib/resolveMediaSource';
 import { sortByLastModified } from '../lib/sortFiles';
-import { resolveRenameTemplate } from '../lib/rename';
+import { fillTemplate, fillPathTemplate, migrateLegacyTemplate } from '../lib/template';
+import { validateImageUpload } from '../lib/formatSniff';
+import { s3ListObjects, s3PutObject, s3DeleteObject, s3PublicUrl } from '../lib/s3MediaClient';
+import { s3MediaPrefix } from '../lib/resolveS3MediaSource';
+import { scanAssetReferences, type AssetReference } from '../lib/assetReferences';
+import { readSnapshot } from '../lib/fileSnapshot';
+import { getCachedFiles } from '../lib/fileCache';
 import {
   compressImage,
   blobToBase64,
   formatDate,
   formatSize,
+  createThumbnail,
+  thumbnailPathFor,
+  listImageUrlFor,
+  registerCdnUrlBuilder,
   MEDIA_PAGE_SIZE,
   MAX_FILE_SIZE,
   type MediaFile
@@ -32,9 +43,11 @@ import {
 
 export default function MediaPage() {
   const { user } = useAuth();
-  const { mediaConfig } = useCollections();
+  const { mediaConfig, config: collectionsConfig } = useCollections();
   const { selectedRepo } = useRepo();
   const source = useMemo(() => resolveMediaSource(mediaConfig, selectedRepo), [mediaConfig, selectedRepo]);
+  // 命名模板：旧 {Y}{m} 语法在加载时一次性迁移为新 {{tag}} 语法（幂等）
+  const migratedRenameTemplateRef = useRef(migrateLegacyTemplate(mediaConfig.renameTemplate));
   const [files, setFiles] = useState<MediaFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -54,6 +67,11 @@ export default function MediaPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteConfirm, setDeleteConfirm] = useState<MediaFile | null>(null);
+  /** 仓库内全部文件路径（缩略图存在性判定用） */
+  const [repoFilePaths, setRepoFilePaths] = useState<Set<string>>(new Set());
+  // 删除前的引用检查状态：scanning=检查中；found=有引用待确认
+  const [referenceChecking, setReferenceChecking] = useState(false);
+  const [assetReferences, setAssetReferences] = useState<AssetReference[] | null>(null);
   // 复制提示的清除定时器：组件卸载时需清理，否则会在已卸载组件上调用 setState，
   // 且快速连续复制时旧定时器会提前清掉新提示
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,6 +111,11 @@ export default function MediaPage() {
     return mediaCdnUrl(source, mediaConfig, path);
   }, [mediaConfig, source]);
 
+  /** S3 源判定（审查报告 M-A1）：分流上传/列表/删除/复制四个通道 */
+  const isS3Source = mediaConfig.sourceType === 's3';
+  const s3Config = mediaConfig.s3;
+  const s3Prefix = useMemo(() => s3MediaPrefix(mediaConfig), [mediaConfig]);
+
   const loadFiles = useCallback(async (silent = false): Promise<MediaFile[] | null> => {
     if (!user || !isConfigured) return null;
     if (!silent) {
@@ -100,27 +123,53 @@ export default function MediaPage() {
       setError('');
     }
     try {
-      const treeItems = await getTree({
-        owner: source.owner,
-        repo: source.repo,
-        branch: source.branch,
-        mode: 'filename'
-      });
+      let mediaFiles: MediaFile[];
 
-      const mediaFiles: MediaFile[] = treeItems.filter((f) => {
-        if (source.pathPrefix && !f.path.startsWith(source.pathPrefix + '/')) {
-          return false;
-        }
-        return /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name);
-      })
-        .map((f) => ({
-          name: f.name,
-          path: f.path,
-          sha: f.sha,
-          size: f.size,
-          url: getCdnUrl(f.path),
-          lastModified: f.lastModified || 0
-        }));
+      if (isS3Source && s3Config) {
+        // S3 兼容图床：ListObjects 直连，外链走 publicBaseUrl
+        const entries = await s3ListObjects(s3Config, s3Prefix);
+        mediaFiles = entries
+          .filter((e) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(e.key))
+          .map((e) => ({
+            name: e.key.split('/').pop() || e.key,
+            path: e.key,
+            sha: String(e.lastModified), // S3 无 blob sha：以 lastModified 作变更标识
+            size: e.size,
+            url: s3PublicUrl(s3Config, e.key) || '',
+            lastModified: e.lastModified
+          }));
+      } else {
+        const treeItems = await getTree({
+          owner: source.owner,
+          repo: source.repo,
+          branch: source.branch,
+          mode: 'filename'
+        });
+
+        mediaFiles = treeItems.filter((f) => {
+          if (source.pathPrefix && !f.path.startsWith(source.pathPrefix + '/')) {
+            return false;
+          }
+          return /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name);
+        })
+          .map((f) => ({
+            name: f.name,
+            path: f.path,
+            sha: f.sha,
+            size: f.size,
+            url: getCdnUrl(f.path),
+            lastModified: f.lastModified || 0
+          }));
+      }
+
+      // 全仓库路径集合：供 listImageUrlFor 判定缩略图是否存在（thumb-* 同目录约定）
+      const pathSet = new Set(mediaFiles.map((f) => f.path));
+      setRepoFilePaths(pathSet);
+      // 注册 CDN builder：缩略图路径 → URL（mediaUtils 不反向依赖 React 上下文）
+      registerCdnUrlBuilder((path: string) =>
+        isS3Source && s3Config ? s3PublicUrl(s3Config, path) : getCdnUrl(path)
+      );
+
       const sorted = sortByLastModified(mediaFiles);
 
       if (silent) {
@@ -140,7 +189,7 @@ export default function MediaPage() {
         setLoading(false);
       }
     }
-  }, [user, isConfigured, source, getCdnUrl]);
+  }, [user, isConfigured, source, getCdnUrl, isS3Source, s3Config, s3Prefix]);
 
   useEffect(() => {
     if (isConfigured) loadFiles();
@@ -170,13 +219,22 @@ export default function MediaPage() {
         errors.push(`${file.name}：超过 20 MB 限制`);
         continue;
       }
+      // 格式嗅探（P3-3）：魔数与扩展名不符或伪装可执行内容时拒绝
+      const sniffError = await validateImageUpload(file);
+      if (sniffError) {
+        errors.push(sniffError);
+        continue;
+      }
       try {
         const blob = await compressImage(file, mediaConfig.quality);
         const base64 = await blobToBase64(blob);
 
-        const fileName = resolveRenameTemplate(mediaConfig.renameTemplate, file.name) + '.webp';
-        const filePath = source.pathPrefix
-          ? `${source.pathPrefix}/${fileName}`
+        // 命名模板：新语法（{{tag}}）；旧 {Y}{m} 模板经 migrateLegacyTemplate 幂等迁移（上方 useRef 初始化处）
+        const fileName = fillTemplate(migratedRenameTemplateRef.current, { filename: file.name }) + '.webp';
+        // 目录模板：支持 {{date:YYYY}} 等按月归档；纯静态路径行为不变
+        const dirPart = fillPathTemplate(source.pathPrefix);
+        const filePath = dirPart
+          ? `${dirPart}/${fileName}`
           : fileName;
 
         const existing = currentFiles?.find((f) => f.name === fileName);
@@ -185,16 +243,46 @@ export default function MediaPage() {
           continue;
         }
 
-        await uploadImage({
-          owner: source.owner,
-          repo: source.repo,
-          path: filePath,
-          base64Content: base64,
-          message: `[skip ci] 上传：${fileName}`,
-          branch: source.branch,
-          userName: user.login,
-          sha: existing?.sha
-        });
+        if (isS3Source && s3Config) {
+          // S3 图床：Blob 直传（SigV4），无 commit 概念
+          await s3PutObject(s3Config, filePath, blob);
+        } else {
+          await uploadImage({
+            owner: source.owner,
+            repo: source.repo,
+            path: filePath,
+            base64Content: base64,
+            message: `[skip ci] 上传：${fileName}`,
+            branch: source.branch,
+            userName: user.login,
+            sha: existing?.sha
+          });
+        }
+
+        // 同步生成列表缩略图（P2-2）：失败不阻断上传主流程
+        const thumb = await createThumbnail(file);
+        if (thumb) {
+          try {
+            const thumbPath = thumbnailPathFor(filePath);
+            if (isS3Source && s3Config) {
+              await s3PutObject(s3Config, thumbPath, thumb);
+            } else {
+              const thumbBase64 = await blobToBase64(thumb);
+              await uploadImage({
+                owner: source.owner,
+                repo: source.repo,
+                path: thumbPath,
+                base64Content: thumbBase64,
+                message: `[skip ci] 缩略图：${thumbPath.split('/').pop()}`,
+                branch: source.branch,
+                userName: user.login
+              });
+            }
+          } catch {
+            // 缩略图失败仅提示，原图已传成功
+            console.warn('[MediaPage] 缩略图上传失败（不影响原图）');
+          }
+        }
         uploaded++;
         if (currentFiles) {
           const newEntry: MediaFile = {
@@ -203,7 +291,7 @@ export default function MediaPage() {
             sha: existing?.sha || '',
             size: blob.size,
             lastModified: Date.now(),
-            url: getCdnUrl(filePath)
+            url: isS3Source && s3Config ? (s3PublicUrl(s3Config, filePath) || '') : getCdnUrl(filePath)
           };
           currentFiles = [newEntry, ...currentFiles];
         }
@@ -226,22 +314,88 @@ export default function MediaPage() {
   const handleDelete = (file: MediaFile) => {
     if (!user) return;
     setDeleteConfirm(file);
+    setAssetReferences(null);
+  };
+
+  /**
+   * 删除前引用检查：扫描内容库文章的 front-matter（快照缓存，无网络）与正文（按需读取），
+   * 命中引用时在确认对话框中列出，用户可见「删除会影响哪些文章」后再确认。
+   */
+  const checkReferences = async () => {
+    const file = deleteConfirm;
+    if (!file) return;
+
+    setReferenceChecking(true);
+    try {
+      // 文章数据源：内容库各路径的树级快照缓存（P1-1 落地后列表页已预热）。
+      // 快照未预热时（如直接进媒体库）为空列表，front-matter 通道零请求。
+      const cachedArticles: EnhancedFileItem[] = [];
+      if (selectedRepo) {
+        // 优先复用各内容路径的内存缓存（列表页访问过即有）
+        const cached = (collectionsConfig.paths || [])
+          .map((base: string) => getCachedFiles(selectedRepo, base))
+          .filter((list): list is EnhancedFileItem[] => !!list)
+          .flat();
+        if (cached.length > 0) {
+          cachedArticles.push(...cached);
+        } else {
+          // 内存缓存未命中：从快照恢复增强元数据（无网络）
+          const snapshot = readSnapshot(selectedRepo);
+          for (const record of Object.values(snapshot.records)) {
+            cachedArticles.push({ ...record.item });
+          }
+        }
+      }
+
+      // 正文通道：仅当 front-matter 全未命中时才读正文（控制请求量）。
+      // 注意（审查报告 M-A2）：文章在博客仓库（selectedRepo），不在图床仓库（source）——
+      // standalone/image-branch 图床场景下二者不同，读正文必须用 selectedRepo。
+      const { references } = await scanAssetReferences(cachedArticles, file, cachedArticles.length > 0 && selectedRepo
+        ? async (articlePath) => {
+            try {
+              const { content } = await readFile({
+                owner: selectedRepo.owner,
+                repo: selectedRepo.repo,
+                path: articlePath,
+                branch: selectedRepo.branch || 'main',
+              });
+              return content;
+            } catch {
+              return null;
+            }
+          }
+        : undefined);
+      setAssetReferences(references);
+    } catch (err) {
+      console.warn('[MediaPage] 引用检查失败（按无引用处理）：', err);
+      setAssetReferences([]);
+    } finally {
+      setReferenceChecking(false);
+    }
   };
 
   const executeDelete = async () => {
     const file = deleteConfirm;
     if (!file || !user) return;
     setDeleteConfirm(null);
+    setAssetReferences(null);
 
     try {
-      await deleteFile({
-        owner: source.owner,
-        repo: source.repo,
-        path: file.path,
-        sha: file.sha,
-        message: `[skip ci] 删除：${file.name}`,
-        userName: user.login
-      });
+      if (isS3Source && s3Config) {
+        // S3 图床：直删对象（含同名缩略图），无 commit
+        await s3DeleteObject(s3Config, file.path);
+        const thumbPath = thumbnailPathFor(file.path);
+        await s3DeleteObject(s3Config, thumbPath).catch(() => undefined);
+      } else {
+        await deleteFile({
+          owner: source.owner,
+          repo: source.repo,
+          path: file.path,
+          sha: file.sha,
+          message: `[skip ci] 删除：${file.name}`,
+          userName: user.login
+        });
+      }
       setFiles((prev) => prev.filter((f) => f.sha !== file.sha));
       setSuccess(`已删除 ${file.name}`);
     } catch (err) {
@@ -383,7 +537,7 @@ export default function MediaPage() {
                   onClick={() => setPreviewFile(file)}
                 >
                   <img
-                    src={file.url}
+                    src={listImageUrlFor(file, repoFilePaths)}
                     alt={file.name}
                     className="w-full h-full object-cover"
                     loading="lazy"
@@ -458,7 +612,13 @@ export default function MediaPage() {
 
       <DeleteConfirmDialog
         file={deleteConfirm}
-        onCancel={() => setDeleteConfirm(null)}
+        references={assetReferences}
+        checking={referenceChecking}
+        onCheck={checkReferences}
+        onCancel={() => {
+          setDeleteConfirm(null);
+          setAssetReferences(null);
+        }}
         onConfirm={executeDelete}
       />
 
