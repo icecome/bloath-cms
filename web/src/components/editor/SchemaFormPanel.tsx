@@ -298,6 +298,13 @@ function SchemaField({
           field={field}
           items={Array.isArray(rawValue) ? rawValue.map(String) : []}
           onAdd={(item) => setValue([...(Array.isArray(rawValue) ? rawValue : []), item])}
+          onAddMany={(newItems) => {
+            // 单次写入：批量插入必须基于同一份快照合并，不能逐项调用 onAdd（见 props 注释）
+            const base = Array.isArray(rawValue) ? rawValue.map(String) : [];
+            const merged = [...base];
+            for (const item of newItems) if (!merged.includes(item)) merged.push(item);
+            setValue(merged);
+          }}
           onRemove={(index) => {
             const list = Array.isArray(rawValue) ? [...rawValue] : [];
             list.splice(index, 1);
@@ -454,17 +461,21 @@ function ImageFieldShell({
           从媒体库选择
         </button>
       </div>
-      <MediaPickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={(url) => onChange(url)} />
+      <MediaPickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={(urls) => onChange(urls[0] ?? '')} />
     </FieldShell>
   );
 }
 
 function ImageListField({
-  field, items, onAdd, onRemove
+  field, items, onAdd, onAddMany, onRemove
 }: {
   field: FieldConfig;
   items: string[];
   onAdd: (item: string) => void;
+  /** 批量插入（多选确认后一次调用）。必须单次写入：
+   *  onAdd 的实现是 `setValue([...rawValue, item])`，rawValue 是渲染闭包快照，
+   *  在同一个事件里连续调用 N 次只会保留最后一次，故多选不能 forEach(onAdd)。 */
+  onAddMany: (items: string[]) => void;
   onRemove: (index: number) => void;
 }) {
   const [input, setInput] = useState('');
@@ -511,7 +522,17 @@ function ImageListField({
         <ImageIcon className="w-3 h-3" />
         从媒体库选择
       </button>
-      <MediaPickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={onAdd} />
+      <MediaPickerDialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        multiple
+        accept="image"
+        onPick={(urls) => {
+          // 已在列表中的不重复插入（多选可能再次点到同一张）
+          const fresh = urls.filter((url) => !items.includes(url));
+          if (fresh.length > 0) onAddMany(fresh);
+        }}
+      />
     </FieldShell>
   );
 }

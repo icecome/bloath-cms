@@ -692,123 +692,127 @@ export default function DraftsPage() {
   return (
     <div className="h-full flex flex-col">
       {selectedRepo && (
-        <div className="flex-shrink-0 px-4 md:px-8 py-4 border-b border-border-subtle">
-          <div className="relative">
+        <>
+        <div className="flex-shrink-0 px-4 md:px-8 py-4 flex items-center gap-3 border-b border-border-subtle">
+          <h1 className="text-sm font-medium text-foreground whitespace-nowrap">草稿箱</h1>
+          <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="搜索草稿……"
-              aria-label="搜索草稿"
+              placeholder="按文件名或路径筛选……"
+              aria-label="按文件名或路径筛选草稿"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
             />
           </div>
+        </div>
 
-          {selectedFiles.size > 0 && (
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-muted-foreground bg-accent px-2.5 py-1.5 rounded-sm">
-                已选 {selectedFiles.size} 篇
-              </span>
-              <button
-                onClick={handleSelectAllMerged}
-                className="text-sm text-muted-foreground hover:text-foreground hover:bg-accent px-2.5 py-1.5 rounded-sm transition-colors"
-              >
-                {selectedFiles.size === filteredFiles.length ? '取消全选' : '全选'}
-              </button>
+        {/* 批量操作工具栏：并入同一行容器，与筛选框同级（原为独立 mt-3 块） */}
+        {selectedFiles.size > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-muted-foreground bg-accent px-2.5 py-1.5 rounded-sm">
+              已选 {selectedFiles.size} 篇
+            </span>
+            <button
+              onClick={handleSelectAllMerged}
+              className="text-sm text-muted-foreground hover:text-foreground hover:bg-accent px-2.5 py-1.5 rounded-sm transition-colors"
+            >
+              {selectedFiles.size === filteredFiles.length ? '取消全选' : '全选'}
+            </button>
 
-              <div className="w-px h-4 bg-border"></div>
+            <div className="w-px h-4 bg-border"></div>
 
-              {/* 发布：需选中项全部完成预发布，否则禁用并提示 */}
-              <button
-                onClick={() => setShowPublishDropdown(true)}
-                disabled={actionLoading || publishBlocked}
-                title={publishBlocked ? '有草稿尚未预发布，请先预发布' : undefined}
-                className="text-sm px-3 py-1.5 text-primary-text hover:bg-accent rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                发布
-              </button>
+            {/* 发布：需选中项全部完成预发布，否则禁用并提示 */}
+            <button
+              onClick={() => setShowPublishDropdown(true)}
+              disabled={actionLoading || publishBlocked}
+              title={publishBlocked ? '有草稿尚未预发布，请先预发布' : undefined}
+              className="text-sm px-3 py-1.5 text-primary-text hover:bg-accent rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              发布
+            </button>
 
-              {/* 预发布：标记目标位置，不产生提交 */}
-              <button
-                onClick={openPreviewDialog}
-                disabled={actionLoading}
-                className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-foreground rounded-sm transition-colors disabled:opacity-40"
-              >
-                预发布
-              </button>
+            {/* 预发布：标记目标位置，不产生提交 */}
+            <button
+              onClick={openPreviewDialog}
+              disabled={actionLoading}
+              className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-foreground rounded-sm transition-colors disabled:opacity-40"
+            >
+              预发布
+            </button>
 
-              {/* 移动 */}
-              <div className="relative">
-                <button
-                  onClick={() => {
-                    setShowMoveDropdown(!showMoveDropdown);
-                    setShowPublishDropdown(false);
-                  }}
-                  disabled={actionLoading}
-                  className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
-                >
-                  <Move className="w-3.5 h-3.5" />
-                  移动
-                </button>
-                {showMoveDropdown && (
-                  <div className="absolute top-full left-0 mt-1 bg-card border border-border z-40 min-w-[220px] p-2">
-                    <p className="text-sm text-muted-foreground mb-2 px-1">移动到：</p>
-                    <input
-                      type="text"
-                      value={moveTarget}
-                      onChange={(e) => setMoveTarget(e.target.value)}
-                      placeholder="输入目标路径，如 content/.draft/sub"
-                      className="w-full px-2.5 py-1.5 text-sm border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
-                    />
-                    <button
-                      onClick={handleMove}
-                      disabled={!moveTarget.trim() || actionLoading}
-                      className="w-full px-2.5 py-1.5 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {actionLoading ? '移动中……' : `移动 ${selectedFiles.size} 篇`}
-                    </button>
-                    <button
-                      onClick={() => setShowMoveDropdown(false)}
-                      className="w-full mt-1 px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-accent rounded-sm transition-colors"
-                    >
-                      取消
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="w-px h-4 bg-border"></div>
-
-              <button
-                onClick={handleDelete}
-                disabled={actionLoading}
-                className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-destructive rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                删除
-              </button>
-
-              <div className="w-px h-4 bg-border"></div>
-
+            {/* 移动 */}
+            <div className="relative">
               <button
                 onClick={() => {
-                  const selected = mergedFiles.filter(f => selectedFiles.has(f.path));
-                  if (selected.length === 1) {
-                    const file = selected[0];
-                    if (file) openRenameDialog(file);
-                  }
+                  setShowMoveDropdown(!showMoveDropdown);
+                  setShowPublishDropdown(false);
                 }}
-                disabled={selectedFiles.size !== 1 || actionLoading}
-                className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-primary-text rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
-                title="重命名"
+                disabled={actionLoading}
+                className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
               >
-                <Pencil className="w-3.5 h-3.5" />
-                重命名
+                <Move className="w-3.5 h-3.5" />
+                移动
               </button>
+              {showMoveDropdown && (
+                <div className="absolute top-full left-0 mt-1 bg-card border border-border z-40 min-w-[220px] p-2">
+                  <p className="text-sm text-muted-foreground mb-2 px-1">移动到：</p>
+                  <input
+                    type="text"
+                    value={moveTarget}
+                    onChange={(e) => setMoveTarget(e.target.value)}
+                    placeholder="输入目标路径，如 content/.draft/sub"
+                    className="w-full px-2.5 py-1.5 text-sm border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
+                  />
+                  <button
+                    onClick={handleMove}
+                    disabled={!moveTarget.trim() || actionLoading}
+                    className="w-full px-2.5 py-1.5 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {actionLoading ? '移动中……' : `移动 ${selectedFiles.size} 篇`}
+                  </button>
+                  <button
+                    onClick={() => setShowMoveDropdown(false)}
+                    className="w-full mt-1 px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-accent rounded-sm transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+
+            <div className="w-px h-4 bg-border"></div>
+
+            <button
+              onClick={handleDelete}
+              disabled={actionLoading}
+              className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-destructive rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              删除
+            </button>
+
+            <div className="w-px h-4 bg-border"></div>
+
+            <button
+              onClick={() => {
+                const selected = mergedFiles.filter(f => selectedFiles.has(f.path));
+                if (selected.length === 1) {
+                  const file = selected[0];
+                  if (file) openRenameDialog(file);
+                }
+              }}
+              disabled={selectedFiles.size !== 1 || actionLoading}
+              className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-primary-text rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+              title="重命名"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              重命名
+            </button>
+          </div>
+        )}
+        </>
       )}
 
       <div className="flex-1 overflow-auto px-4 md:px-8">

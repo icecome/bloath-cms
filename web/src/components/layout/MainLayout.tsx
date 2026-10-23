@@ -186,7 +186,8 @@ function SidebarContent({
 
       <PublishButton />
 
-      {/* 全局搜索入口：桌面端顶栏已有，此处补移动端（侧栏抽屉内） */}
+      {/* 全局搜索入口（侧栏唯一）：打开 GlobalSearchDialog，覆盖标题/标签/文件名跨目录匹配。
+          桌面端靠 Ctrl/Cmd+K 快捷键；此处按钮保证移动端与不知道快捷键的用户可达。 */}
       <div className="px-4 pb-2">
         <button
           type="button"
@@ -646,19 +647,6 @@ export default function MainLayout() {
               <span className="text-border">/</span>
               <span className="text-foreground font-medium">{getCurrentNavLabel(location.pathname)}</span>
             </div>
-            {selectedRepo && (
-              <button
-                type="button"
-                onClick={() => setSearchOpen(true)}
-                className="hidden sm:flex items-center gap-1.5 text-[11px] text-muted-foreground border border-border rounded-sm px-2 py-1 hover:bg-accent transition-colors"
-                title="全局搜索（Ctrl+K）"
-                aria-label="打开全局搜索"
-              >
-                <Search className="w-3 h-3" />
-                搜索
-                <kbd className="text-[10px] opacity-60">Ctrl K</kbd>
-              </button>
-            )}
           </div>
           {selectedRepo && <DeployBadge repo={selectedRepo} />}
         </header>

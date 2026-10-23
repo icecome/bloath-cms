@@ -242,21 +242,25 @@ export default function TrashPage() {
       )}
 
       {selectedRepo && (
-        <div className="flex-shrink-0 px-4 md:px-8 py-4 border-b border-border-subtle">
-          <div className="relative">
+        <>
+        <div className="flex-shrink-0 px-4 md:px-8 py-4 flex items-center gap-3 border-b border-border-subtle">
+          <h1 className="text-sm font-medium text-foreground whitespace-nowrap">回收站</h1>
+          <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="搜索回收站……"
-              aria-label="搜索回收站"
+              placeholder="按文件名或路径筛选……"
+              aria-label="按文件名或路径筛选回收站"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full max-w-md pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
             />
           </div>
+        </div>
 
-          {selectedFiles.size > 0 && (
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+        {/* 批量操作工具栏：并入同一行容器，与筛选框同级 */}
+        {selectedFiles.size > 0 && (
+          <div className="flex items-center gap-2 flex-wrap px-4 md:px-8 py-2.5 border-b border-border-subtle bg-accent/40">
               {progress ? (
                 <div className="flex items-center gap-2">
                   <div className="w-24 h-2 bg-accent rounded-full overflow-hidden">
@@ -318,9 +322,9 @@ export default function TrashPage() {
                 <X className="w-3.5 h-3.5" />
                 永久删除
               </button>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
+        </>
       )}
 
       <div className="flex-1 overflow-auto px-4 md:px-8">

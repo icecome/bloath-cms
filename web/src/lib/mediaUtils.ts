@@ -17,6 +17,44 @@ export interface MediaFile {
   lastModified: number;
 }
 
+/** 媒体类型：列表/选择器按此过滤（缩略图不参与） */
+export type MediaKind = 'image' | 'video';
+
+/**
+ * 图片扩展名（媒体库 / 选择器共用）。
+ * 与原先散落在 MediaPage 与 MediaPickerDialog 的两份字面量正则保持一致，
+ * 集中到此处后新增格式只改一行。
+ */
+export const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
+
+/**
+ * 视频扩展名。
+ * 只列浏览器 <video> 可直接播放的容器：mp4/m4v（H.264/AAC 主流）、webm、ogv。
+ * mov 放行但 Chrome 常无法解码（Safari 可），mkv/avi/wmv 一律不接受（见 formatSniff）。
+ */
+export const VIDEO_EXT_RE = /\.(mp4|m4v|webm|ogv|ogg|mov)$/i;
+
+/** 由文件名判定媒体类型；非媒体文件返回 null */
+export function mediaKindOf(name: string): MediaKind | null {
+  if (VIDEO_EXT_RE.test(name)) return 'video';
+  if (IMAGE_EXT_RE.test(name)) return 'image';
+  return null;
+}
+
+/** 是否视频文件 */
+export function isVideoName(name: string): boolean {
+  return VIDEO_EXT_RE.test(name);
+}
+
+/**
+ * 是否为派生产物（列表缩略图 thumb-*）。
+ * 这类文件由上传流程自动生成，不应作为独立条目出现在媒体列表或选择器里——
+ * 但仍需出现在「路径存在性集合」中，供 listImageUrlFor 判定缩略图可用。
+ */
+export function isDerivedAsset(name: string): boolean {
+  return name.startsWith(THUMBNAIL_PREFIX);
+}
+
 /**
  * 判断某文件是否有对应的列表缩略图（thumb-<name>.webp 同目录约定）。
  * 缩略图上传失败不阻断原图上传，列表端按存在性回退原图。
