@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { HonoEnv } from '../env';
-import { ErrorCode } from '../comment/types';
-import { success, error } from '../comment/utils/response';
+import { ErrorCode } from '../lib/error-codes';
+import { success, error } from '../lib/response';
 import { requireAuth, type AuthResult } from '../middleware/sessionAuth';
 import { isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE } from '../middleware/pathGuard';
 import {

@@ -1,4 +1,11 @@
-import type { ApiResponse } from '../types';
+// 统一 API 响应信封：全站端点共用。
+// 原位于 comment/types.ts + comment/utils/response.ts（留言模块），留言模块下线后迁出。
+export interface ApiResponse<T = unknown> {
+  code: number;
+  message: string;
+  data: T | null;
+  timestamp: string;
+}
 
 export function timestamp(): string {
   return new Date().toISOString();

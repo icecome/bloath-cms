@@ -683,6 +683,16 @@ export default function EditorPage() {
               </button>
             </div>
             <SchemaFormPanel frontmatter={frontmatter} setFm={setFm} profile={profile} />
+            {/* 移动端同样提供提交历史（桌面端在右侧栏） */}
+            {!isNew && currentFilePath && (
+              <div className="border-t border-border">
+                <HistoryPanel
+                  repo={{ owner, repo, branch }}
+                  filePath={currentFilePath}
+                  active
+                />
+              </div>
+            )}
           </div>
         </>
       )}

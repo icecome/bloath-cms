@@ -56,11 +56,11 @@ Provider 的 `value` 若为对象字面量，应使用 `useMemo` 包装；其中
 
 ## 后端 Cloudflare Worker 约定
 
-### 管理接口授权
+### 接口授权
 
-`/api/admin/*` 由 `requireAdminAuth` 守卫，该校验包含三层：CSRF → 会话有效性（含设备指纹）→ **GitHub 用户名白名单**（`ADMIN_GITHUB_LOGIN`）。
+全部业务端点由 `requireAuth` 守卫（CSRF → 会话 Cookie → 解密校验 → 设备指纹比对），实现见 `cloudflare-worker/src/middleware/sessionAuth.ts`。
 
-**未配置 `ADMIN_GITHUB_LOGIN` 时管理接口一律拒绝**（fail-closed），这是刻意设计：避免"忘记配置即全部开放"。部署新环境时必须显式配置该变量。
+**注意**：原 `/api/admin/*` 的 `requireAdminAuth`（GitHub 用户名白名单，fail-closed）随留言管理模块一并移除。若将来新增管理类端点，必须重新引入等价的身份白名单，而不是只复用 `requireAuth`——`requireAuth` 的语义是「已登录」，不是「是博主本人」。
 
 ### 存储读取的结构校验
 
@@ -82,22 +82,30 @@ Provider 的 `value` 若为对象字面量，应使用 `useMemo` 包装；其中
 前后端间**禁止**用 `err.message.includes('404')` 一类文本匹配判断 HTTP 状态码。
 前端统一使用 `web/src/lib/http.ts` 的 `HttpError`，按 `err.status` 数字判断。
 
+### 通用基础设施位置
+
+API 响应信封与错误码是**编辑器与所有端点共用**的基础设施，位于：
+
+- `cloudflare-worker/src/lib/response.ts` — `success()` / `error()` / `ApiResponse`
+- `cloudflare-worker/src/lib/error-codes.ts` — `ErrorCode` 枚举
+- `cloudflare-worker/src/lib/api-error.ts` — `ApiError`（业务码 + HTTP 状态）
+
+新增端点一律从这里导入，**不要**再引入模块私有的响应封装。
+
 ---
 
-## 渲染一致性
+## 已下线的模块
 
-留言正文在两处渲染，规则必须保持一致：
+留言管理模块（`routes/{messages,admin,inbound}.ts`、`services/{message,admin,email,inbound,inboundReply,spamSources,rateLimit,turnstile,vectrel}.service.ts`、`comment/` 目录、`web/src/pages/MessagesPage.tsx` 等）已整体移除：该功能移植自独立留言控制台但未完成，原控制台仍在使用，项目内模块从未投产。
 
-- 站内：`web/src/lib/messageMarkdown.ts`（markdown-it 动态 import，不占主包）
-- 邮件：`cloudflare-worker/src/services/email.service.ts` 的 `renderMarkdown`
-
-两处均使用 `{ html: false, linkify: true, breaks: true }` 并重写 `validateLink` 限制协议。
-**修改任一处必须同步另一处**，否则同一段留言在站内与邮件中的排版会出现差异。
+对应数据表由 `cloudflare-worker/src/db/migrations/0009_drop_message_tables.sql` 清理；`app_settings` 表保留（缓冲层 S3 配置依赖）。
 
 ---
 
 ## 相关文档
 
 - `docs/code-review-report-2026-09.md` — 代码审查报告（含 2 轮结论）
-- `CODE_REUSE_LOG.md` — 代码复用决策留痕（项目根）
+- `docs/feature-implementation-review-2026-10.md` — 功能批次审查与修复记录
+- `docs/sveltia-bloath-comparison.md` — 参考项目对照分析
+- `docs/CODE_REUSE_LOG.md` — 代码复用决策留痕
 - `docs/reviews/` — 历史架构审查与复用审查文档

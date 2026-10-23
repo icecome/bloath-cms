@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { HonoEnv } from '../env';
-import { ErrorCode } from '../comment/types';
-import { success, error } from '../comment/utils/response';
+import { ErrorCode } from '../lib/error-codes';
+import { success, error } from '../lib/response';
 import {
   getUserRepos, readFile, writeFile, deleteFile, listDir,
   getRepoBranches, getTree, createBranch, batchCommit, extractFrontMatters,
@@ -187,7 +187,18 @@ reposApp.get('/api/repos/commits', async (c: Context<HonoEnv>) => {
   return c.json(success(commits));
 });
 
-// GET /api/repos/:owner/:repo/branches
+// GET /api/repos/branches —— 前端实际调用的形态（query 参数）。
+// 注意：必须注册在 /api/repos/:owner/:repo/branches 之前不影响匹配（段数不同），
+// 但两者语义等价，保留后者的原因是兼容已部署的旧前端。
+reposApp.get('/api/repos/branches', async (c: Context<HonoEnv>) => {
+  const owner = c.req.query('owner');
+  const repo = c.req.query('repo');
+  if (!isSafePathParam(owner) || !isSafePathParam(repo)) return c.json(badRequest('缺少 owner 或 repo 参数'), 400);
+  const branches = await getRepoBranches(auth(c).githubToken, owner!, repo!);
+  return c.json(success(branches));
+});
+
+// GET /api/repos/:owner/:repo/branches（兼容形态）
 reposApp.get('/api/repos/:owner/:repo/branches', async (c: Context<HonoEnv>) => {
   const owner = c.req.query('owner') || c.req.param('owner');
   const repo = c.req.query('repo') || c.req.param('repo');

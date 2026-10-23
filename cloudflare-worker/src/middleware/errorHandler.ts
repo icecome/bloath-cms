@@ -2,9 +2,9 @@ import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
 import type { HonoEnv } from '../env';
-import { ErrorCode } from '../comment/types';
-import { error } from '../comment/utils/response';
-import { ApiError } from '../comment/utils/errors';
+import { ErrorCode } from '../lib/error-codes';
+import { error } from '../lib/response';
+import { ApiError } from '../lib/api-error';
 import { GithubApiError } from '../services/github';
 
 export const errorHandler = (err: Error, c: Context<HonoEnv>): Response => {

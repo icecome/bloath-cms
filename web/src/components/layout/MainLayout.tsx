@@ -24,8 +24,7 @@ import {
   Menu,
   X,
   Search,
-  Loader2,
-  MessageSquare
+  Loader2
 } from 'lucide-react';
 
 // 导航配置（模块级常量，SidebarContent 和 Header 面包屑共用）
@@ -34,7 +33,6 @@ const NAV_ITEM_LABELS: Record<string, string> = {
   '/drafts': '草稿箱',
   '/trash': '回收站',
   '/media': '媒体库',
-  '/messages': '留言管理',
   '/settings': '设置',
 };
 
@@ -51,7 +49,7 @@ function SidebarContent({
   showRepoDropdown, showBranchDropdown, showAccountDropdown,
   setShowRepoDropdown, setShowBranchDropdown, setShowAccountDropdown,
   onRepoChange, onBranchChange, onSwitchAccount, onLogout, onNewArticle, onNavClick,
-  detectingFrameworks
+  detectingFrameworks, onOpenSearch
 }: {
   repos: DetectedRepo[];
   selectedRepo: { owner: string; repo: string; branch: string } | null;
@@ -70,6 +68,8 @@ function SidebarContent({
   onNewArticle: () => void;
   onNavClick: () => void;
   detectingFrameworks: boolean;
+  /** 打开全局搜索（移动端侧栏入口，桌面端在顶栏） */
+  onOpenSearch: () => void;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -159,7 +159,6 @@ function SidebarContent({
     { path: '/drafts', label: '草稿箱', icon: <FilePlus2 className="w-4 h-4" /> },
     { path: '/trash', label: '回收站', icon: <Trash2 className="w-4 h-4" /> },
     { path: '/media', label: '媒体库', icon: <ImageIcon className="w-4 h-4" /> },
-    { path: '/messages', label: '留言管理', icon: <MessageSquare className="w-4 h-4" /> },
     { path: '/settings', label: '设置', icon: <Settings className="w-4 h-4" /> },
   ];
 
@@ -186,6 +185,21 @@ function SidebarContent({
       </div>
 
       <PublishButton />
+
+      {/* 全局搜索入口：桌面端顶栏已有，此处补移动端（侧栏抽屉内） */}
+      <div className="px-4 pb-2">
+        <button
+          type="button"
+          onClick={() => { onOpenSearch(); onNavClick(); }}
+          disabled={!selectedRepo}
+          className="w-full flex items-center gap-2 px-3 h-9 text-sm border border-border rounded-sm text-muted-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-label="打开全局搜索"
+        >
+          <Search className="w-4 h-4 flex-shrink-0" />
+          <span className="flex-1 text-left truncate">搜索文章</span>
+          <kbd className="text-[10px] opacity-60 flex-shrink-0">Ctrl K</kbd>
+        </button>
+      </div>
 
       <div className="px-4 pb-2">
         <div className="relative dropdown-root">
@@ -581,6 +595,7 @@ export default function MainLayout() {
           onNewArticle={handleNewArticle}
           onNavClick={() => {}}
           detectingFrameworks={detectingFrameworks}
+          onOpenSearch={() => setSearchOpen(true)}
         />
       </aside>
 
@@ -611,6 +626,7 @@ export default function MainLayout() {
           onNewArticle={handleNewArticle}
           onNavClick={closeSidebar}
           detectingFrameworks={detectingFrameworks}
+          onOpenSearch={() => setSearchOpen(true)}
         />
       </aside>
 

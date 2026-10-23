@@ -32,19 +32,21 @@ function badgeClass(run: DeployRunView): string {
 
 export function DeployBadge({ repo }: { repo: SelectedRepo }) {
   const [latestRun, setLatestRun] = useState<DeployRunView | null>(null);
+  /** 查询失败原因（网络/权限/未配置 Actions）。非空时显示可点诊断态，而不是静默消失 */
+  const [failureReason, setFailureReason] = useState('');
   /** 进行中时的轮询序号（对 POLL_INTERVALS_MS 取模）；空闲为 -1 */
   const [pollTick, setPollTick] = useState(-1);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
 
-  const fetchStatus = useCallback(async (): Promise<DeployRunView | null> => {
+  const fetchStatus = useCallback(async (): Promise<{ run: DeployRunView | null; reason: string }> => {
     try {
       const result = await getDeployStatus({ owner: repo.owner, repo: repo.repo });
       const run = result.runs.find((r) => r.headBranch === repo.branch) ?? result.runs[0] ?? null;
-      return run;
-    } catch {
-      // 权限不足/无 Actions/网络失败：隐藏徽章
-      return null;
+      // worker 侧失败会带 error 字段（GitHub 不可达/无权限），保留给 UI 展示
+      return { run, reason: run ? '' : result.error || '' };
+    } catch (err) {
+      return { run: null, reason: err instanceof Error ? err.message : '部署状态查询失败' };
     }
   }, [repo.owner, repo.repo, repo.branch]);
 
@@ -53,9 +55,10 @@ export function DeployBadge({ repo }: { repo: SelectedRepo }) {
     mountedRef.current = true;
     let cancelled = false;
 
-    fetchStatus().then((run) => {
+    fetchStatus().then(({ run, reason }) => {
       if (cancelled) return;
       setLatestRun(run);
+      setFailureReason(reason);
       // 首拉即处于进行中：进入轮询
       if (run && (run.status === 'queued' || run.status === 'in_progress')) {
         setPollTick(0);
@@ -76,9 +79,10 @@ export function DeployBadge({ repo }: { repo: SelectedRepo }) {
     if (pollTick < 0 || pollTick >= POLL_INTERVALS_MS.length) return;
 
     timerRef.current = setTimeout(async () => {
-      const run = await fetchStatus();
+      const { run, reason } = await fetchStatus();
       if (!mountedRef.current) return;
       setLatestRun(run);
+      setFailureReason(reason);
 
       const stillBusy = run && (run.status === 'queued' || run.status === 'in_progress');
       if (stillBusy) {
@@ -93,7 +97,21 @@ export function DeployBadge({ repo }: { repo: SelectedRepo }) {
     };
   }, [pollTick, fetchStatus]);
 
-  if (!latestRun) return null;
+  // 失败态：显示「部署状态不可用」并给出原因，避免用户以为功能不存在
+  if (!latestRun) {
+    if (!failureReason) return null;
+    return (
+      <a
+        href={`https://github.com/${repo.owner}/${repo.repo}/actions`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        title={`部署状态不可用：${failureReason}（点击查看 Actions）`}
+      >
+        <span className="px-1.5 py-0.5 rounded-sm bg-secondary text-muted-foreground">部署状态不可用</span>
+      </a>
+    );
+  }
 
   const label = badgeLabel(latestRun);
   if (!label) return null;

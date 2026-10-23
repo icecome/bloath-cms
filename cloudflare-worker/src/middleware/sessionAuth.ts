@@ -5,8 +5,6 @@ import {
   validateSessionToken, generateDeviceFingerprint, generateSessionToken,
   getDeviceRecord, upsertDeviceRecord, SESSION_DURATION_MS, TRUSTED_DURATION_MS
 } from '../services/session';
-import { ErrorCode } from '../comment/types';
-import { error as errorResp } from '../comment/utils/response';
 
 export function checkCsrf(request: Request): boolean {
   return request.headers.get('X-Requested-With') === 'XMLHttpRequest';
@@ -66,14 +64,6 @@ export async function authenticate(request: Request, env: HonoEnv['Bindings']): 
   };
 }
 
-/** 解析 ADMIN_GITHUB_LOGIN 白名单为小写数组 */
-function getAdminLogins(env: HonoEnv['Bindings']): string[] {
-  return (env.ADMIN_GITHUB_LOGIN || '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 export const requireAuth: MiddlewareHandler<HonoEnv> = async (c: Context<HonoEnv>, next: Next) => {
   const authResult = await authenticate(c.req.raw, c.env);
   if (authResult instanceof Response) return authResult;
@@ -81,32 +71,8 @@ export const requireAuth: MiddlewareHandler<HonoEnv> = async (c: Context<HonoEnv
   await next();
 };
 
-export const requireAdminAuth: MiddlewareHandler<HonoEnv> = async (c: Context<HonoEnv>, next: Next) => {
-  if (!checkCsrf(c.req.raw)) {
-    return c.json(errorResp(ErrorCode.VALIDATION_ERROR, '请求来源校验未通过，请刷新页面后重试'), 403);
-  }
-  const sessionToken = getSessionTokenFromCookie(c.req.raw);
-  if (!sessionToken) {
-    return c.json(errorResp(ErrorCode.UNAUTHORIZED, '未登录或会话已过期'), 401);
-  }
-  const currentFingerprint = await generateDeviceFingerprint(c.req.raw);
-  const result = await validateSessionToken(sessionToken, c.env, currentFingerprint);
-  if (!result) {
-    return c.json(errorResp(ErrorCode.UNAUTHORIZED, '未登录或会话已过期'), 401);
-  }
-  // 身份白名单：GitHub OAuth 对任意账号开放，仅校验会话有效性等同于把管理面公开。
-  // 未配置白名单时一律拒绝，避免「忘记配置即全开」。
-  const admins = getAdminLogins(c.env);
-  if (admins.length === 0) {
-    console.error('[auth] ADMIN_GITHUB_LOGIN 未配置，管理接口已拒绝访问');
-    return c.json(errorResp(ErrorCode.UNAUTHORIZED, '管理功能未启用'), 403);
-  }
-  if (!admins.includes(result.githubLogin.toLowerCase())) {
-    console.warn('[auth] 非管理员账号尝试访问管理接口：', result.githubLogin);
-    return c.json(errorResp(ErrorCode.UNAUTHORIZED, '无管理权限'), 403);
-  }
-  await next();
-};
+// requireAdminAuth（管理接口白名单守卫）随留言管理模块一并移除：
+// 它是 /api/admin/* 的唯一消费者，该模块下线后已无调用点。
 
 export async function addSessionRenewalCookie(
   response: Response,

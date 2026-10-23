@@ -78,17 +78,26 @@ export function readSnapshot(repo: RepoScope, storage?: StorageLike): TreeSnapsh
   }
 }
 
-/** 把一批增强文件项写入快照；写入失败（配额/隐私模式）静默降级为内存无快照 */
+/**
+ * 把一批增强文件项写入快照。
+ *
+ * 合并语义（不是覆盖）：快照是「整个仓库的索引」，而不是「最近一次扫描路径的快照」。
+ * 各页面只扫描自己的 basePath（内容库/草稿箱/回收站），若每次覆盖，
+ * 全局搜索与引用扫描只能看到最后一次扫描过的目录。因此这里保留其他路径的旧记录，
+ * 仅更新本次扫描到的路径。清理靠 clearCache → invalidateSnapshot（提交后整体失效）。
+ *
+ * 写入失败（配额/隐私模式）静默降级为内存无快照。
+ */
 export function saveSnapshot(
   repo: RepoScope,
   files: EnhancedFileItem[],
   storage?: StorageLike
 ): TreeSnapshot {
   const store = resolveStorage(storage);
-  const records: Record<string, SnapshotRecord> = {};
-  const capped = files.slice(0, MAX_SNAPSHOT_ENTRIES);
+  const previous = readSnapshot(repo, storage);
+  const records: Record<string, SnapshotRecord> = { ...previous.records };
 
-  for (const file of capped) {
+  for (const file of files.slice(0, MAX_SNAPSHOT_ENTRIES)) {
     records[file.path] = {
       sha: file.sha,
       item: {
@@ -104,7 +113,20 @@ export function saveSnapshot(
     };
   }
 
-  const snapshot: TreeSnapshot = { version: STORE_VERSION, savedAt: Date.now(), records };
+  // 合并后总量仍受上限约束：超出时保留 savedAt 较新的条目（本次写入的优先），
+  // 避免多目录扫描累积突破 localStorage 配额。
+  const allPaths = Object.keys(records);
+  const cappedRecords: Record<string, SnapshotRecord> =
+    allPaths.length <= MAX_SNAPSHOT_ENTRIES
+      ? records
+      : Object.fromEntries(
+          allPaths
+            .sort((a, b) => (records[b]?.item.lastModified ?? 0) - (records[a]?.item.lastModified ?? 0))
+            .slice(0, MAX_SNAPSHOT_ENTRIES)
+            .map((path) => [path, records[path] as SnapshotRecord])
+        );
+
+  const snapshot: TreeSnapshot = { version: STORE_VERSION, savedAt: Date.now(), records: cappedRecords };
 
   if (store) {
     try {

@@ -136,6 +136,21 @@ describe('saveSnapshot / readSnapshot', () => {
     const snap = saveSnapshot(repo, files, storage);
     assert.equal(Object.keys(snap.records).length, MAX_SNAPSHOT_ENTRIES);
   });
+
+  it('合并语义：多次扫描不同目录时保留彼此记录（全局搜索与引用扫描依赖）', () => {
+    saveSnapshot(repo, [makeItem({ path: 'content/a.md', sha: 'sha-a' })], storage);
+    saveSnapshot(repo, [makeItem({ path: '.draft/b.md', sha: 'sha-b' })], storage);
+
+    const snap = readSnapshot(repo, storage);
+    assert.ok(snap.records['content/a.md'], '内容库记录应保留');
+    assert.ok(snap.records['.draft/b.md'], '草稿箱记录应写入');
+  });
+
+  it('合并语义：同路径重复扫描时以新值为准', () => {
+    saveSnapshot(repo, [makeItem({ path: 'content/a.md', sha: 'sha-old' })], storage);
+    saveSnapshot(repo, [makeItem({ path: 'content/a.md', sha: 'sha-new' })], storage);
+    assert.equal(readSnapshot(repo, storage).records['content/a.md']?.sha, 'sha-new');
+  });
 });
 
 describe('invalidateSnapshot', () => {

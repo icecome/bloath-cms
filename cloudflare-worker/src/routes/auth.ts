@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { HonoEnv } from '../env';
-import { ErrorCode } from '../comment/types';
-import { success, error } from '../comment/utils/response';
+import { ErrorCode } from '../lib/error-codes';
+import { success, error } from '../lib/response';
 import { exchangeCode, getUserInfo } from '../services/github';
 import {
   generateState, parseState, generateDeviceFingerprint, generateSessionToken,
@@ -22,13 +22,12 @@ const authApp = new Hono<HonoEnv>();
 // GET /api/auth/dev-login — 仅本地开发：跳过 GitHub OAuth 直接签发会话
 // 返回 200 HTML，Cookie 由 JS 在当前域写入（避免 Vite 代理转发 302 时丢失 Set-Cookie）
 // 不绑定设备指纹：浏览器导航与后续 fetch 的请求头可能经 Vite 代理后不一致，导致指纹校验失败
-// 注入的 login 复用 ADMIN_GITHUB_LOGIN 首项（若配置），使本地也能访问管理接口
 authApp.get('/api/auth/dev-login', async (c: Context<HonoEnv>) => {
   if (c.env.ENVIRONMENT === 'production') {
     return c.json({ error: 'Not found' }, 404);
   }
   const fakeToken = 'dev-local-no-github';
-  const devLogin = (c.env.ADMIN_GITHUB_LOGIN || 'dev-user').split(',')[0]?.trim() || 'dev-user';
+  const devLogin = 'dev-user';
   const sessionToken = await generateSessionToken(fakeToken, devLogin, c.env, undefined, true);
   if (typeof sessionToken !== 'string') {
     return c.json({ error: 'Session generation failed' }, 500);

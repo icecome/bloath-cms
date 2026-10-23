@@ -22,9 +22,6 @@
   ],
   "vars": {
     "ENVIRONMENT": "production",
-    "ADMIN_GITHUB_LOGIN": "icecome",
-    "CORS_ORIGIN": "https://blog.icecome.com",
-    "INBOUND_REPLY_DOMAIN": "mail.icecome.com",
-    "RESEND_FROM": "noreply@icecome.com"
+    "CORS_ORIGIN": "https://blog.icecome.com"
   }
 }

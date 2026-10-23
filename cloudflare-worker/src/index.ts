@@ -3,13 +3,10 @@ import type { HonoEnv } from './env';
 import { corsMiddleware, resolveFrontendUrl } from './middleware/cors';
 import { requestLog } from './middleware/sessionAuth';
 import { errorHandler } from './middleware/errorHandler';
-import { success } from './comment/utils/response';
+import { success } from './lib/response';
 
 import authRoutes from './routes/auth';
 import reposRoutes from './routes/repos';
-import messagesRoutes from './routes/messages';
-import adminRoutes from './routes/admin';
-import inboundRoutes from './routes/inbound';
 import bufferRoutes from './routes/buffer';
 
 const app = new Hono<HonoEnv>();
@@ -19,14 +16,6 @@ app.use('*', requestLog);
 app.use('*', corsMiddleware);
 
 // 管理面与缓冲层禁缓存：响应被边缘缓存会让匿名请求命中登录态结果
-app.use('/admin/api/*', async (c, next) => {
-  await next();
-  c.header('Cache-Control', 'no-store');
-});
-app.use('/api/admin/*', async (c, next) => {
-  await next();
-  c.header('Cache-Control', 'no-store');
-});
 app.use('/api/buffer/*', async (c, next) => {
   await next();
   c.header('Cache-Control', 'no-store');
@@ -50,9 +39,6 @@ app.get('/api/health', async (c) => {
 // 挂载路由
 app.route('/', authRoutes);
 app.route('/', reposRoutes);
-app.route('/', messagesRoutes);
-app.route('/', adminRoutes);
-app.route('/', inboundRoutes);
 app.route('/', bufferRoutes);
 
 // 非 API 请求：重定向到前端
