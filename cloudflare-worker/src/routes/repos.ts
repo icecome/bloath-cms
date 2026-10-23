@@ -11,7 +11,10 @@ import {
 import type { CommitOp } from '../services/github';
 import { fetchRecentRuns } from '../services/deploy-status';
 import { requireAuth, type AuthResult } from '../middleware/sessionAuth';
-import { isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE } from '../middleware/pathGuard';
+import { bytesToBase64 } from '../lib/base64';
+import {
+  isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE, MAX_JSON_BODY_SIZE, MAX_MEDIA_BINARY_SIZE,
+} from '../middleware/pathGuard';
 
 const reposApp = new Hono<HonoEnv>();
 reposApp.use('/api/repos/*', requireAuth);
@@ -58,17 +61,64 @@ reposApp.get('/api/repos/file', async (c: Context<HonoEnv>) => {
 
 // PUT /api/repos/file
 reposApp.put('/api/repos/file', async (c: Context<HonoEnv>) => {
-  const data = safeJsonParse(await c.req.raw.text());
+  const data = safeJsonParse(await c.req.raw.text(), MAX_JSON_BODY_SIZE);
   const { owner, repo, path: filePath, content, base64Content, message, sha, branch = 'main', userName } = data as {
     owner?: string; repo?: string; path?: string; content?: string; base64Content?: string;
     message?: string; sha?: string; branch?: string; userName?: string;
   };
   const fileContent = base64Content || content;
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath || !fileContent) return c.json(badRequest('缺少必填字段'), 400);
-  if (typeof fileContent === 'string' && fileContent.length > MAX_CONTENT_SIZE) return c.json(badRequest('文件过大（单文件上限 10 MB）'), 400);
+  if (typeof fileContent === 'string' && fileContent.length > MAX_CONTENT_SIZE) return c.json(badRequest('文件过大（单文件上限 15 MB）'), 400);
   if (!isSafePathParam(filePath, true) || !isSafePathParam(branch)) return c.json(badRequest('path 或 branch 参数无效'), 400);
   const author = buildCommitAuthor(userName);
   await writeFile(auth(c).githubToken, owner, repo, filePath, fileContent, message || 'update file', sha, branch, author, !!base64Content);
+  return c.json(success({ path: filePath }));
+});
+
+// PUT /api/repos/media —— 二进制媒体上传（视频 / 原图模式）
+//
+// 为什么不复用 /api/repos/file：那条路径要求 base64 塞进 JSON，
+// 视频体积下 base64 膨胀 33% 且 JSON.stringify 会再复制一份字符串，
+// 峰值内存约为文件体积的 3 倍；此处直接收 arrayBuffer，只在提交给 GitHub 前
+// 做一次 base64 编码，峰值降为 2 倍左右。
+//
+// 契约：
+//   PUT /api/repos/media?owner=&repo=&branch=&path=&message=&sha=&userName=
+//   Body: 原始字节（Content-Type 不限）
+//   200 → { code:0, data:{ path } }
+//   400 → 参数无效 / 空文件
+//   413 → 超过 MAX_MEDIA_BINARY_SIZE
+reposApp.put('/api/repos/media', async (c: Context<HonoEnv>) => {
+  const q = (key: string) => c.req.query(key);
+  const owner = q('owner');
+  const repo = q('repo');
+  const filePath = q('path');
+  const branch = q('branch') || 'main';
+  const sha = q('sha');
+  const message = q('message');
+  const userName = q('userName');
+
+  if (!isSafePathParam(owner) || !isSafePathParam(repo) || !filePath) {
+    return c.json(badRequest('缺少必填字段'), 400);
+  }
+  if (!isSafePathParam(filePath, true) || !isSafePathParam(branch)) {
+    return c.json(badRequest('path 或 branch 参数无效'), 400);
+  }
+
+  const bytes = await c.req.arrayBuffer();
+  if (bytes.byteLength === 0) return c.json(badRequest('文件内容为空'), 400);
+  if (bytes.byteLength > MAX_MEDIA_BINARY_SIZE) {
+    return c.json(
+      error(ErrorCode.PAYLOAD_TOO_LARGE, `文件超过 ${MAX_MEDIA_BINARY_SIZE / 1048576} MB 上限`),
+      413
+    );
+  }
+
+  // isBase64=true：内容已是 base64，writeFile 不再二次编码
+  await writeFile(
+    auth(c).githubToken, owner, repo, filePath, bytesToBase64(new Uint8Array(bytes)),
+    message || 'upload media', sha, branch, buildCommitAuthor(userName), true
+  );
   return c.json(success({ path: filePath }));
 });
 
@@ -126,7 +176,7 @@ reposApp.post('/api/repos/commit', async (c: Context<HonoEnv>) => {
       const len = typeof op.content === 'string' ? op.content.length : 0;
       const b64len = typeof op.base64Content === 'string' ? op.base64Content.length : 0;
       if (len === 0 && b64len === 0) return c.json(badRequest(`写入操作缺少内容：${op.path}`), 400);
-      if (len + b64len > MAX_CONTENT_SIZE) return c.json(badRequest(`文件过大（单文件上限 10 MB）：${op.path}`), 400);
+      if (len + b64len > MAX_CONTENT_SIZE) return c.json(badRequest(`文件过大（单文件上限 15 MB）：${op.path}`), 400);
     }
   }
   const author = buildCommitAuthor(userName);

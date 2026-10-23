@@ -84,6 +84,9 @@ export type CdnProvider = 'jsdmirror' | 'github_raw' | 'custom';
 
 export type DuplicateStrategy = 'skip' | 'overwrite';
 
+/** 图片上传方式：compress=重编码为 WebP（默认）；original=保留原始格式与字节 */
+export type UploadMode = 'compress' | 'original';
+
 export type MediaSourceType = 'standalone' | 'repo-dir' | 'image-branch' | 's3';
 
 /** S3 兼容图床的连接配置（sourceType = 's3' 时生效；凭据仅存 localStorage，与缓冲层同安全级别） */
@@ -112,6 +115,8 @@ export interface MediaConfig {
   quality: number;
   renameTemplate: string;
   duplicateStrategy: DuplicateStrategy;
+  /** 图片上传默认方式（设置页配置，上传区默认选中该项）；视频恒为原样上传 */
+  uploadMode: UploadMode;
   /** S3 兼容图床配置（sourceType='s3' 时必填） */
   s3?: S3MediaConfig;
 }

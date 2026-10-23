@@ -8,7 +8,7 @@ import {
   Image, Globe, Sliders, FileSignature,
   AlertTriangle, GitBranch, FolderOpen, Loader2, Cloud
 } from 'lucide-react';
-import type { CdnProvider, DuplicateStrategy, MediaSourceType } from '../../../../shared/types';
+import type { CdnProvider, DuplicateStrategy, MediaSourceType, UploadMode } from '../../../../shared/types';
 
 // 静态配置数组（模块级，避免每次渲染重建）
 const MEDIA_SOURCE_TYPES: { value: MediaSourceType; label: string; desc: string; icon: typeof Image }[] = [
@@ -27,6 +27,11 @@ const CDN_PROVIDERS: { value: CdnProvider; label: string; template: string }[] =
 const DUPLICATE_STRATEGIES: { value: DuplicateStrategy; label: string; desc: string }[] = [
   { value: 'skip', label: '跳过', desc: '检测到同名文件时跳过上传' },
   { value: 'overwrite', label: '覆盖', desc: '直接覆盖同名文件' },
+];
+
+const UPLOAD_MODES: { value: UploadMode; label: string; desc: string }[] = [
+  { value: 'compress', label: '压缩', desc: '图片重编码为 WebP，体积小、加载快；GIF / SVG 自动按原图' },
+  { value: 'original', label: '原图', desc: '保留原始格式与画质（含 EXIF），体积更大' },
 ];
 
 /** S3 配置区输入框统一样式（模块级，避免 JSX 内联重复） */
@@ -357,6 +362,35 @@ export function MediaSettings() {
           <span className="text-xs text-muted-foreground">预览：</span>
           <code className="text-xs text-foreground font-mono break-all">{resolveCdnPreview()}</code>
         </div>
+      </section>
+
+      <section>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
+          <Sliders className="w-3 h-3" />
+          默认上传方式
+        </div>
+        <div className="space-y-2">
+          {UPLOAD_MODES.map((item) => (
+            <label key={item.value} htmlFor={`upload-mode-${item.value}`} className="flex items-start gap-2 cursor-pointer group">
+              <input
+                id={`upload-mode-${item.value}`}
+                type="radio"
+                name="uploadMode"
+                value={item.value}
+                checked={mediaConfig.uploadMode === item.value}
+                onChange={() => updateMediaConfig({ uploadMode: item.value })}
+                className="mt-0.5 accent-foreground"
+              />
+              <div>
+                <div className="text-xs text-foreground font-medium">{item.label}</div>
+                <div className="text-xs text-muted-foreground">{item.desc}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          媒体库上传区默认选中该项，可在上传时临时切换（不写回此配置）。视频恒为原样上传。
+        </p>
       </section>
 
       <section>

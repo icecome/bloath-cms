@@ -2,28 +2,37 @@ import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties }
 import { useCollections } from '../contexts/CollectionsContext';
 import { useRepo } from '../contexts/RepoContext';
 import { useAuth } from '../hooks/useAuth';
+import type { UploadMode } from '../../../shared/types';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
-import { getTree, uploadImage, deleteFile, readFile } from '../lib/api';
+import { getTree, uploadImage, uploadMediaBinary, deleteFile, readFile } from '../lib/api';
 import { resolveMediaSource, mediaCdnUrl } from '../lib/resolveMediaSource';
 import { sortByLastModified } from '../lib/sortFiles';
 import { fillTemplate, fillPathTemplate, migrateLegacyTemplate } from '../lib/template';
-import { validateImageUpload } from '../lib/formatSniff';
 import { s3ListObjects, s3PutObject, s3DeleteObject, s3PublicUrl } from '../lib/s3MediaClient';
 import { s3MediaPrefix } from '../lib/resolveS3MediaSource';
 import { scanAssetReferences, type AssetReference } from '../lib/assetReferences';
 import { readSnapshot } from '../lib/fileSnapshot';
 import { getCachedFiles } from '../lib/fileCache';
+import { planUpload, type UploadPlan } from '../lib/mediaUploadPlan';
+import { videoMaxBytes, formatMegabytes } from '../lib/mediaLimits';
+import { mapLimit } from '../lib/concurrency';
 import {
   compressImage,
   blobToBase64,
   formatDate,
   formatSize,
   createThumbnail,
+  createVideoPoster,
   thumbnailPathFor,
   listImageUrlFor,
   registerCdnUrlBuilder,
+  sanitizeMediaFileName,
+  isVideoName,
+  isDerivedAsset,
+  videoEmbedSnippet,
+  IMAGE_EXT_RE,
+  VIDEO_EXT_RE,
   MEDIA_PAGE_SIZE,
-  MAX_FILE_SIZE,
   type MediaFile
 } from '../lib/mediaUtils';
 import { MediaUploader } from '../components/media/MediaUploader';
@@ -38,6 +47,7 @@ import {
   X,
   Loader2,
   FileImage,
+  Play,
   SlidersHorizontal
 } from 'lucide-react';
 
@@ -66,6 +76,16 @@ export default function MediaPage() {
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  /**
+   * 上传方式：默认取设置页配置；本次会话内切换不写回配置（避免一次误操作改变长期行为）。
+   * 用户改设置页后 mediaConfig.uploadMode 变化，此处通过 key 重置（见下方 useEffect）。
+   */
+  const [uploadMode, setUploadMode] = useState<UploadMode>(mediaConfig.uploadMode);
+
+  useEffect(() => {
+    setUploadMode(mediaConfig.uploadMode);
+  }, [mediaConfig.uploadMode]);
+
   const [deleteConfirm, setDeleteConfirm] = useState<MediaFile | null>(null);
   /** 仓库内全部文件路径（缩略图存在性判定用） */
   const [repoFilePaths, setRepoFilePaths] = useState<Set<string>>(new Set());
@@ -117,7 +137,9 @@ export default function MediaPage() {
   const s3Prefix = useMemo(() => s3MediaPrefix(mediaConfig), [mediaConfig]);
 
   const loadFiles = useCallback(async (silent = false): Promise<MediaFile[] | null> => {
-    if (!user || !isConfigured) return null;
+    // S3 走浏览器直连（凭据在本地配置），不依赖会话；GitHub 通道才需要登录态
+    if (!isConfigured) return null;
+    if (!isS3Source && !user) return null;
     if (!silent) {
       setLoading(true);
       setError('');
@@ -129,7 +151,7 @@ export default function MediaPage() {
         // S3 兼容图床：ListObjects 直连，外链走 publicBaseUrl
         const entries = await s3ListObjects(s3Config, s3Prefix);
         mediaFiles = entries
-          .filter((e) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(e.key))
+          .filter((e) => IMAGE_EXT_RE.test(e.key) || VIDEO_EXT_RE.test(e.key))
           .map((e) => ({
             name: e.key.split('/').pop() || e.key,
             path: e.key,
@@ -150,7 +172,7 @@ export default function MediaPage() {
           if (source.pathPrefix && !f.path.startsWith(source.pathPrefix + '/')) {
             return false;
           }
-          return /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name);
+          return IMAGE_EXT_RE.test(f.name) || VIDEO_EXT_RE.test(f.name);
         })
           .map((f) => ({
             name: f.name,
@@ -162,7 +184,8 @@ export default function MediaPage() {
           }));
       }
 
-      // 全仓库路径集合：供 listImageUrlFor 判定缩略图是否存在（thumb-* 同目录约定）
+      // 全仓库路径集合：供 listImageUrlFor 判定缩略图/封面是否存在（thumb-* 同目录约定）
+      // 注意必须用「未剔除派生文件」的集合，否则缩略图存在性判定永远失败
       const pathSet = new Set(mediaFiles.map((f) => f.path));
       setRepoFilePaths(pathSet);
       // 注册 CDN builder：缩略图路径 → URL（mediaUtils 不反向依赖 React 上下文）
@@ -170,7 +193,10 @@ export default function MediaPage() {
         isS3Source && s3Config ? s3PublicUrl(s3Config, path) : getCdnUrl(path)
       );
 
-      const sorted = sortByLastModified(mediaFiles);
+      // 展示层剔除 thumb-*：它们是上传流程自动生成的派生文件，
+      // 此前只按扩展名过滤导致每传一张图就多出一个缩略图卡片
+      const display = mediaFiles.filter((f) => !isDerivedAsset(f.name));
+      const sorted = sortByLastModified(display);
 
       if (silent) {
         return sorted;
@@ -195,12 +221,17 @@ export default function MediaPage() {
     if (isConfigured) loadFiles();
   }, [isConfigured, loadFiles]);
 
+  /**
+   * 上传主流程：先为每个文件生成「计划」（格式/类型/模式/扩展名/上限），
+   * 再按类型分组并发执行。决策与执行分离的原因见 lib/mediaUploadPlan.ts 顶部注释。
+   */
   const handleUpload = async (fileList: FileList | File[]) => {
-    if (!user || !isConfigured) return;
+    if (!isConfigured) return;
+    if (!isS3Source && !user) return;
 
-    const filesArray = Array.from(fileList).filter((f) => f.type.startsWith('image/'));
+    const filesArray = Array.from(fileList);
     if (filesArray.length === 0) {
-      setError('请选择图片文件');
+      setError('未选择任何文件');
       return;
     }
 
@@ -208,104 +239,161 @@ export default function MediaPage() {
     setError('');
     setSuccess('');
 
-    let uploaded = 0;
-    let skipped = 0;
     const errors: string[] = [];
+    const notes: string[] = [];
 
-    let currentFiles = await loadFiles(true);
-
+    // 1. 计划阶段：所有拒绝都发生在这里，执行阶段不再做策略判断
+    const plans: UploadPlan[] = [];
     for (const file of filesArray) {
-      if (file.size > MAX_FILE_SIZE) {
-        errors.push(`${file.name}：超过 20 MB 限制`);
-        continue;
-      }
-      // 格式嗅探（P3-3）：魔数与扩展名不符或伪装可执行内容时拒绝
-      const sniffError = await validateImageUpload(file);
-      if (sniffError) {
-        errors.push(sniffError);
-        continue;
-      }
       try {
-        const blob = await compressImage(file, mediaConfig.quality);
-        const base64 = await blobToBase64(blob);
-
-        // 命名模板：新语法（{{tag}}）；旧 {Y}{m} 模板经 migrateLegacyTemplate 幂等迁移（上方 useRef 初始化处）
-        const fileName = fillTemplate(migratedRenameTemplateRef.current, { filename: file.name }) + '.webp';
-        // 目录模板：支持 {{date:YYYY}} 等按月归档；纯静态路径行为不变
-        const dirPart = fillPathTemplate(source.pathPrefix);
-        const filePath = dirPart
-          ? `${dirPart}/${fileName}`
-          : fileName;
-
-        const existing = currentFiles?.find((f) => f.name === fileName);
-        if (existing && mediaConfig.duplicateStrategy === 'skip') {
-          skipped++;
-          continue;
-        }
-
-        if (isS3Source && s3Config) {
-          // S3 图床：Blob 直传（SigV4），无 commit 概念
-          await s3PutObject(s3Config, filePath, blob);
-        } else {
-          await uploadImage({
-            owner: source.owner,
-            repo: source.repo,
-            path: filePath,
-            base64Content: base64,
-            message: `[skip ci] 上传：${fileName}`,
-            branch: source.branch,
-            userName: user.login,
-            sha: existing?.sha
-          });
-        }
-
-        // 同步生成列表缩略图（P2-2）：失败不阻断上传主流程
-        const thumb = await createThumbnail(file);
-        if (thumb) {
-          try {
-            const thumbPath = thumbnailPathFor(filePath);
-            if (isS3Source && s3Config) {
-              await s3PutObject(s3Config, thumbPath, thumb);
-            } else {
-              const thumbBase64 = await blobToBase64(thumb);
-              await uploadImage({
-                owner: source.owner,
-                repo: source.repo,
-                path: thumbPath,
-                base64Content: thumbBase64,
-                message: `[skip ci] 缩略图：${thumbPath.split('/').pop()}`,
-                branch: source.branch,
-                userName: user.login
-              });
-            }
-          } catch {
-            // 缩略图失败仅提示，原图已传成功
-            console.warn('[MediaPage] 缩略图上传失败（不影响原图）');
-          }
-        }
-        uploaded++;
-        if (currentFiles) {
-          const newEntry: MediaFile = {
-            name: fileName,
-            path: filePath,
-            sha: existing?.sha || '',
-            size: blob.size,
-            lastModified: Date.now(),
-            url: isS3Source && s3Config ? (s3PublicUrl(s3Config, filePath) || '') : getCdnUrl(filePath)
-          };
-          currentFiles = [newEntry, ...currentFiles];
-        }
+        plans.push(await planUpload(file, uploadMode, { isS3: isS3Source }));
       } catch (err) {
-        errors.push(`${file.name}：${err instanceof Error ? err.message : '上传失败，请稍后重试'}`);
+        errors.push(err instanceof Error ? err.message : `${file.name}：无法处理`);
       }
     }
+
+    if (plans.length === 0) {
+      setError(errors.join('\n'));
+      setUploading(false);
+      return;
+    }
+
+    // 2. 执行阶段：图片并发 3、视频并发 1。
+    //    视频独占带宽且 GitHub 端点对同文件并发写会 409；分组而非混排，
+    //    避免大批图片把视频排到最后才动。
+    let currentFiles = await loadFiles(true);
+    const renameTemplate = migratedRenameTemplateRef.current;
+    const dirPart = fillPathTemplate(source.pathPrefix);
+    const login = user?.login ?? '';
+
+    const uploadOne = async (plan: UploadPlan): Promise<boolean> => {
+      const { file, kind, mode, ext } = plan;
+
+      // 命名：模板 → 清洗（worker 路径白名单不允许空格）→ 拼扩展名
+      const baseName = sanitizeMediaFileName(
+        fillTemplate(renameTemplate, { filename: file.name })
+      );
+      const fileName = `${baseName}.${ext}`;
+      const filePath = dirPart ? `${dirPart}/${fileName}` : fileName;
+
+      // 重名判定必须比对完整路径：按月归档目录下 2026/09/a.webp 与 2026/10/a.webp 不是同一个文件
+      const existing = currentFiles?.find((f) => f.path === filePath);
+      if (existing && mediaConfig.duplicateStrategy === 'skip') {
+        return false; // 由调用方计为 skipped
+      }
+
+      // 待上传字节：压缩模式做重编码，原图/视频直接用原始文件
+      let payload: Blob = file;
+      if (kind === 'image' && mode === 'compress') {
+        const compressed = await compressImage(file, mediaConfig.quality);
+        // 压缩无收益时回退原图：已优化的 AVIF / 小尺寸 PNG 转 WebP 常常更大，
+        // 硬压会让「默认压缩」偶尔产生负效果
+        if (compressed.size >= file.size * 0.98) {
+          payload = file;
+          notes.push(`${fileName}：压缩无收益，已保留原图`);
+        } else {
+          payload = compressed;
+        }
+      }
+
+      if (isS3Source && s3Config) {
+        // S3：Blob 直传（SigV4），大视频不经 Worker
+        await s3PutObject(s3Config, filePath, payload);
+      } else if (kind === 'video') {
+        // 视频：走二进制端点，避免 base64 的 33% 膨胀与双份内存
+        await uploadMediaBinary({
+          owner: source.owner,
+          repo: source.repo,
+          path: filePath,
+          blob: payload,
+          message: `[skip ci] 上传：${fileName}`,
+          branch: source.branch,
+          userName: login,
+          sha: existing?.sha
+        });
+      } else {
+        // 图片：沿用 base64 端点（体积小，且该路径已有校验与回归覆盖）
+        await uploadImage({
+          owner: source.owner,
+          repo: source.repo,
+          path: filePath,
+          base64Content: await blobToBase64(payload),
+          message: `[skip ci] 上传：${fileName}`,
+          branch: source.branch,
+          userName: login,
+          sha: existing?.sha
+        });
+      }
+
+      // 派生资产（列表缩略图 / 视频封面）：失败不阻断主流程
+      const derived = kind === 'video' ? await createVideoPoster(file) : await createThumbnail(file);
+      if (derived) {
+        try {
+          const thumbPath = thumbnailPathFor(filePath);
+          if (isS3Source && s3Config) {
+            await s3PutObject(s3Config, thumbPath, derived);
+          } else {
+            await uploadImage({
+              owner: source.owner,
+              repo: source.repo,
+              path: thumbPath,
+              base64Content: await blobToBase64(derived),
+              message: `[skip ci] 缩略图：${thumbPath.split('/').pop()}`,
+              branch: source.branch,
+              userName: login
+            });
+          }
+        } catch {
+          console.warn('[MediaPage] 缩略图/封面上传失败（不影响主文件）');
+        }
+      }
+
+      if (currentFiles) {
+        currentFiles = [{
+          name: fileName,
+          path: filePath,
+          sha: existing?.sha || '',
+          size: payload.size,
+          lastModified: Date.now(),
+          url: isS3Source && s3Config ? (s3PublicUrl(s3Config, filePath) || '') : getCdnUrl(filePath)
+        }, ...currentFiles];
+      }
+      return true;
+    };
+
+    const runGroup = async (group: UploadPlan[], limit: number) => {
+      let done = 0;
+      await mapLimit(group, limit, async (plan) => {
+        try {
+          const ok = await uploadOne(plan);
+          if (ok) done++;
+        } catch (err) {
+          errors.push(`${plan.file.name}：${err instanceof Error ? err.message : '上传失败，请稍后重试'}`);
+        }
+        return null;
+      });
+      return done;
+    };
+
+    const imagePlans = plans.filter((p) => p.kind === 'image');
+    const videoPlans = plans.filter((p) => p.kind === 'video');
+    const [imageDone, videoDone] = await Promise.all([
+      runGroup(imagePlans, 3),
+      runGroup(videoPlans, 1),
+    ]);
+    const uploaded = imageDone + videoDone;
+    const skipped = plans.length - uploaded - errors.length;
 
     if (uploaded > 0) {
-      setSuccess(`成功上传 ${uploaded} 张图片${skipped > 0 ? `，跳过 ${skipped} 张` : ''}`);
+      setSuccess(`成功上传 ${uploaded} 个文件${skipped > 0 ? `，跳过 ${skipped} 个重名文件` : ''}`);
       await loadFiles();
     }
+    if (notes.length > 0) {
+      setSuccess((prev) => (prev ? `${prev}\n${notes.join('\n')}` : notes.join('\n')));
+    }
     if (errors.length > 0) {
-      setError(errors.join('；'));
+      // 多类型混合上传时拼接成一行不可读，改为换行分条
+      setError(errors.join('\n'));
     }
 
     setUploading(false);
@@ -381,10 +469,10 @@ export default function MediaPage() {
     setAssetReferences(null);
 
     try {
+      const thumbPath = thumbnailPathFor(file.path);
       if (isS3Source && s3Config) {
-        // S3 图床：直删对象（含同名缩略图），无 commit
+        // S3 图床：直删对象（含同名缩略图/封面），无 commit
         await s3DeleteObject(s3Config, file.path);
-        const thumbPath = thumbnailPathFor(file.path);
         await s3DeleteObject(s3Config, thumbPath).catch(() => undefined);
       } else {
         await deleteFile({
@@ -393,8 +481,29 @@ export default function MediaPage() {
           path: file.path,
           sha: file.sha,
           message: `[skip ci] 删除：${file.name}`,
-          userName: user.login
+          userName: user?.login
         });
+        // GitHub 通道此前只删原文件，thumb-* 会变成无人可见的孤儿文件
+        // （列表不展示、也无入口清理）。缩略图没有 sha 无法直接删，
+        // 用「按路径读 sha → 删除」；失败忽略（孤儿缩略图不影响使用）
+        try {
+          const { sha: thumbSha } = await readFile({
+            owner: source.owner,
+            repo: source.repo,
+            path: thumbPath,
+            branch: source.branch || 'main'
+          });
+          await deleteFile({
+            owner: source.owner,
+            repo: source.repo,
+            path: thumbPath,
+            sha: thumbSha,
+            message: `[skip ci] 删除缩略图：${thumbPath.split('/').pop()}`,
+            userName: user?.login
+          });
+        } catch {
+          // 没有缩略图 / 读取失败：忽略
+        }
       }
       setFiles((prev) => prev.filter((f) => f.sha !== file.sha));
       setSuccess(`已删除 ${file.name}`);
@@ -413,15 +522,17 @@ export default function MediaPage() {
   };
 
   const handleCopyMarkdown = async (file: MediaFile) => {
-    const markdownLink = `![${file.name}](${file.url})`;
+    // 视频没有 Markdown 原生语法，改复制 HTML5 嵌入片段
+    const text = isVideoName(file.name)
+      ? videoEmbedSnippet(file.url)
+      : `![${file.name}](${file.url})`;
     try {
-      await navigator.clipboard.writeText(markdownLink);
+      await navigator.clipboard.writeText(text);
       flashCopied(file.sha, 'markdown');
     } catch {
       setError('复制失败，请手动选中内容复制');
     }
   };
-
   if (!isConfigured) {
     return (
       <div className="h-full flex flex-col">
@@ -493,24 +604,27 @@ export default function MediaPage() {
 
       <div className="flex-1 overflow-auto px-4 md:px-8 space-y-4">
         {error && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-destructive/10 border border-destructive/25 rounded-sm text-xs text-destructive">
-            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-            <span>{error}</span>
-            <button type="button" onClick={() => setError('')} className="ml-auto" aria-label="关闭错误提示"><X className="w-3 h-3" /></button>
+          <div className="flex items-start gap-2 px-3 py-2 bg-destructive/10 border border-destructive/25 rounded-sm text-xs text-destructive">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <span className="whitespace-pre-line flex-1">{error}</span>
+            <button type="button" onClick={() => setError('')} className="ml-auto flex-shrink-0" aria-label="关闭错误提示"><X className="w-3 h-3" /></button>
           </div>
         )}
         {success && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-success/10 border border-success/25 rounded-sm text-xs text-success">
-            <Check className="w-3.5 h-3.5 flex-shrink-0" />
-            <span>{success}</span>
-            <button type="button" onClick={() => setSuccess('')} className="ml-auto" aria-label="关闭成功提示"><X className="w-3 h-3" /></button>
+          <div className="flex items-start gap-2 px-3 py-2 bg-success/10 border border-success/25 rounded-sm text-xs text-success">
+            <Check className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <span className="whitespace-pre-line flex-1">{success}</span>
+            <button type="button" onClick={() => setSuccess('')} className="ml-auto flex-shrink-0" aria-label="关闭成功提示"><X className="w-3 h-3" /></button>
           </div>
         )}
 
         <MediaUploader
           uploading={uploading}
           quality={mediaConfig.quality}
+          mode={uploadMode}
+          onModeChange={setUploadMode}
           onUpload={handleUpload}
+          videoLimitHint={isS3Source ? `≤ ${formatMegabytes(videoMaxBytes(true))}` : `GitHub 源 ≤ ${formatMegabytes(videoMaxBytes(false))}`}
         />
 
         {loading ? (
@@ -519,7 +633,7 @@ export default function MediaPage() {
           </div>
         ) : files.length === 0 ? (
           <div className="text-center py-12 text-sm text-muted-foreground">
-            暂无图片。上传第一张图片即可开始使用
+            暂无文件。上传第一张图片或第一个视频即可开始使用
           </div>
         ) : (
           <>
@@ -527,27 +641,39 @@ export default function MediaPage() {
               className="media-grid"
               style={{ '--pgrid': String(gridCols), '--mgrid': String(mobileCols) } as CSSProperties}
             >
-            {files.slice(0, currentPage * MEDIA_PAGE_SIZE).map((file) => (
+            {files.slice(0, currentPage * MEDIA_PAGE_SIZE).map((file) => {
+              const isVideo = isVideoName(file.name);
+              const coverUrl = listImageUrlFor(file, repoFilePaths);
+              return (
             <div
               key={file.path}
               className="group border border-border rounded-sm overflow-hidden hover:border-border transition-colors bg-card"
             >
                 <div
-                  className="aspect-square bg-accent flex items-center justify-center cursor-pointer overflow-hidden"
+                  className="relative aspect-square bg-accent flex items-center justify-center cursor-pointer overflow-hidden"
                   onClick={() => setPreviewFile(file)}
                 >
-                  <img
-                    src={listImageUrlFor(file, repoFilePaths)}
-                    alt={file.name}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                    decoding="async"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                      (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                    }}
-                  />
-                  <FileImage className="w-8 h-8 text-muted-foreground hidden" />
+                  {coverUrl ? (
+                    <img
+                      src={coverUrl}
+                      alt={file.name}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                        (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                      }}
+                    />
+                  ) : null}
+                  <FileImage className={`w-8 h-8 text-muted-foreground ${coverUrl ? 'hidden' : ''}`} />
+                  {isVideo && (
+                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <span className="w-9 h-9 rounded-full bg-black/45 flex items-center justify-center">
+                        <Play className="w-4 h-4 text-white translate-x-px" />
+                      </span>
+                    </span>
+                  )}
                 </div>
 
                 <div className="px-2 py-1.5 border-t border-border">
@@ -575,7 +701,7 @@ export default function MediaPage() {
                     type="button"
                     onClick={() => handleCopyMarkdown(file)}
                     className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs border border-border rounded-sm hover:bg-accent transition-colors text-muted-foreground"
-                    title="复制 Markdown 链接"
+                    title={isVideo ? '复制嵌入代码' : '复制 Markdown 链接'}
                   >
                     {copiedId === file.sha && copiedType === 'markdown' ? (
                       <Check className="w-3 h-3 text-success" />
@@ -593,7 +719,8 @@ export default function MediaPage() {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
             {files.length > currentPage * MEDIA_PAGE_SIZE && (
               <div className="flex justify-center py-4">
@@ -602,7 +729,7 @@ export default function MediaPage() {
                   onClick={() => setCurrentPage((p) => p + 1)}
                   className="px-6 py-2 text-sm bg-foreground text-white rounded-sm hover:bg-foreground/90 transition-colors"
                 >
-                  加载更多，剩余 {files.length - currentPage * MEDIA_PAGE_SIZE} 张
+                  加载更多，剩余 {files.length - currentPage * MEDIA_PAGE_SIZE} 个
                 </button>
               </div>
             )}

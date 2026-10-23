@@ -19,6 +19,9 @@ export const mediaConfigSchema = z.object({
   quality: z.number().int().min(10).max(100),
   renameTemplate: z.string(),
   duplicateStrategy: z.enum(['skip', 'overwrite']),
+  // 存量 localStorage 无此字段：loadMediaConfig 先与默认值合并再校验，
+  // 缺失时补成 'compress'，不会因校验失败而整份回退
+  uploadMode: z.enum(['compress', 'original']),
   s3: z
     .object({
       endpoint: z.string(),

@@ -279,6 +279,41 @@ export async function uploadImage(
   });
 }
 
+/**
+ * 上传媒体二进制（视频 / 原图模式）。
+ *
+ * 与 uploadImage 的区别：走 PUT /api/repos/media，body 是原始字节而非 base64 JSON，
+ * 避免 33% 膨胀与 JSON.stringify 的额外内存复制。上限见 mediaLimits.ts。
+ */
+export async function uploadMediaBinary(params: {
+  owner: string;
+  repo: string;
+  path: string;
+  blob: Blob;
+  message?: string;
+  branch?: string;
+  userName?: string;
+  sha?: string;
+}): Promise<WriteResult> {
+  const search = new URLSearchParams({
+    owner: params.owner,
+    repo: params.repo,
+    path: params.path,
+    branch: params.branch || 'main',
+  });
+  if (params.message) search.set('message', params.message);
+  if (params.userName) search.set('userName', params.userName);
+  if (params.sha) search.set('sha', params.sha);
+
+  return apiFetch<WriteResult>(`${API_BASE}/api/repos/media?${search}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: params.blob,
+    // 大文件上传需要更宽松的超时：默认 10s 只适用于元数据请求
+    timeoutMs: 120000,
+  });
+}
+
 export async function logout(): Promise<void> {
   await apiFetch<void>(`${API_BASE}/api/auth/logout`, {
     method: 'POST'

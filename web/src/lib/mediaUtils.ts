@@ -47,6 +47,50 @@ export function isVideoName(name: string): boolean {
 }
 
 /**
+ * 嗅探格式 → 落盘扩展名。
+ * 与 formatSniff 的 format 标识一一对应；未知格式返回 'bin'（调用方应在此之前拒绝）。
+ */
+const EXT_BY_FORMAT: Record<string, string> = {
+  jpeg: 'jpg', png: 'png', gif: 'gif', webp: 'webp', bmp: 'bmp', avif: 'avif', svg: 'svg',
+  mp4: 'mp4', m4v: 'm4v', webm: 'webm', ogv: 'ogv', ogg: 'ogg', mov: 'mov',
+};
+
+export function extForFormat(format: string): string {
+  return EXT_BY_FORMAT[format] ?? 'bin';
+}
+
+/**
+ * 清洗模板产出的文件名。
+ *
+ * 必要性：worker 的 isSafePathParam 使用 /^[a-zA-Z0-9\u4e00-\u9fff._/\-]+$/，
+ * **不允许空格与多数标点**，而 fillTemplate 的 {{filename}} 直接取原文件名。
+ * 结果：上传「my photo.jpg」会拼出含空格的路径 → worker 返回「path 或 branch 参数无效」，
+ * 用户看到一条与文件名毫无关联的 400。视频文件名（录屏导出）带空格尤其常见。
+ *
+ * 注意：只清洗基名，扩展名由调用方单独拼接（避免二次清洗破坏 .webp 的点）。
+ */
+export function sanitizeMediaFileName(name: string): string {
+  const cleaned = name
+    .replace(/\.[^.]*$/, '')            // 去掉调用方可能带上的扩展名
+    .replace(/\s+/g, '-')               // 空白 → 连字符
+    .replace(/[^a-zA-Z0-9\u4e00-\u9fff._-]/g, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '')
+    .slice(0, 120);
+  return cleaned || 'file';
+}
+
+/**
+ * 视频嵌入片段。
+ * Markdown 没有原生视频语法，`![]()` 对视频无效；Hugo shortcode 又绑定主题，
+ * 因此用 HTML5 <video>——它在「Markdown 渲染器 + 静态站」两侧都成立。
+ */
+export function videoEmbedSnippet(url: string): string {
+  return `<video controls preload="metadata" src="${url}" style="max-width:100%"></video>`;
+}
+
+
+/**
  * 是否为派生产物（列表缩略图 thumb-*）。
  * 这类文件由上传流程自动生成，不应作为独立条目出现在媒体列表或选择器里——
  * 但仍需出现在「路径存在性集合」中，供 listImageUrlFor 判定缩略图可用。
@@ -66,10 +110,19 @@ export function thumbnailPathFor(path: string): string {
 }
 
 /**
- * 从原图路径推导缩略图路径，并判断媒体文件是否应使用缩略图展示。
- * 规则：仅对光栅图启用；SVG（矢量、体积小）与缩略图自身（thumb-*）不用。
+ * 列表展示用图片 URL。
+ *
+ * 三种情况：
+ * 1. 视频：有 thumb- 封面就返回封面，没有返回空串——不能把视频 URL 塞进 <img>，
+ *    那会触发一次无效的视频下载（体积可达数十 MB），UI 应改为渲染占位图标。
+ * 2. SVG / 缩略图自身：直接用原 URL。
+ * 3. 其它光栅图：有 thumb- 用缩略图，否则回退原图。
  */
 export function listImageUrlFor(file: MediaFile, filesInRepo: Set<string>): string {
+  if (isVideoName(file.name)) {
+    const coverPath = thumbnailPathFor(file.path);
+    return filesInRepo.has(coverPath) ? getCdnUrlForPath(coverPath, '') : '';
+  }
   if (!/\.(png|jpe?g|webp|avif|bmp)$/i.test(file.name)) return file.url;
   if (file.name.startsWith(THUMBNAIL_PREFIX)) return file.url;
   const thumbPath = thumbnailPathFor(file.path);
@@ -163,6 +216,61 @@ export async function createThumbnail(file: File): Promise<Blob | null> {
     });
   } catch {
     return null;
+  }
+}
+
+/**
+ * 视频封面抽帧：取第 1 秒（短视频取中点，规避首帧黑屏），输出 webp。
+ *
+ * 与 createThumbnail 的关系：产物路径约定完全一致（thumb-<basename>.webp），
+ * 因此列表渲染、删除清理、存在性判定三处逻辑无需为视频另写一套。
+ *
+ * 双超时是必需的：seeked 在部分编解码器/大文件下可能永不触发，
+ * 没有超时会让整个上传卡在最后一步（封面属增强能力，失败必须能降级）。
+ */
+export async function createVideoPoster(file: File, dim = THUMBNAIL_DIM): Promise<Blob | null> {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'metadata';
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('metadata timeout')), 8000);
+      video.onloadedmetadata = () => { clearTimeout(timer); resolve(); };
+      video.onerror = () => { clearTimeout(timer); reject(new Error('video load failed')); };
+      video.src = url;
+    });
+
+    if (!video.videoWidth || !video.videoHeight) return null;
+
+    const seekTo = Number.isFinite(video.duration) && video.duration > 0
+      ? Math.min(1, video.duration / 2)
+      : 0;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('seek timeout')), 5000);
+      video.onseeked = () => { clearTimeout(timer); resolve(); };
+      video.onerror = () => { clearTimeout(timer); reject(new Error('seek failed')); };
+      video.currentTime = seekTo;
+    });
+
+    const scale = Math.min(1, dim / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    return await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), 'image/webp', 0.8);
+    });
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+    video.removeAttribute('src');
   }
 }
 

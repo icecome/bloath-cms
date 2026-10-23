@@ -15,6 +15,7 @@ const validConfig = {
   quality: 80,
   renameTemplate: '{{date:YYYY}}{{date:MM}}{{date:DD}}-{{filename}}',
   duplicateStrategy: 'skip',
+  uploadMode: 'compress',
 };
 
 describe('parseStoredMediaConfig', () => {

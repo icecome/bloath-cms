@@ -1,6 +1,6 @@
 import { X, Copy, Check, Trash2 } from 'lucide-react';
 import type { MediaFile } from '../../lib/mediaUtils';
-import { formatSize, formatDate } from '../../lib/mediaUtils';
+import { formatSize, formatDate, isVideoName } from '../../lib/mediaUtils';
 import Modal from '../ui/Modal';
 
 interface MediaPreviewDialogProps {
@@ -17,6 +17,8 @@ export function MediaPreviewDialog({
   file, copiedId, copiedType, onClose, onCopyUrl, onCopyMarkdown, onDelete
 }: MediaPreviewDialogProps) {
   if (!file) return null;
+
+  const isVideo = isVideoName(file.name);
 
   return (
     <Modal
@@ -37,11 +39,23 @@ export function MediaPreviewDialog({
           </button>
         </div>
         <div className="p-4 flex items-center justify-center bg-accent">
-          <img
-            src={file.url}
-            alt={file.name}
-            className="max-w-full max-h-[60vh] object-contain"
-          />
+          {isVideo ? (
+            // preload=metadata 只取头部，不预下载全片。
+            // 能否拖动进度取决于服务端是否支持 Range（见设计方案 §3.3）
+            <video
+              src={file.url}
+              controls
+              preload="metadata"
+              playsInline
+              className="max-w-full max-h-[60vh] bg-black"
+            />
+          ) : (
+            <img
+              src={file.url}
+              alt={file.name}
+              className="max-w-full max-h-[60vh] object-contain"
+            />
+          )}
         </div>
         <div className="px-4 py-3 border-t border-border space-y-2">
           <div className="flex items-center gap-2">
@@ -67,7 +81,7 @@ export function MediaPreviewDialog({
               {copiedId === file.sha && copiedType === 'markdown' ? (
                 <><Check className="w-3 h-3" /> 已复制</>
               ) : (
-                <><span className="text-[10px] font-bold">#</span> MD</>
+                <><span className="text-[10px] font-bold">#</span> {isVideo ? '嵌入代码' : 'MD'}</>
               )}
             </button>
           </div>

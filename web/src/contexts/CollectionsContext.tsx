@@ -28,7 +28,8 @@ const DEFAULT_MEDIA_CONFIG: MediaConfig = {
   customCdnTemplate: '',
   quality: 80,
   renameTemplate: '{Y}{m}{d}{h}{i}{s}-{filename}-{str-8}-{str-5}',
-  duplicateStrategy: 'skip'
+  duplicateStrategy: 'skip',
+  uploadMode: 'compress'
 };
 
 const COLLECTION_STORAGE_KEY = 'bloath_collections_config';
@@ -37,7 +38,10 @@ const MEDIA_STORAGE_KEY = 'bloath_media_config';
 const MEDIA_CONFIG_KEYS: ReadonlyArray<keyof MediaConfig> = [
   'sourceType', 'imageOwner', 'imageRepo', 'imageBranch',
   'mediaPath', 'imageBranchName', 'cdnProvider', 'customCdnTemplate',
-  'quality', 'renameTemplate', 'duplicateStrategy'
+  'quality', 'renameTemplate', 'duplicateStrategy', 'uploadMode',
+  // s3 必须在此白名单内：loadMediaConfig 只保留白名单字段，
+  // 漏项会导致 S3 凭据保存成功但刷新后被过滤掉（配置看起来「消失」）
+  's3'
 ];
 
 function loadCollectionConfig(): CollectionConfig {

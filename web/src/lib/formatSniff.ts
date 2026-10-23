@@ -48,6 +48,98 @@ function matchesAt(header: Uint8Array, sig: number[], offset: number): boolean {
   return sig.every((byte, i) => header[offset + i] === byte);
 }
 
+// ---------- 视频容器嗅探 ----------
+//
+// 判据与图片一致：只信魔数。视频的扩展名尤其不可信（录屏软件、下载工具、聊天软件
+// 转存都会改扩展名），因此这里按容器头判定，并由调用方据此纠正落盘扩展名。
+
+export type MediaSniffKind = 'image' | 'video' | 'unknown';
+
+export interface MediaSniffResult {
+  kind: MediaSniffKind;
+  /** 具体格式标识：jpeg/png/mp4/webm/…；'dangerous:XXX' 表示伪装的可执行内容 */
+  format: string;
+}
+
+/** 需要读取的头部字节数：要覆盖 ftyp 的 major brand（offset 4..12）与 EBML 头 */
+const SNIFF_BYTES = 64;
+
+/** ISO BMFF 的 major brand → 具体容器 */
+function brandToFormat(brand: string): string {
+  const b = brand.trim();
+  if (b === 'qt') return 'mov';
+  if (b === 'M4V' || b === 'M4VH' || b === 'M4VP') return 'm4v';
+  // isom / iso2 / iso4 / mp41 / mp42 / avc1 / dash / MSNV 等一律按 mp4 处理
+  return 'mp4';
+}
+
+/** SVG 是文本格式，无二进制魔数：读头部按文本判定 */
+async function isSvgText(file: File): Promise<boolean> {
+  const head = new TextDecoder().decode(await file.slice(0, 512).arrayBuffer());
+  // 去掉 BOM 与前置空白后再判定，避免「<?xml ... ?><svg」带换行时漏判
+  const trimmed = head.replace(/^\uFEFF/, '').trimStart();
+  return trimmed.startsWith('<svg') || trimmed.startsWith('<?xml');
+}
+
+/**
+ * 嗅探文件类型（图片或视频）。
+ *
+ * 判定顺序：高危伪装 → 图片魔数 → 视频容器魔数 → unknown。
+ * 高危优先，保证「改名成 .mp4 的 PE 文件」不会因为容器判定宽松而漏网。
+ */
+export async function sniffMedia(file: File): Promise<MediaSniffResult> {
+  const header = new Uint8Array(SNIFF_BYTES);
+  const read = await file.slice(0, SNIFF_BYTES).arrayBuffer();
+  header.set(new Uint8Array(read));
+
+  // 1. 高危伪装（优先级最高）
+  for (const sig of DANGEROUS_SIGNATURES) {
+    if (matchesAt(header, sig.bytes, 0)) {
+      return { kind: 'unknown', format: `dangerous:${sig.label}` };
+    }
+  }
+
+  // 2. 图片
+  for (const sig of SIGNATURES) {
+    if (matchesAt(header, sig.bytes, sig.offset ?? 0)) {
+      return { kind: 'image', format: sig.format };
+    }
+  }
+
+  // 3. ISO BMFF：offset 4 处 'ftyp'，offset 8..12 是 major brand
+  if (matchesAt(header, [0x66, 0x74, 0x79, 0x70], 4)) {
+    const brand = String.fromCharCode(...header.slice(8, 12));
+    return { kind: 'video', format: brandToFormat(brand) };
+  }
+
+  // 4. Matroska / WebM：同为 EBML 头，靠 DocType 区分
+  if (matchesAt(header, [0x1a, 0x45, 0xdf, 0xa3], 0)) {
+    const text = String.fromCharCode(...header);
+    if (text.includes('webm')) return { kind: 'video', format: 'webm' };
+    // matroska 容器浏览器无法播放，交由上层拒绝（给出「请转 MP4/WebM」提示）
+    if (text.includes('matroska')) return { kind: 'video', format: 'matroska' };
+    return { kind: 'video', format: 'webm' };
+  }
+
+  // 5. Ogg（ogv 是 Ogg 容器里的 Theora 视频）
+  if (matchesAt(header, [0x4f, 0x67, 0x67, 0x53], 0)) {
+    return { kind: 'video', format: 'ogv' };
+  }
+
+  // 6. AVI：RIFF....AVI␠
+  if (matchesAt(header, [0x52, 0x49, 0x46, 0x46], 0) && matchesAt(header, [0x41, 0x56, 0x49, 0x20], 8)) {
+    return { kind: 'video', format: 'avi' };
+  }
+
+  // 7. SVG：文本格式，无魔数，最后判定（避免与其它二进制格式的文本片段误撞）
+  if (await isSvgText(file)) {
+    return { kind: 'image', format: 'svg' };
+  }
+
+  return { kind: 'unknown', format: 'unknown' };
+}
+
+
 /**
  * 上传前的格式校验：声称的图片扩展名必须与魔数一致。
  * @returns null = 通过；非 null = 用户可读的拒绝理由。
