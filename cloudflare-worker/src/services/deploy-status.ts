@@ -96,10 +96,3 @@ export function normalizeStatus(raw: string | undefined): DeployRunView['status'
   if (raw === 'cancelled') return 'cancelled';
   return 'unknown';
 }
-
-// workflows 过滤助手：仅保留 active 状态（供手动触发下拉）
-export interface WorkflowOption extends WorkflowInfo {}
-
-export function toWorkflowOptions(workflows: WorkflowInfo[]): WorkflowOption[] {
-  return workflows.filter((w) => w.state === 'active');
-}

@@ -50,7 +50,8 @@ function previewPathDisplay(file: EnhancedFileItem): { text: string; className: 
     return { text: '—', className: 'text-muted-foreground' };
   }
   if (state === 'preview-stale') {
-    return { text: `${file.previewTarget} ⚠`, className: 'text-warning' };
+    // 不再用 ⚠ 字符，语义由 warning 配色 + 点状下划线承担（也避免读屏念出「警告」符号）
+    return { text: file.previewTarget, className: 'text-warning underline decoration-dotted' };
   }
   return { text: file.previewTarget, className: 'text-foreground' };
 }
@@ -138,9 +139,25 @@ export default function FileTable({
           </div>
           <div className={`hidden md:flex items-center ${nameColumnWidth} shrink-0 gap-2.5 px-3`}>
             {rowIcon}
-            <span className="text-sm text-foreground truncate">
-              {file.name.replace('.md', '')}
-            </span>
+            {/* 文件名做成按钮：键盘用户可 Tab 聚焦后回车打开（此前只能靠鼠标点整行）。
+                stopPropagation 防止冒泡到行的 onClick 造成双重触发 */}
+            {onRowClick ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRowClick(file);
+                }}
+                className="text-sm text-foreground truncate text-left hover:underline underline-offset-2"
+                title={file.name}
+              >
+                {file.name.replace('.md', '')}
+              </button>
+            ) : (
+              <span className="text-sm text-foreground truncate" title={file.name}>
+                {file.name.replace('.md', '')}
+              </span>
+            )}
           </div>
           <div className={`hidden md:block ${pathColumnWidth} shrink-0 px-3`}>
             <span className="text-sm text-muted-foreground truncate block" title={file.path}>

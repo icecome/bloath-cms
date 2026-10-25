@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useBuffer } from '../../contexts/BufferContext';
 import { useToast } from '../../contexts/ToastContext';
 import { saveBufferConfig, testBufferConfig, type BufferConfigInput } from '../../lib/bufferApi';
@@ -18,22 +18,40 @@ export function BufferSettings() {
   });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  // 用户动过表单即置真：此后异步 config 到达不再整体覆盖（旧实现会把
+  // 用户已敲入的内容静默冲掉，P1-005）；只回填用户未触碰的字段。
+  const dirtyRef = useRef(false);
 
   useEffect(() => {
     if (config) {
-      setForm({
-        enabled: config.enabled,
-        endpoint: config.endpoint,
-        region: config.region,
-        bucket: config.bucket,
-        accessKeyId: config.accessKeyId,
-        secretAccessKey: '', // 不回填密钥，留空表示沿用
-        prefix: config.prefix,
-      });
+      if (dirtyRef.current) {
+        // 仅补齐用户没碰过的空白字段（如 secret 留空沿用语义不受影响）
+        setForm((f) => ({
+          ...f,
+          endpoint: f.endpoint || config.endpoint,
+          region: f.region || config.region,
+          bucket: f.bucket || config.bucket,
+          prefix: f.prefix || config.prefix,
+        }));
+      } else {
+        // AK 打码回显（audit P2-32）：真实 AK 不再下发浏览器，留空沿用
+        setForm({
+          enabled: config.enabled,
+          endpoint: config.endpoint,
+          region: config.region,
+          bucket: config.bucket,
+          accessKeyId: '',
+          secretAccessKey: '', // 不回填密钥，留空表示沿用
+          prefix: config.prefix,
+        });
+      }
     }
   }, [config]);
 
-  const update = (patch: Partial<BufferConfigInput>) => setForm((f) => ({ ...f, ...patch }));
+  const update = (patch: Partial<BufferConfigInput>) => {
+    dirtyRef.current = true;
+    setForm((f) => ({ ...f, ...patch }));
+  };
 
   const handleTest = async () => {
     setTesting(true);
@@ -60,7 +78,7 @@ export function BufferSettings() {
     }
   };
 
-  const inputCls = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-muted text-foreground placeholder-muted-foreground';
+  const inputCls = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-muted text-foreground placeholder-muted-foreground';
   const labelCls = 'block text-[11px] text-muted-foreground mb-1';
 
   return (
@@ -83,7 +101,11 @@ export function BufferSettings() {
       <p className="text-[11px] text-muted-foreground leading-relaxed">
         启用后，编辑器保存不再直接提交 GitHub，而是写入 S3 缓冲；点击侧边栏「发布」时一次性提交全部变更。
         建议将 bucket 设为私有；若 bucket 可公开读取，系统会用随机段隐藏路径，并在发布后立即清理缓冲文件。
+        凭据经 HTTPS 提交后加密保存在服务端数据库（D1 AES-GCM），不在浏览器明文存放。
       </p>
+      {!config && (
+        <p className="text-[11px] text-warning">缓冲配置加载中……加载失败时请刷新页面重试。</p>
+      )}
 
       {config?.enabled && config.rand && (
         <p className="text-[10px] text-muted-foreground font-mono">
@@ -105,7 +127,7 @@ export function BufferSettings() {
           <input id="buffer-bucket" className={inputCls} value={form.bucket} onChange={(e) => update({ bucket: e.target.value })} placeholder="my-bucket" />
         </div>
         <div>
-          <label htmlFor="buffer-access-key" className={labelCls}>Access Key ID</label>
+          <label htmlFor="buffer-access-key" className={labelCls}>Access Key ID{config?.accessKeyIdMasked ? `（已存 ${config.accessKeyIdMasked}，留空则沿用）` : ''}</label>
           <input id="buffer-access-key" className={inputCls} value={form.accessKeyId} onChange={(e) => update({ accessKeyId: e.target.value })} />
         </div>
         <div>

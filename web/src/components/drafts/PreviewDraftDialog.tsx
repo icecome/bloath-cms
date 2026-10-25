@@ -179,7 +179,7 @@ export function PreviewDraftDialog({
             type="button"
             onClick={handleConfirm}
             disabled={loading || entries.length === 0 || !allTargetsFilled}
-            className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-2 text-sm text-white bg-foreground rounded-sm hover:bg-foreground/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             title={allTargetsFilled ? undefined : '请为所有草稿指定目标目录'}
           >
             {loading ? '处理中……' : '确认预发布'}

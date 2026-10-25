@@ -1,9 +1,14 @@
-// S3 兼容图床客户端（P3-2）：复用 aws4fetch SigV4 签名，直接从浏览器上传/列举/删除。
+// S3 兼容图床客户端（代理外观，P1-001 重写）：
+// 旧实现 aws4fetch 浏览器直连 + localStorage 明文凭据已删除——凭据现仅存
+// Worker 侧加密存储（cloudflare-worker/src/services/mediaS3Config.service），
+// 上传/列举/删除经 /api/media/s3/* 代理执行，secret 永不回传浏览器。
 //
-// 与 worker 端 s3.client.ts 的关系：同一套协议实现，但运行环境不同（浏览器 vs Workers）——
-// 浏览器端无 S3Error 包装层（错误信息直接面向用户），且凭据来自 MediaConfig（localStorage）
-// 而非 Worker Env。两端如调整签名语义需同步（见 CODE_REUSE_LOG）。
-import { AwsClient } from 'aws4fetch';
+// 本模块保留原有导出名与调用形态（s3ListObjects/s3PutObject/s3DeleteObject/
+// s3PublicUrl/contentTypeForKey），页面层（MediaPage/useMediaLibrary）无需理解
+// 代理协议；cfg 参数仅使用 publicBaseUrl（外链拼接），不再读取任何凭据字段。
+import {
+  listMediaS3Objects, putMediaS3Object, deleteMediaS3Object,
+} from './mediaS3Api.ts';
 import type { S3MediaConfig } from '../../../shared/types';
 
 /** 单个对象条目（媒体库列表用） */
@@ -13,22 +18,8 @@ export interface S3MediaEntry {
   lastModified: number;
 }
 
-function encodeKey(key: string): string {
-  return key.split('/').map(encodeURIComponent).join('/');
-}
-
-function baseUrl(cfg: S3MediaConfig): string {
-  return `${cfg.endpoint.replace(/\/+$/, '')}/${cfg.bucket}`;
-}
-
-function client(cfg: S3MediaConfig): AwsClient {
-  return new AwsClient({
-    accessKeyId: cfg.accessKeyId,
-    secretAccessKey: cfg.secretAccessKey,
-    region: cfg.region || 'auto',
-    service: 's3',
-  });
-}
+/** 兼容旧调用点的视图类型：代理模式下只有外链基址有意义 */
+export type S3MediaSourceView = Pick<S3MediaConfig, 'publicBaseUrl'>;
 
 /** 无法从扩展名判定时的兜底 MIME */
 const OCTET_STREAM = 'application/octet-stream';
@@ -49,87 +40,36 @@ export function contentTypeForKey(key: string): string {
   return map[ext] ?? OCTET_STREAM;
 }
 
-/** 上传文本/二进制（base64 已由调用方转 Blob） */
-export async function s3PutObject(cfg: S3MediaConfig, key: string, blob: Blob): Promise<void> {
-  const aws = client(cfg);
-  // Content-Type 必须显式设置：缺省时对象以 application/octet-stream 返回，
-  // 部分 CDN / 浏览器下 <video> 与 <img> 会直接拒绝渲染。
-  //
+/** 上传（经 Worker 代理）。Content-Type 语义沿用旧直连实现：落盘扩展名优先。 */
+export async function s3PutObject(_cfg: S3MediaSourceView, key: string, blob: Blob): Promise<void> {
   // 优先级：**落盘扩展名优先于 blob.type**。原因：上传管线用魔数嗅探纠正扩展名
   // （见 mediaUploadPlan 的 plan.ext），但 File.type 仍是浏览器按**原**扩展名给的 MIME。
   // 用户把 webm 改名成 .mp4 上传时，key 是 .webm 而 blob.type 是 video/mp4，
   // 若优先取 blob.type 会写入与内容不符的 MIME，浏览器解码直接失败。
-  // key 无法识别时才回退 blob.type（如 canvas 产物、自定义扩展名）。
   const byExt = contentTypeForKey(key);
   const contentType = byExt === OCTET_STREAM ? (blob.type || OCTET_STREAM) : byExt;
-  const res = await aws.fetch(`${baseUrl(cfg)}/${encodeKey(key)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': contentType },
-    body: blob,
-  });
-  if (!res.ok) {
-    throw new Error(`S3 PutObject 失败（${res.status}）：${(await res.text().catch(() => '')).slice(0, 200)}`);
-  }
+  await putMediaS3Object(key, blob, contentType);
 }
 
-export async function s3DeleteObject(cfg: S3MediaConfig, key: string): Promise<void> {
-  const aws = client(cfg);
-  const res = await aws.fetch(`${baseUrl(cfg)}/${encodeKey(key)}`, { method: 'DELETE' });
-  // S3 删除不存在的对象返回 204，幂等
-  if (!res.ok && res.status !== 404) {
-    throw new Error(`S3 DeleteObject 失败（${res.status}）`);
-  }
+export async function s3DeleteObject(_cfg: S3MediaSourceView, key: string): Promise<void> {
+  await deleteMediaS3Object(key);
 }
 
-/** 列举前缀下全部对象（分页聚合） */
-export async function s3ListObjects(cfg: S3MediaConfig, prefix: string): Promise<S3MediaEntry[]> {
-  const aws = client(cfg);
-  const entries: S3MediaEntry[] = [];
-  let token: string | undefined;
-  do {
-    const params = new URLSearchParams({ 'list-type': '2', prefix, 'max-keys': '1000' });
-    if (token) params.set('continuation-token', token);
-    const res = await aws.fetch(`${baseUrl(cfg)}?${params}`);
-    if (!res.ok) {
-      throw new Error(`S3 ListObjects 失败（${res.status}）：${(await res.text().catch(() => '')).slice(0, 200)}`);
-    }
-    const xml = await res.text();
-    entries.push(...parseListXml(xml));
-    const nextMatch = xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/);
-    const truncated = /<IsTruncated>true<\/IsTruncated>/.test(xml);
-    token = truncated && nextMatch ? decodeXml(nextMatch[1] ?? '') : undefined;
-  } while (token);
-  return entries;
+/** 列举前缀下全部对象（经 Worker 代理；分页由服务端聚合） */
+export async function s3ListObjects(_cfg: S3MediaSourceView, prefix: string): Promise<S3MediaEntry[]> {
+  const entries = await listMediaS3Objects(prefix);
+  return entries.map((e) => ({
+    key: e.key,
+    size: e.size,
+    lastModified: e.lastModified ? new Date(e.lastModified).getTime() || 0 : 0,
+  }));
 }
 
 /** 由公网基址构造外链 URL；未配置 publicBaseUrl 时返回空串（UI 层降级） */
-export function s3PublicUrl(cfg: S3MediaConfig, key: string): string {
+export function s3PublicUrl(cfg: S3MediaSourceView, key: string): string {
   if (!cfg.publicBaseUrl) return '';
   return cfg.publicBaseUrl
-    .replace('{bucket}', cfg.bucket)
+    .replace('{bucket}', '')
     .replace('{key}', key.split('/').map(encodeURIComponent).join('/'))
     .replace('{path}', key);
-}
-
-function decodeXml(s: string): string {
-  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
-}
-
-function parseListXml(xml: string): S3MediaEntry[] {
-  const entries: S3MediaEntry[] = [];
-  const re = /<Contents>([\s\S]*?)<\/Contents>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml))) {
-    const block = m[1] ?? '';
-    const keyM = block.match(/<Key>([^<]+)<\/Key>/);
-    if (!keyM) continue;
-    const sizeM = block.match(/<Size>(\d+)<\/Size>/);
-    const lmM = block.match(/<LastModified>([^<]+)<\/LastModified>/);
-    entries.push({
-      key: decodeXml(keyM[1] ?? ''),
-      size: sizeM ? parseInt(sizeM[1] ?? '0', 10) : 0,
-      lastModified: lmM ? new Date(lmM[1] ?? '').getTime() || 0 : 0,
-    });
-  }
-  return entries;
 }

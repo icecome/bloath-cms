@@ -80,11 +80,12 @@ export function resolveMediaSource(
     }
     case 's3': {
       // S3 源不走 GitHub 路径体系：返回占位 source，MediaPage 按 sourceType 分流到
-      // s3MediaClient（见 resolveS3MediaSource.ts 的完整校验）。
+      // s3MediaClient 代理（P1-001：凭据已迁 Worker 侧，浏览器不判配置完整性——
+      // 配置状态由 /api/media/s3/config 返回，页面异步探测）
       return {
         owner: '', repo: '', branch: '', pathPrefix: '',
-        configured: !!(config.s3?.endpoint && config.s3?.bucket && config.s3?.accessKeyId && config.s3?.secretAccessKey),
-        missingHint: config.s3?.endpoint ? undefined : '请在设置页填写 S3 图床的端点与密钥'
+        configured: true,
+        missingHint: undefined
       };
     }
     default: {

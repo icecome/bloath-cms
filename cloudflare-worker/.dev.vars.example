@@ -11,9 +11,9 @@ SESSION_SECRET=
 # 前端地址（OAuth 回调用；此值为重定向目标的唯一来源，客户端无法覆盖）
 FRONTEND_URL=http://localhost:5173
 
-# 管理员 GitHub 用户名白名单（逗号分隔，大小写不敏感）
-# 管理接口 /api/admin/* 仅允许白名单内的账号访问。
-# 留空则该接口一律返回 403（"未配置即全开"的失效模式已被规避，改为"未配置即关闭"）。
+# 登录白名单（逗号分隔 GitHub 用户名，大小写不敏感）
+# 单人使用姿态：仅名单内账号可通过 OAuth 获得会话。
+# 生产环境未配置时 fail-closed（拒绝一切 OAuth 登录），绝无「未配置即全开」。
 ADMIN_GITHUB_LOGIN=your-github-username
 
 # 允许的 CORS 来源（逗号分隔，可选，默认包含 localhost）

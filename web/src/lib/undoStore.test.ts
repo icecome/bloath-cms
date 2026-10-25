@@ -7,6 +7,7 @@ import {
   writeUndoRecord,
   clearUndoRecord,
 } from './undoStore.ts';
+import { UNDO_TTL_MS } from './undoConstants.ts';
 
 class MemoryStorage {
   private map = new Map<string, string>();
@@ -59,7 +60,7 @@ describe('readUndoRecord', () => {
   it('过期返回 null 且清理存储', () => {
     writeUndoRecord<FakeFile>(
       repo,
-      { files: [{ name: 'x.md', path: 'a/x.md' }], originalPaths: ['a/x.md'], deletedAt: Date.now() - 61_000 },
+      { files: [{ name: 'x.md', path: 'a/x.md' }], originalPaths: ['a/x.md'], deletedAt: Date.now() - UNDO_TTL_MS - 1_000 },
       storage
     );
     assert.equal(readUndoRecord<FakeFile>(repo, storage), null);

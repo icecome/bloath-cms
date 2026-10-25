@@ -10,4 +10,5 @@ export const DEFAULT_STANDALONE_BRANCH = 'main';
 // 此处 re-export 保持既有导入点兼容。
 export { UNDO_STORAGE_PREFIX, UNDO_TTL_MS } from './undoConstants';
 
-export const MAX_TREE_ITEMS = 800;
+// 旧 MAX_TREE_ITEMS=800 硬上限已移除（P0-003）：按整仓计数会误伤目标规模仓库；
+// 超大仓库由 worker 侧 Trees API truncated 守卫显式报错，前端不再二次限制。

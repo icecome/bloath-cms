@@ -25,6 +25,17 @@ export function isPrivateOrBlockedHost(hostname: string): boolean {
   ) {
     return true;
   }
+  // IPv6 私有/链路本地字面量（audit P2-33）：原实现只拦 ::1，
+  // ULA（fc00::/7）与链路本地（fe80::/10）可绕过
+  if (host.includes(':')) {
+    if (host === '::' || host.startsWith('fc') || host.startsWith('fd')) return true;   // ULA fc00::/7
+    if (host.startsWith('fe8') || host.startsWith('fe9') || host.startsWith('fea') || host.startsWith('feb')) return true; // fe80::/10
+    if (host.startsWith('::ffff:')) {
+      // IPv4 映射地址：按内嵌 IPv4 再判一次
+      return isPrivateOrBlockedHost(host.slice('::ffff:'.length));
+    }
+    return false;
+  }
   const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (!m) return false;
   const a = Number(m[1]);

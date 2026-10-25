@@ -227,14 +227,16 @@ function SchemaField({
       );
 
     case 'boolean':
+      // 开关包进 <label>：读屏把字段名念作开关的可访问名，
+      // 点击文字同样能切换（此前裸 switch 无名称，读屏用户只能听到「开/关」）
       return (
-        <div className="flex items-center justify-between py-1">
+        <label className="flex items-center justify-between py-1 cursor-pointer">
           <span className="text-xs text-foreground">{field.label}</span>
           <ToggleSwitch
             checked={rawValue === true}
             onCheckedChange={() => setValue(rawValue !== true)}
           />
-        </div>
+        </label>
       );
 
     case 'datetime':
@@ -337,7 +339,7 @@ function SchemaField({
   }
 }
 
-const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder:text-muted-foreground';
+const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder:text-muted-foreground';
 
 /**
  * 字段外壳：label + 控件。
@@ -408,7 +410,7 @@ function TagListField({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder:text-muted-foreground"
+          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder:text-muted-foreground"
           placeholder={placeholder}
         />
         <button onClick={add} className="px-2 py-1 text-xs bg-foreground text-background rounded-sm hover:bg-foreground/90 transition-colors">添加</button>
@@ -509,7 +511,7 @@ function ImageListField({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground placeholder:text-muted-foreground"
+          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder:text-muted-foreground"
           placeholder={field.placeholder}
         />
         <button onClick={add} className="px-2 py-1 text-xs bg-foreground text-background rounded-sm hover:bg-foreground/90 transition-colors">添加</button>
@@ -654,12 +656,12 @@ function CustomFieldsField({ frontmatter, setFm }: {
                 value={row.key}
                 onChange={(e) => update(index, { key: e.target.value })}
                 placeholder="键名"
-                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground placeholder:text-muted-foreground"
+                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground placeholder:text-muted-foreground"
               />
               <select
                 value={row.type}
                 onChange={(e) => update(index, { type: e.target.value as CustomFieldRow['type'] })}
-                className="w-[72px] px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground"
+                className="w-[72px] px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground"
               >
                 <option value="string">文本</option>
                 <option value="number">数字</option>
@@ -678,7 +680,7 @@ function CustomFieldsField({ frontmatter, setFm }: {
               <select
                 value={row.value}
                 onChange={(e) => update(index, { value: e.target.value })}
-                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground"
+                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground"
               >
                 <option value="true">true</option>
                 <option value="false">false</option>
@@ -689,7 +691,7 @@ function CustomFieldsField({ frontmatter, setFm }: {
                 value={row.value}
                 onChange={(e) => update(index, { value: e.target.value })}
                 placeholder="值"
-                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground placeholder:text-muted-foreground"
+                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground placeholder:text-muted-foreground"
               />
             )}
           </div>

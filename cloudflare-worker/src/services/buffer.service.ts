@@ -16,6 +16,9 @@ export interface BufferEntry {
   savedAt: number;
   /** 发布目标目录（如 content/posts/sub）；缺省表示发布时落回草稿目录 */
   publishTarget?: string;
+  /** write 条目内容的 git blob sha（写入时由路由层计算）：
+   *  发布幂等预检用——远端同路径 sha 一致即跳过，防清理失败后的部署风暴（P1-006） */
+  contentSha?: string;
 }
 
 export interface BufferChangeItem {

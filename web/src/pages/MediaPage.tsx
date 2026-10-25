@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, memo, type CSSProperties } from 'react';
 import { useCollections } from '../contexts/CollectionsContext';
 import { useRepo } from '../contexts/RepoContext';
 import { useAuth } from '../hooks/useAuth';
@@ -9,7 +9,7 @@ import { resolveMediaSource, mediaCdnUrl } from '../lib/resolveMediaSource';
 import { sortByLastModified } from '../lib/sortFiles';
 import { fillTemplate, fillPathTemplate, migrateLegacyTemplate } from '../lib/template';
 import { s3ListObjects, s3PutObject, s3DeleteObject, s3PublicUrl } from '../lib/s3MediaClient';
-import { s3MediaPrefix } from '../lib/resolveS3MediaSource';
+import { getMediaS3Config } from '../lib/mediaS3Api';
 import { scanAssetReferences, type AssetReference } from '../lib/assetReferences';
 import { readSnapshot } from '../lib/fileSnapshot';
 import { getCachedFiles } from '../lib/fileCache';
@@ -50,6 +50,93 @@ import {
   Play,
   SlidersHorizontal
 } from 'lucide-react';
+
+/** 单张媒体卡片（memo）：千级网格下，复制闪烁/横幅/上传态等父级 state 变化
+ *  不再重渲全部卡片（P2-20）。props 均为按引用稳定的值或 useCallback 回调。 */
+interface MediaCardProps {
+  file: MediaFile;
+  isVideo: boolean;
+  coverUrl: string | null;
+  isCopiedUrl: boolean;
+  isCopiedMarkdown: boolean;
+  onPreview: (file: MediaFile) => void;
+  onCopy: (file: MediaFile) => void;
+  onCopyMarkdown: (file: MediaFile) => void;
+  onDelete: (file: MediaFile) => void;
+}
+
+const MediaCard = memo(function MediaCard({
+  file, isVideo, coverUrl, isCopiedUrl, isCopiedMarkdown,
+  onPreview, onCopy, onCopyMarkdown, onDelete,
+}: MediaCardProps) {
+  return (
+    <div
+      className="group border border-border rounded-sm overflow-hidden hover:border-border transition-colors bg-card"
+    >
+      <div
+        className="relative aspect-square bg-accent flex items-center justify-center cursor-pointer overflow-hidden"
+        onClick={() => onPreview(file)}
+      >
+        {coverUrl ? (
+          <img
+            src={coverUrl}
+            alt={file.name}
+            className="w-full h-full object-cover"
+            loading="lazy"
+            decoding="async"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+              (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+            }}
+          />
+        ) : null}
+        <FileImage className={`w-8 h-8 text-muted-foreground ${coverUrl ? 'hidden' : ''}`} />
+        {isVideo && (
+          <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="w-9 h-9 rounded-full bg-black/45 flex items-center justify-center">
+              <Play className="w-4 h-4 text-white translate-x-px" />
+            </span>
+          </span>
+        )}
+      </div>
+
+      <div className="px-2 py-1.5 border-t border-border">
+        <p className="text-xs text-foreground truncate font-mono" title={file.name}>
+          {file.name}
+        </p>
+        <p className="text-xs text-muted-foreground">{formatSize(file.size)} · {formatDate(file.lastModified)}</p>
+      </div>
+
+      {/* 触屏无常驻 hover：窄屏常显操作区，桌面端仅悬浮/聚焦时显示 */}
+      <div className="px-2 pb-2 flex gap-1 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+        <button
+          type="button"
+          onClick={() => onCopy(file)}
+          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs border border-border rounded-sm hover:bg-accent transition-colors text-muted-foreground"
+          title="复制 URL"
+        >
+          {isCopiedUrl ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => onCopyMarkdown(file)}
+          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs border border-border rounded-sm hover:bg-accent transition-colors text-muted-foreground"
+          title={isVideo ? '复制嵌入代码' : '复制 Markdown 链接'}
+        >
+          {isCopiedMarkdown ? <Check className="w-3 h-3 text-success" /> : <span className="text-[10px] font-bold">#</span>}
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(file)}
+          className="flex items-center justify-center px-2 py-1 border border-border rounded-sm hover:bg-destructive/10 hover:border-destructive/25 hover:text-destructive transition-colors text-muted-foreground"
+          title="删除"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  );
+});
 
 export default function MediaPage() {
   const { user } = useAuth();
@@ -131,15 +218,37 @@ export default function MediaPage() {
     return mediaCdnUrl(source, mediaConfig, path);
   }, [mediaConfig, source]);
 
-  /** S3 源判定（审查报告 M-A1）：分流上传/列表/删除/复制四个通道 */
+  /** S3 源判定（审查报告 M-A1）：分流上传/列表/删除/复制四个通道。
+   *  P1-001：凭据已迁 Worker 侧，本地仅持 publicBaseUrl 外链视图；
+   *  服务端前缀与配置状态异步探测。 */
   const isS3Source = mediaConfig.sourceType === 's3';
-  const s3Config = mediaConfig.s3;
-  const s3Prefix = useMemo(() => s3MediaPrefix(mediaConfig), [mediaConfig]);
+  const s3View = mediaConfig.s3;
+  const [s3Prefix, setS3Prefix] = useState('');
+  const [s3Configured, setS3Configured] = useState(false);
+
+  useEffect(() => {
+    if (!isS3Source) return;
+    let cancelled = false;
+    getMediaS3Config()
+      .then((cfg) => {
+        if (cancelled) return;
+        if (cfg) {
+          setS3Prefix(cfg.prefix || '');
+          setS3Configured(true);
+        } else {
+          setS3Configured(false);
+          setError('请在设置页完成 S3 图床配置（凭据现保存于服务端）');
+        }
+      })
+      .catch(() => { if (!cancelled) setError('S3 图床配置读取失败，请稍后重试'); });
+    return () => { cancelled = true; };
+  }, [isS3Source]);
 
   const loadFiles = useCallback(async (silent = false): Promise<MediaFile[] | null> => {
-    // S3 走浏览器直连（凭据在本地配置），不依赖会话；GitHub 通道才需要登录态
+    // S3 经 Worker 代理（服务端持凭据），GitHub 通道才需要登录态
     if (!isConfigured) return null;
     if (!isS3Source && !user) return null;
+    if (isS3Source && !s3Configured) return null;
     if (!silent) {
       setLoading(true);
       setError('');
@@ -147,9 +256,9 @@ export default function MediaPage() {
     try {
       let mediaFiles: MediaFile[];
 
-      if (isS3Source && s3Config) {
-        // S3 兼容图床：ListObjects 直连，外链走 publicBaseUrl
-        const entries = await s3ListObjects(s3Config, s3Prefix);
+      if (isS3Source) {
+        // S3 兼容图床：经代理 ListObjects，外链走 publicBaseUrl
+        const entries = await s3ListObjects(s3View ?? { publicBaseUrl: '' }, s3Prefix);
         mediaFiles = entries
           .filter((e) => IMAGE_EXT_RE.test(e.key) || VIDEO_EXT_RE.test(e.key))
           .map((e) => ({
@@ -157,7 +266,7 @@ export default function MediaPage() {
             path: e.key,
             sha: String(e.lastModified), // S3 无 blob sha：以 lastModified 作变更标识
             size: e.size,
-            url: s3PublicUrl(s3Config, e.key) || '',
+            url: s3PublicUrl(s3View ?? { publicBaseUrl: '' }, e.key) || '',
             lastModified: e.lastModified
           }));
       } else {
@@ -190,7 +299,7 @@ export default function MediaPage() {
       setRepoFilePaths(pathSet);
       // 注册 CDN builder：缩略图路径 → URL（mediaUtils 不反向依赖 React 上下文）
       registerCdnUrlBuilder((path: string) =>
-        isS3Source && s3Config ? s3PublicUrl(s3Config, path) : getCdnUrl(path)
+        isS3Source ? s3PublicUrl(s3View ?? { publicBaseUrl: '' }, path) : getCdnUrl(path)
       );
 
       // 展示层剔除 thumb-*：它们是上传流程自动生成的派生文件，
@@ -215,7 +324,7 @@ export default function MediaPage() {
         setLoading(false);
       }
     }
-  }, [user, isConfigured, source, getCdnUrl, isS3Source, s3Config, s3Prefix]);
+  }, [user, isConfigured, source, getCdnUrl, isS3Source, s3View, s3Prefix, s3Configured]);
 
   useEffect(() => {
     if (isConfigured) loadFiles();
@@ -296,9 +405,9 @@ export default function MediaPage() {
         }
       }
 
-      if (isS3Source && s3Config) {
-        // S3：Blob 直传（SigV4），大视频不经 Worker
-        await s3PutObject(s3Config, filePath, payload);
+      if (isS3Source) {
+        // S3：经 Worker 代理上传（SigV4），大视频不经 Worker
+        await s3PutObject(s3View ?? { publicBaseUrl: '' }, filePath, payload);
       } else if (kind === 'video') {
         // 视频：走二进制端点，避免 base64 的 33% 膨胀与双份内存
         await uploadMediaBinary({
@@ -330,8 +439,8 @@ export default function MediaPage() {
       if (derived) {
         try {
           const thumbPath = thumbnailPathFor(filePath);
-          if (isS3Source && s3Config) {
-            await s3PutObject(s3Config, thumbPath, derived);
+          if (isS3Source) {
+            await s3PutObject(s3View ?? { publicBaseUrl: '' }, thumbPath, derived);
           } else {
             await uploadImage({
               owner: source.owner,
@@ -355,7 +464,7 @@ export default function MediaPage() {
           sha: existing?.sha || '',
           size: payload.size,
           lastModified: Date.now(),
-          url: isS3Source && s3Config ? (s3PublicUrl(s3Config, filePath) || '') : getCdnUrl(filePath)
+          url: isS3Source ? (s3PublicUrl(s3View ?? { publicBaseUrl: '' }, filePath) || '') : getCdnUrl(filePath)
         }, ...currentFiles];
       }
       return true;
@@ -399,11 +508,11 @@ export default function MediaPage() {
     setUploading(false);
   };
 
-  const handleDelete = (file: MediaFile) => {
+  const handleDelete = useCallback((file: MediaFile) => {
     if (!user) return;
     setDeleteConfirm(file);
     setAssetReferences(null);
-  };
+  }, [user]);
 
   /**
    * 删除前引用检查：扫描内容库文章的 front-matter（快照缓存，无网络）与正文（按需读取），
@@ -470,10 +579,10 @@ export default function MediaPage() {
 
     try {
       const thumbPath = thumbnailPathFor(file.path);
-      if (isS3Source && s3Config) {
-        // S3 图床：直删对象（含同名缩略图/封面），无 commit
-        await s3DeleteObject(s3Config, file.path);
-        await s3DeleteObject(s3Config, thumbPath).catch(() => undefined);
+      if (isS3Source) {
+        // S3 图床：经代理直删对象（含同名缩略图/封面），无 commit
+        await s3DeleteObject(s3View ?? { publicBaseUrl: '' }, file.path);
+        await s3DeleteObject(s3View ?? { publicBaseUrl: '' }, thumbPath).catch(() => undefined);
       } else {
         await deleteFile({
           owner: source.owner,
@@ -512,16 +621,16 @@ export default function MediaPage() {
     }
   };
 
-  const handleCopy = async (file: MediaFile) => {
+  const handleCopy = useCallback(async (file: MediaFile) => {
     try {
       await navigator.clipboard.writeText(file.url);
       flashCopied(file.sha, 'url');
     } catch {
       setError('复制失败，请手动选中内容复制');
     }
-  };
+  }, [flashCopied]);
 
-  const handleCopyMarkdown = async (file: MediaFile) => {
+  const handleCopyMarkdown = useCallback(async (file: MediaFile) => {
     // 视频没有 Markdown 原生语法，改复制 HTML5 嵌入片段
     const text = isVideoName(file.name)
       ? videoEmbedSnippet(file.url)
@@ -532,7 +641,7 @@ export default function MediaPage() {
     } catch {
       setError('复制失败，请手动选中内容复制');
     }
-  };
+  }, [flashCopied]);
   if (!isConfigured) {
     return (
       <div className="h-full flex flex-col">
@@ -624,6 +733,7 @@ export default function MediaPage() {
           mode={uploadMode}
           onModeChange={setUploadMode}
           onUpload={handleUpload}
+          onDropRejected={() => setError('未识别到可上传的文件：请拖入图片（JPG/PNG/GIF/WebP/SVG/AVIF）或视频（MP4/WebM/OGV）')}
           videoLimitHint={isS3Source ? `≤ ${formatMegabytes(videoMaxBytes(true))}` : `GitHub 源 ≤ ${formatMegabytes(videoMaxBytes(false))}`}
         />
 
@@ -641,86 +751,20 @@ export default function MediaPage() {
               className="media-grid"
               style={{ '--pgrid': String(gridCols), '--mgrid': String(mobileCols) } as CSSProperties}
             >
-            {files.slice(0, currentPage * MEDIA_PAGE_SIZE).map((file) => {
-              const isVideo = isVideoName(file.name);
-              const coverUrl = listImageUrlFor(file, repoFilePaths);
-              return (
-            <div
-              key={file.path}
-              className="group border border-border rounded-sm overflow-hidden hover:border-border transition-colors bg-card"
-            >
-                <div
-                  className="relative aspect-square bg-accent flex items-center justify-center cursor-pointer overflow-hidden"
-                  onClick={() => setPreviewFile(file)}
-                >
-                  {coverUrl ? (
-                    <img
-                      src={coverUrl}
-                      alt={file.name}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                      decoding="async"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                        (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                      }}
-                    />
-                  ) : null}
-                  <FileImage className={`w-8 h-8 text-muted-foreground ${coverUrl ? 'hidden' : ''}`} />
-                  {isVideo && (
-                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <span className="w-9 h-9 rounded-full bg-black/45 flex items-center justify-center">
-                        <Play className="w-4 h-4 text-white translate-x-px" />
-                      </span>
-                    </span>
-                  )}
-                </div>
-
-                <div className="px-2 py-1.5 border-t border-border">
-                  <p className="text-xs text-foreground truncate font-mono" title={file.name}>
-                    {file.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{formatSize(file.size)} · {formatDate(file.lastModified)}</p>
-                </div>
-
-                {/* 触屏无常驻 hover：窄屏常显操作区，桌面端仅悬浮/聚焦时显示 */}
-                <div className="px-2 pb-2 flex gap-1 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(file)}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs border border-border rounded-sm hover:bg-accent transition-colors text-muted-foreground"
-                    title="复制 URL"
-                  >
-                    {copiedId === file.sha && copiedType === 'url' ? (
-                      <Check className="w-3 h-3 text-success" />
-                    ) : (
-                      <Copy className="w-3 h-3" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyMarkdown(file)}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-xs border border-border rounded-sm hover:bg-accent transition-colors text-muted-foreground"
-                    title={isVideo ? '复制嵌入代码' : '复制 Markdown 链接'}
-                  >
-                    {copiedId === file.sha && copiedType === 'markdown' ? (
-                      <Check className="w-3 h-3 text-success" />
-                    ) : (
-                      <span className="text-[10px] font-bold">#</span>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(file)}
-                    className="flex items-center justify-center px-2 py-1 border border-border rounded-sm hover:bg-destructive/10 hover:border-destructive/25 hover:text-destructive transition-colors text-muted-foreground"
-                    title="删除"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-              );
-            })}
+            {files.slice(0, currentPage * MEDIA_PAGE_SIZE).map((file) => (
+              <MediaCard
+                key={file.path}
+                file={file}
+                isVideo={isVideoName(file.name)}
+                coverUrl={listImageUrlFor(file, repoFilePaths)}
+                isCopiedUrl={copiedId === file.sha && copiedType === 'url'}
+                isCopiedMarkdown={copiedId === file.sha && copiedType === 'markdown'}
+                onPreview={setPreviewFile}
+                onCopy={handleCopy}
+                onCopyMarkdown={handleCopyMarkdown}
+                onDelete={handleDelete}
+              />
+            ))}
           </div>
             {files.length > currentPage * MEDIA_PAGE_SIZE && (
               <div className="flex justify-center py-4">

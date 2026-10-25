@@ -1,9 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useCollections } from '../../contexts/CollectionsContext';
 import { useRepo } from '../../contexts/RepoContext';
 import { createBranch } from '../../lib/api';
 import { DEFAULT_MEDIA_PATH, DEFAULT_BRANCH_NAME } from '../../lib/constants';
 import { useToast } from '../../contexts/ToastContext';
+import {
+  getMediaS3Config, saveMediaS3Config, testMediaS3Config,
+  type MediaS3ConfigPublic,
+} from '../../lib/mediaS3Api';
 import {
   Image, Globe, Sliders, FileSignature,
   AlertTriangle, GitBranch, FolderOpen, Loader2, Cloud
@@ -15,7 +19,7 @@ const MEDIA_SOURCE_TYPES: { value: MediaSourceType; label: string; desc: string;
   { value: 'standalone', label: '独立图床仓库', desc: '图片上传到单独的 GitHub 仓库，与博客内容完全隔离', icon: Image },
   { value: 'repo-dir', label: '博客仓库子目录', desc: '图片存入当前博客仓库的指定目录，无需额外建仓', icon: FolderOpen },
   { value: 'image-branch', label: '博客仓库独立分支', desc: '在博客仓库创建独立分支存放图片，分支级隔离', icon: GitBranch },
-  { value: 's3', label: 'S3 兼容图床', desc: '直接上传到 S3/R2/OSS 等对象存储，不经 GitHub（凭据仅存本机）', icon: Cloud }
+  { value: 's3', label: 'S3 兼容图床', desc: '直接上传到 S3/R2/OSS 等对象存储，不经 GitHub（凭据加密存于服务端）', icon: Cloud }
 ];
 
 const CDN_PROVIDERS: { value: CdnProvider; label: string; template: string }[] = [
@@ -35,7 +39,211 @@ const UPLOAD_MODES: { value: UploadMode; label: string; desc: string }[] = [
 ];
 
 /** S3 配置区输入框统一样式（模块级，避免 JSX 内联重复） */
-const s3InputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground font-mono placeholder-muted-foreground';
+const s3InputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground';
+
+/**
+ * S3 兼容图床配置区（P1-001 重写）：连接凭据经 /api/media/s3/config 保存到
+ * Worker 侧加密存储，secret 留空沿用、AK 打码回显；publicBaseUrl 是唯一
+ * 仍存 localStorage 的字段（外链模板，非敏感），走 mediaConfig.s3。
+ */
+function MediaS3Settings() {
+  const { mediaConfig, updateMediaConfig } = useCollections();
+  const { addToast } = useToast();
+  const [remote, setRemote] = useState<MediaS3ConfigPublic | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [form, setForm] = useState({ endpoint: '', region: 'auto', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '' });
+  const [publicBaseUrl, setPublicBaseUrl] = useState(mediaConfig.s3?.publicBaseUrl ?? '');
+  const dirtyRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMediaS3Config()
+      .then((cfg) => {
+        if (cancelled) return;
+        setRemote(cfg);
+        if (cfg && !dirtyRef.current) {
+          setForm({ endpoint: cfg.endpoint, region: cfg.region, bucket: cfg.bucket, accessKeyId: '', secretAccessKey: '', prefix: cfg.prefix });
+        }
+        setLoaded(true);
+      })
+      .catch(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const saved = await saveMediaS3Config({
+        endpoint: form.endpoint.trim(),
+        region: form.region.trim() || 'auto',
+        bucket: form.bucket.trim(),
+        accessKeyId: form.accessKeyId.trim(),
+        // secret 留空 = 沿用已存密钥（与缓冲层同语义）
+        secretAccessKey: form.secretAccessKey,
+        prefix: form.prefix.trim(),
+      });
+      setRemote(saved);
+      setForm((f) => ({ ...f, accessKeyId: '', secretAccessKey: '' }));
+      addToast({ message: '媒体图床配置已保存（凭据加密存于服务端）', type: 'success' });
+    } catch (err) {
+      addToast({ message: `保存失败：${(err as Error).message}`, type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      await testMediaS3Config({
+        endpoint: form.endpoint.trim(),
+        region: form.region.trim() || 'auto',
+        bucket: form.bucket.trim(),
+        accessKeyId: form.accessKeyId.trim(),
+        secretAccessKey: form.secretAccessKey,
+        prefix: form.prefix.trim(),
+      });
+      addToast({ message: 'S3 连接成功', type: 'success' });
+    } catch (err) {
+      addToast({ message: `连接失败：${(err as Error).message}`, type: 'error' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <section>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
+        <Cloud className="w-3 h-3" />
+        S3 兼容图床
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">
+        支持 AWS S3 / Cloudflare R2 / 阿里 OSS / MinIO 等兼容存储。
+        凭据经 HTTPS 提交后加密保存在服务端，浏览器不再明文持有；上传与删除经服务端代理执行。
+      </p>
+      {!loaded ? (
+        <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+          <Loader2 className="w-3 h-3 animate-spin" /> 读取图床配置……
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {remote && (
+            <p className="text-[11px] text-muted-foreground">
+              已配置：{remote.endpoint} / {remote.bucket}（AK {remote.accessKeyIdMasked}）。留空 Secret 表示沿用已存密钥。
+            </p>
+          )}
+          <div>
+            <label htmlFor="s3-endpoint" className="block text-[11px] text-muted-foreground mb-1">端点 Endpoint</label>
+            <input
+              id="s3-endpoint"
+              type="text"
+              value={form.endpoint}
+              onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, endpoint: e.target.value })); }}
+              placeholder="https://s3.example.com 或 R2 端点"
+              className={s3InputClass}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label htmlFor="s3-bucket" className="block text-[11px] text-muted-foreground mb-1">桶名 Bucket</label>
+              <input
+                id="s3-bucket"
+                type="text"
+                value={form.bucket}
+                onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, bucket: e.target.value })); }}
+                className={s3InputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="s3-region" className="block text-[11px] text-muted-foreground mb-1">区域 Region（可空 = auto）</label>
+              <input
+                id="s3-region"
+                type="text"
+                value={form.region}
+                onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, region: e.target.value })); }}
+                placeholder="auto"
+                className={s3InputClass}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label htmlFor="s3-ak" className="block text-[11px] text-muted-foreground mb-1">AccessKeyId{remote ? '（留空沿用）' : ''}</label>
+              <input
+                id="s3-ak"
+                type="text"
+                value={form.accessKeyId}
+                onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, accessKeyId: e.target.value })); }}
+                className={s3InputClass}
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <label htmlFor="s3-sk" className="block text-[11px] text-muted-foreground mb-1">SecretAccessKey{remote ? '（留空沿用）' : ''}</label>
+              <input
+                id="s3-sk"
+                type="password"
+                value={form.secretAccessKey}
+                onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, secretAccessKey: e.target.value })); }}
+                className={s3InputClass}
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="s3-prefix" className="block text-[11px] text-muted-foreground mb-1">目录前缀（可空 = 桶根）</label>
+            <input
+              id="s3-prefix"
+              type="text"
+              value={form.prefix}
+              onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, prefix: e.target.value })); }}
+              placeholder="images/2026"
+              className={s3InputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="s3-cdn" className="block text-[11px] text-muted-foreground mb-1">公网访问基址（含 {'{path}'}；用于复制外链）</label>
+            <input
+              id="s3-cdn"
+              type="text"
+              value={publicBaseUrl}
+              onChange={(e) => {
+                dirtyRef.current = true;
+                setPublicBaseUrl(e.target.value.trim());
+                // 外链模板非敏感，仍存 mediaConfig（随配置同步；repoConfigSync 已剥离凭据）
+                updateMediaConfig({ s3: { publicBaseUrl: e.target.value.trim() } });
+              }}
+              placeholder="https://cdn.example.com/{path}"
+              className={s3InputClass}
+            />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleTest}
+              disabled={testing || !form.endpoint || !form.bucket}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border rounded-sm hover:bg-accent disabled:opacity-40 transition-colors"
+            >
+              {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              测试连接
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !form.endpoint || !form.bucket}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-foreground text-white rounded-sm hover:bg-foreground/90 disabled:opacity-40 transition-colors"
+            >
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              保存配置
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 const PLACEHOLDER_DOCS = [
   { token: '{{date:YYYY}}', desc: '年份，4 位数' },
@@ -141,7 +349,7 @@ export function MediaSettings() {
               type="text"
               value={mediaConfig.imageOwner}
               onChange={(e) => updateMediaConfig({ imageOwner: e.target.value.trim() })}
-              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-muted text-foreground placeholder-muted-foreground"
+              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-muted text-foreground placeholder-muted-foreground"
               placeholder="仓库所有者"
             />
             <span className="flex items-center text-muted-foreground">/</span>
@@ -149,7 +357,7 @@ export function MediaSettings() {
               type="text"
               value={mediaConfig.imageRepo}
               onChange={(e) => updateMediaConfig({ imageRepo: e.target.value.trim() })}
-              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-muted text-foreground placeholder-muted-foreground"
+              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-muted text-foreground placeholder-muted-foreground"
               placeholder="仓库名，如 blog-images"
             />
             <span className="flex items-center text-muted-foreground">@</span>
@@ -157,7 +365,7 @@ export function MediaSettings() {
               type="text"
               value={mediaConfig.imageBranch}
               onChange={(e) => updateMediaConfig({ imageBranch: e.target.value.trim() || 'main' })}
-              className="w-24 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-muted text-foreground placeholder-muted-foreground"
+              className="w-24 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-muted text-foreground placeholder-muted-foreground"
               placeholder="分支"
             />
           </div>
@@ -184,7 +392,7 @@ export function MediaSettings() {
             type="text"
             value={mediaConfig.mediaPath}
             onChange={(e) => updateMediaConfig({ mediaPath: e.target.value.trim() || DEFAULT_MEDIA_PATH })}
-            className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
+            className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
             placeholder={DEFAULT_MEDIA_PATH}
           />
           <p className="text-xs text-muted-foreground mt-1">默认为 {DEFAULT_MEDIA_PATH}；若为 Hugo 博客，可填 static/images</p>
@@ -212,7 +420,7 @@ export function MediaSettings() {
               type="text"
               value={mediaConfig.imageBranchName}
               onChange={(e) => updateMediaConfig({ imageBranchName: e.target.value.trim() || DEFAULT_BRANCH_NAME })}
-              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
+              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
               placeholder={DEFAULT_BRANCH_NAME}
             />
             <button
@@ -230,97 +438,7 @@ export function MediaSettings() {
       )}
 
       {mediaConfig.sourceType === 's3' && (
-        <section>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
-            <Cloud className="w-3 h-3" />
-            S3 兼容图床
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">
-            支持 AWS S3 / Cloudflare R2 / 阿里 OSS / MinIO 等兼容存储。凭据仅保存在本机浏览器。
-          </p>
-          <div className="space-y-2">
-            <div>
-              <label htmlFor="s3-endpoint" className="block text-[11px] text-muted-foreground mb-1">端点 Endpoint</label>
-              <input
-                id="s3-endpoint"
-                type="text"
-                value={mediaConfig.s3?.endpoint ?? ''}
-                onChange={(e) => updateMediaConfig({ s3: { ...((mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' })), endpoint: e.target.value.trim() } })}
-                placeholder="https://s3.example.com 或 R2 端点"
-                className={s3InputClass}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label htmlFor="s3-bucket" className="block text-[11px] text-muted-foreground mb-1">桶名 Bucket</label>
-                <input
-                  id="s3-bucket"
-                  type="text"
-                  value={mediaConfig.s3?.bucket ?? ''}
-                  onChange={(e) => updateMediaConfig({ s3: { ...((mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' })), bucket: e.target.value.trim() } })}
-                  className={s3InputClass}
-                />
-              </div>
-              <div>
-                <label htmlFor="s3-region" className="block text-[11px] text-muted-foreground mb-1">区域 Region（可空 = auto）</label>
-                <input
-                  id="s3-region"
-                  type="text"
-                  value={mediaConfig.s3?.region ?? ''}
-                  onChange={(e) => updateMediaConfig({ s3: { ...(mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' }), region: e.target.value.trim() } })}
-                  placeholder="auto"
-                  className={s3InputClass}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label htmlFor="s3-ak" className="block text-[11px] text-muted-foreground mb-1">AccessKeyId</label>
-                <input
-                  id="s3-ak"
-                  type="password"
-                  value={mediaConfig.s3?.accessKeyId ?? ''}
-                  onChange={(e) => updateMediaConfig({ s3: { ...((mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' })), accessKeyId: e.target.value.trim() } })}
-                  className={s3InputClass}
-                  autoComplete="off"
-                />
-              </div>
-              <div>
-                <label htmlFor="s3-sk" className="block text-[11px] text-muted-foreground mb-1">SecretAccessKey</label>
-                <input
-                  id="s3-sk"
-                  type="password"
-                  value={mediaConfig.s3?.secretAccessKey ?? ''}
-                  onChange={(e) => updateMediaConfig({ s3: { ...((mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' })), secretAccessKey: e.target.value } })}
-                  className={s3InputClass}
-                  autoComplete="new-password"
-                />
-              </div>
-            </div>
-            <div>
-              <label htmlFor="s3-prefix" className="block text-[11px] text-muted-foreground mb-1">目录前缀（可空 = 桶根）</label>
-              <input
-                id="s3-prefix"
-                type="text"
-                value={mediaConfig.s3?.prefix ?? ''}
-                onChange={(e) => updateMediaConfig({ s3: { ...(mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' }), prefix: e.target.value.trim() } })}
-                placeholder="images/2026"
-                className={s3InputClass}
-              />
-            </div>
-            <div>
-              <label htmlFor="s3-cdn" className="block text-[11px] text-muted-foreground mb-1">公网访问基址（含 {'{path}'}；用于复制外链）</label>
-              <input
-                id="s3-cdn"
-                type="text"
-                value={mediaConfig.s3?.publicBaseUrl ?? ''}
-                onChange={(e) => updateMediaConfig({ s3: { ...((mediaConfig.s3 ?? { endpoint: '', region: '', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '', publicBaseUrl: '' })), publicBaseUrl: e.target.value.trim() } })}
-                placeholder="https://cdn.example.com/{path}"
-                className={s3InputClass}
-              />
-            </div>
-          </div>
-        </section>
+        <MediaS3Settings />
       )}
 
       <section>
@@ -353,7 +471,7 @@ export function MediaSettings() {
               type="text"
               value={mediaConfig.customCdnTemplate}
               onChange={(e) => updateMediaConfig({ customCdnTemplate: e.target.value })}
-              className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-muted text-foreground placeholder-muted-foreground mt-1"
+              className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-muted text-foreground placeholder-muted-foreground mt-1"
               placeholder="模板变量：{owner} {repo} {branch} {path}"
             />
           )}
@@ -421,8 +539,8 @@ export function MediaSettings() {
           type="text"
           value={mediaConfig.renameTemplate}
           onChange={(e) => updateMediaConfig({ renameTemplate: e.target.value })}
-          className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus:border-primary transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
-          placeholder="{Y}{m}{d}{h}{i}{s}-{filename}-{str-8}-{str-5}"
+          className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
+          placeholder="{{date:YYYY}}{{date:MM}}{{date:DD}}-{{filename}}-{{random:8}}"
         />
         <div className="mt-2 grid grid-cols-2 gap-1">
           {PLACEHOLDER_DOCS.map((item) => (

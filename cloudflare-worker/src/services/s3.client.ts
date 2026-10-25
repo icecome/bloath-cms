@@ -1,18 +1,26 @@
 // S3 兼容存储客户端（aws4fetch SigV4 签名）
 // 路径风格 URL：{endpoint}/{bucket}/{key}，对 MinIO/R2/OSS 网关通用
 import { AwsClient } from 'aws4fetch';
-import type { BufferConfig } from './bufferConfig.service';
 import { S3Error } from './s3.errors';
+
+/** 签名所需最小凭据集：BufferConfig 与 MediaS3Config 均结构满足（P1-001 复用同一客户端） */
+export interface S3Credentials {
+  endpoint: string;
+  region?: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}
 
 function encodeKey(key: string): string {
   return key.split('/').map(encodeURIComponent).join('/');
 }
 
-function baseUrl(cfg: BufferConfig): string {
+function baseUrl(cfg: S3Credentials): string {
   return `${cfg.endpoint}/${cfg.bucket}`;
 }
 
-function client(cfg: BufferConfig): AwsClient {
+function client(cfg: S3Credentials): AwsClient {
   return new AwsClient({
     accessKeyId: cfg.accessKeyId,
     secretAccessKey: cfg.secretAccessKey,
@@ -21,11 +29,11 @@ function client(cfg: BufferConfig): AwsClient {
   });
 }
 
-export async function putObject(cfg: BufferConfig, key: string, body: string): Promise<void> {
+export async function putObject(cfg: S3Credentials, key: string, body: string | ArrayBuffer, contentType = 'application/json'): Promise<void> {
   const aws = client(cfg);
   const res = await aws.fetch(`${baseUrl(cfg)}/${encodeKey(key)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': contentType },
     body,
   });
   if (!res.ok) {
@@ -34,7 +42,7 @@ export async function putObject(cfg: BufferConfig, key: string, body: string): P
   }
 }
 
-export async function getObject(cfg: BufferConfig, key: string): Promise<string | null> {
+export async function getObject(cfg: S3Credentials, key: string): Promise<string | null> {
   const aws = client(cfg);
   const res = await aws.fetch(`${baseUrl(cfg)}/${encodeKey(key)}`);
   if (res.status === 404) return null;
@@ -45,7 +53,7 @@ export async function getObject(cfg: BufferConfig, key: string): Promise<string 
   return res.text();
 }
 
-export async function deleteObject(cfg: BufferConfig, key: string): Promise<void> {
+export async function deleteObject(cfg: S3Credentials, key: string): Promise<void> {
   const aws = client(cfg);
   const res = await aws.fetch(`${baseUrl(cfg)}/${encodeKey(key)}`, { method: 'DELETE' });
   // S3 删除不存在的对象返回 204，幂等
@@ -61,7 +69,7 @@ export interface S3ListEntry {
   lastModified: string;
 }
 
-export async function listObjects(cfg: BufferConfig, prefix: string): Promise<S3ListEntry[]> {
+export async function listObjects(cfg: S3Credentials, prefix: string): Promise<S3ListEntry[]> {
   const aws = client(cfg);
   const entries: S3ListEntry[] = [];
   let token: string | undefined;

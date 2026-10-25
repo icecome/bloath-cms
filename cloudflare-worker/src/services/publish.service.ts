@@ -74,6 +74,15 @@ export async function publishBuffer(
     const targetPath = resolvePublishPath(path, target);
 
     if (entry.op === 'write') {
+      // write 幂等预检（P1-006）：远端同路径 blob sha 与条目内容一致 → 已同步，
+      // 跳过。场景：上次 commit 成功但 S3 清理失败，条目残留缓冲；无此检查时
+      // 每次重试都会重推同内容并再次触发 CI 部署。delete/move 已有各自的幂等分支。
+      const remoteSha = remoteShas.get(targetPath);
+      if (entry.contentSha && remoteSha === entry.contentSha) {
+        skipped++;
+        keysToClear.push(key);
+        continue;
+      }
       ops.push({ op: 'write', path: targetPath, content: entry.content ?? '' });
       // 路径被重写时需删掉源文件，否则草稿目录会残留一份
       if (targetPath !== path && remoteShas.has(path)) {

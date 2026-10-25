@@ -37,6 +37,19 @@ import { RenameDraftDialog } from '../components/drafts/RenameDraftDialog';
 import { PublishDraftDialog } from '../components/drafts/PublishDraftDialog';
 import { PreviewDraftDialog } from '../components/drafts/PreviewDraftDialog';
 
+/** 由草稿项与目标表构造待持久化条目；空目标项剔除（无目标的条目不进入发布/标记流程） */
+function buildTargetEntries(
+  items: ReadonlyArray<EnhancedFileItem>,
+  targets: Record<string, string>
+): Array<{ item: EnhancedFileItem; previewTarget: string }> {
+  return items
+    .map((item) => {
+      const target = (targets[item.path] || '').trim();
+      return target ? { item, previewTarget: target } : null;
+    })
+    .filter((x): x is { item: EnhancedFileItem; previewTarget: string } => x !== null);
+}
+
 export default function DraftsPage() {
   const { user } = useAuth();
   const { selectedRepo } = useRepo();
@@ -61,9 +74,11 @@ export default function DraftsPage() {
     handleSelectFile,
   } = useFileListPage({ basePath: draftPath, selectedRepo, user });
 
-  const [showPublishDropdown, setShowPublishDropdown] = useState(false);
+  const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
   const [previewTargets, setPreviewTargets] = useState<Record<string, string>>({});
+  // 发布对话框的逐项目标（P1-002：目标内联指定，替代先预发布再发布两步）
+  const [publishTargets, setPublishTargets] = useState<Record<string, string>>({});
   // 单篇预发布时记录目标路径，供对话框只处理这一条
   const [previewSinglePath, setPreviewSinglePath] = useState<string | null>(null);
   const [showMoveDropdown, setShowMoveDropdown] = useState(false);
@@ -77,7 +92,6 @@ export default function DraftsPage() {
   // 用户看到「失败」但操作实际已生效）。ref 的读写是同步的，可堵住该窗口。
   const actionLockRef = useRef(false);
   const [dirNodes, setDirNodes] = useState<DirNode[]>([]);
-  const lastDeletedRef = useRef<{ files: EnhancedFileItem[]; originalPaths: string[] } | null>(null);
 
   /** 获取动作锁；已被占用时返回 false，调用方应立即返回 */
   const acquireActionLock = useCallback((): boolean => {
@@ -100,16 +114,15 @@ export default function DraftsPage() {
     return applyTo(merged);
   }, [files, bufferChanges, bufferEnabled, draftPath, applyTo]);
 
-  // 预发布目标目录树：源自仓库真实树，以内容目录为根。
-  // 仅预发布对话框需要选择目录（发布对话框已改为只读确认）。
+  // 目录树获取：发布对话框与预发布对话框共用（发布对话框内联选择目标，P1-002）
   useEffect(() => {
-    if (!selectedRepo || !showPreviewDialog) return;
+    if (!selectedRepo || (!showPreviewDialog && !showPublishDialog)) return;
     let cancelled = false;
     fetchDirTree(selectedRepo, availableDirs)
       .then((nodes) => { if (!cancelled) setDirNodes(nodes); })
       .catch(() => { if (!cancelled) setDirNodes([]); });
     return () => { cancelled = true; };
-  }, [selectedRepo, showPreviewDialog, availableDirs]);
+  }, [selectedRepo, showPreviewDialog, showPublishDialog, availableDirs]);
 
   const filteredFiles = useMemo(
     () => mergedFiles.filter((f) =>
@@ -167,11 +180,29 @@ export default function DraftsPage() {
   /** 选中项中已预发布的草稿（含 stale 与 previewed） */
   const alreadyPreviewedCount = selectedFiles.size - pendingPreviewItems.length;
 
-  /** 发布的前置校验：选中项必须全部完成预发布 */
-  const publishBlocked = useMemo(() => {
-    if (selectedFiles.size === 0) return false;
-    const selected = mergedFiles.filter((f) => selectedFiles.has(f.path));
-    return selected.some((f) => (f.previewState ?? 'draft') === 'draft');
+  /** 发布对话框条目：全部选中项（目标在对话框内联指定，不再要求先预发布，P1-002） */
+  const publishDialogEntries = useMemo(
+    () =>
+      mergedFiles
+        .filter((f) => selectedFiles.has(f.path))
+        .map((f) => ({
+          path: f.path,
+          name: f.name,
+          currentPath: f.path,
+          previewTarget: f.previewTarget ?? '',
+          stale: (f.previewState ?? 'draft') === 'preview-stale',
+        })),
+    [mergedFiles, selectedFiles]
+  );
+
+  /** 打开发布对话框：按既有预发布目标预填，减少重复输入（P1-002） */
+  const openPublishDialog = useCallback(() => {
+    const initial: Record<string, string> = {};
+    for (const f of mergedFiles) {
+      if (selectedFiles.has(f.path)) initial[f.path] = f.previewTarget ?? '';
+    }
+    setPublishTargets(initial);
+    setShowPublishDialog(true);
   }, [mergedFiles, selectedFiles]);
 
   /** 打开预发布对话框（批量入口） */
@@ -234,15 +265,48 @@ export default function DraftsPage() {
     return source.map((f) => ({ path: f.path, name: f.name }));
   }, [previewSinglePath, mergedFiles, pendingPreviewItems]);
 
-  /** 确认预发布：写入目标与当前 sha，供后续变更检测 */
+  /**
+   * 目标持久化（P1-002 抽取）：写入预发布记录并为缓冲项同步 S3 publishTarget。
+   * 单键发布（先持久化再立即移动）与高级两步流（仅持久化）共用本步骤。
+   * 返回实际持久化的条目数，供调用方判断是否为空操作。
+   */
+  const persistTargets = useCallback(async (
+    entries: ReadonlyArray<{ item: EnhancedFileItem; previewTarget: string }>
+  ): Promise<number> => {
+    if (entries.length === 0) return 0;
+    setPreviewBatch(entries);
+    // 缓冲项同步 publishTarget，使侧边栏「发布变更」与菜单「发布」目标一致
+    if (selectedRepo) {
+      const bufferEntries = entries.filter((e) => isBufferItem(e.item));
+      if (bufferEntries.length > 0) {
+        const results = await Promise.allSettled(
+          bufferEntries.map((e) => setBufferPublishTarget({
+            owner: selectedRepo.owner,
+            repo: selectedRepo.repo,
+            branch: selectedRepo.branch,
+            path: e.item.path,
+            publishTarget: e.previewTarget,
+          }))
+        );
+        const failed = results.filter((r) => r.status === 'rejected');
+        if (failed.length > 0) {
+          addToast({ message: `${failed.length} 篇预发布目标同步缓冲失败，发布变更可能仍落回草稿目录`, type: 'warning' });
+        }
+        await refreshChanges();
+      }
+    }
+    return entries.length;
+  }, [setPreviewBatch, addToast, selectedRepo, isBufferItem, refreshChanges]);
+
+
+  /**
+   * 确认预发布（高级流，批量/单篇共用）：写入目标与当前 sha，供后续变更检测。
+   * 与单键发布的区别：仅固化目标，不产生提交。
+   */
   const handleConfirmPreview = useCallback(async () => {
-    const entries = previewDialogEntries
-      .map((e) => {
-        const item = mergedFiles.find((f) => f.path === e.path);
-        const target = (previewTargets[e.path] || '').trim();
-        return item && target ? { item, previewTarget: target } : null;
-      })
-      .filter((x): x is { item: EnhancedFileItem; previewTarget: string } => x !== null);
+    const entries = buildTargetEntries(previewDialogEntries
+      .map((e) => mergedFiles.find((f) => f.path === e.path))
+      .filter((item): item is EnhancedFileItem => item !== undefined), previewTargets);
 
     if (entries.length === 0) {
       addToast({ message: '未指定目标目录，预发布未生效', type: 'warning' });
@@ -252,27 +316,7 @@ export default function DraftsPage() {
     }
     setActionLoading(true);
     try {
-      setPreviewBatch(entries);
-      // 缓冲项同步 publishTarget，使侧边栏「发布变更」与菜单「发布」目标一致
-      if (selectedRepo) {
-        const bufferEntries = entries.filter((e) => isBufferItem(e.item));
-        if (bufferEntries.length > 0) {
-          const results = await Promise.allSettled(
-            bufferEntries.map((e) => setBufferPublishTarget({
-              owner: selectedRepo.owner,
-              repo: selectedRepo.repo,
-              branch: selectedRepo.branch,
-              path: e.item.path,
-              publishTarget: e.previewTarget,
-            }))
-          );
-          const failed = results.filter((r) => r.status === 'rejected');
-          if (failed.length > 0) {
-            addToast({ message: `${failed.length} 篇预发布目标同步缓冲失败，发布变更可能仍落回草稿目录`, type: 'warning' });
-          }
-          await refreshChanges();
-        }
-      }
+      await persistTargets(entries);
     } finally {
       setActionLoading(false);
       setShowPreviewDialog(false);
@@ -284,26 +328,42 @@ export default function DraftsPage() {
         : `已预发布 ${entries.length} 篇`,
       type: 'success',
     });
-  }, [previewDialogEntries, mergedFiles, previewTargets, setPreviewBatch, addToast, selectedRepo, isBufferItem, refreshChanges]);
+  }, [previewDialogEntries, mergedFiles, previewTargets, persistTargets, addToast]);
 
-  // 统一发布：仓库草稿走 commit，缓冲项走逐项发布接口
-  const handlePublish = async () => {
+
+  /**
+   * 单键发布确认（P1-002）：先持久化对话框内选定的目标（复用两步流的写入逻辑，
+   * 保持缓冲同步语义），随后立即执行既有的移动/发布逻辑。整个合并操作由
+   * actionLockRef 守卫，防止双击重复提交（同 handlePublish 的 P0-007 修复）。
+   */
+  const handleConfirmPublish = useCallback(async (targets: Record<string, string>) => {
     if (!selectedRepo || !user || selectedFiles.size === 0) return;
-    if (publishBlocked) {
-      addToast({ message: '有草稿尚未预发布，请先预发布', type: 'warning' });
-      return;
-    }
     if (!acquireActionLock()) return;
     setActionLoading(true);
-    try {
-      const selectedItems = mergedFiles.filter((f) => selectedFiles.has(f.path));
-      const repoItems = selectedItems.filter((f) => !f.source || f.source === 'repo');
-      const bufferItems = selectedItems.filter((f) => f.source && f.source !== 'repo');
 
+    try {
+      // 第一步：按对话框目标持久化预发布记录（与高级流完全同一段写入逻辑）
+      const selectedItems = mergedFiles.filter((f) => selectedFiles.has(f.path));
+      const targetEntries = buildTargetEntries(selectedItems, targets);
+      if (targetEntries.length === 0) {
+        addToast({ message: '未指定目标目录，未发布', type: 'warning' });
+        return;
+      }
+      await persistTargets(targetEntries);
+
+      // 第二步：立即发布。persistTargets 已写入本地记录 + 缓冲 publishTarget，
+      // 但 mergedFiles 是渲染快照，previewTarget 需从 targets 表补齐后再走移动逻辑
+      const itemsWithTargets = selectedItems.map((f) => ({
+        ...f,
+        previewTarget: targets[f.path]?.trim() || f.previewTarget,
+      }));
+      const repoItems = itemsWithTargets.filter((f) => !f.source || f.source === 'repo');
+      const bufferItems = itemsWithTargets.filter((f) => f.source && f.source !== 'repo');
       let repoPublished = 0;
+      let bufferFailed = false;
       let bufferPublished = 0;
 
-      // 仓库草稿：按各自已预发布的目标 move 到目标目录
+      // 阶段一：仓库草稿按目标 move 到目标目录（与原 handlePublish 相同）
       const moveOps = repoItems
         .map((file) => {
           const raw = (file.previewTarget || '').trim();
@@ -317,51 +377,98 @@ export default function DraftsPage() {
         .filter((x): x is { op: 'move'; fromPath: string; path: string } => x !== null);
 
       if (moveOps.length > 0) {
-        const targets = dedupeTargetPaths(moveOps.map((o) => o.path));
+        const deduped = dedupeTargetPaths(moveOps.map((o) => o.path));
         await commitBatch({
           owner: selectedRepo.owner,
           repo: selectedRepo.repo,
           branch: selectedRepo.branch,
           message: buildCommitMessage(`发布 ${moveOps.length} 篇草稿`),
-          ops: moveOps.map((o, i) => ({ ...o, path: targets[i] ?? o.path })),
+          ops: moveOps.map((o, i) => ({ ...o, path: deduped[i] ?? o.path })),
           userName: user.login,
         });
         repoPublished = moveOps.length;
       }
 
-      // 缓冲项：一次提交，逐项目标由后端重写路径
+      // 阶段二：缓冲项一次提交，逐项目标由后端重写路径。
+      // 独立 try：阶段一成功后这里失败不应吞掉阶段一的成果。
       if (bufferEnabled && bufferItems.length > 0) {
-        const result = await publish(user.login, bufferItems.map((f) => {
-          const raw = (f.previewTarget || f.publishTarget || '').trim();
-          return raw
-            ? { path: f.path, publishTarget: sanitizePath(raw) }
-            : { path: f.path };
-        }));
-        if (!result) throw new Error('缓冲发布失败');
-        bufferPublished = result.published;
+        try {
+          const result = await publish(user.login, bufferItems.map((f) => {
+            const raw = (f.previewTarget || f.publishTarget || '').trim();
+            return raw
+              ? { path: f.path, publishTarget: sanitizePath(raw) }
+              : { path: f.path };
+          }));
+          if (!result) throw new Error('缓冲发布失败');
+          bufferPublished = result.published;
+        } catch (err) {
+          bufferFailed = true;
+          console.error('[drafts] 缓冲发布失败（仓库部分可能已成功）：', err);
+        }
       }
 
-      if (repoPublished === 0 && bufferPublished === 0) {
+      const totalPublished = repoPublished + bufferPublished;
+      if (totalPublished === 0 && !bufferFailed) {
         addToast({ message: '未指定发布目标，文章仍留在草稿目录', type: 'info' });
+      } else if (bufferFailed) {
+        addToast({
+          message: `${repoPublished > 0 ? `已发布 ${repoPublished} 篇（仓库）；` : ''}缓冲发布失败，请稍后重试`,
+          type: 'error',
+        });
       } else {
-        addToast({ message: `已发布 ${repoPublished + bufferPublished} 篇`, type: 'success' });
+        addToast({ message: `已发布 ${totalPublished} 篇`, type: 'success' });
       }
 
       setSelectedFiles(new Set());
-      setShowPublishDropdown(false);
-      clearCache(selectedRepo);
-      await refreshChanges();
-      const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
-      setFiles(updatedFiles);
-      // 发布成功后清理预发布记录：按剩余草稿路径过滤，同时顺带清掉历史孤立项
-      pruneOrphansFor(new Set(updatedFiles.map((f) => f.path)));
+      // 发布完成即关闭对话框（原 handlePublish 语义保留）
+      setShowPublishDialog(false);
     } catch (err) {
       addToast({ message: `发布失败：${(err as Error).message}`, type: 'error' });
     } finally {
+      // 无条件清态：列表与预发布记录以仓库实际状态为准（重扫纠偏，P0-007），
+      // 已成功发布的条目即使本次整体失败也不会再进下一次 moveOps。
+      clearCache(selectedRepo);
+      await refreshChanges();
+      try {
+        const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
+        setFiles(updatedFiles);
+        pruneOrphansFor(new Set(updatedFiles.map((f) => f.path)));
+      } catch (err) {
+        console.error('[drafts] 发布后重扫失败（列表可能短暂陈旧）：', err);
+      }
       setActionLoading(false);
       releaseActionLock();
     }
-  };
+  }, [selectedRepo, user, selectedFiles, mergedFiles, acquireActionLock, releaseActionLock, persistTargets, addToast, bufferEnabled, publish, setFiles, pruneOrphansFor, refreshChanges, draftPath]);
+
+  /**
+   * 高级流入口（P1-002）：从发布对话框进入，仅持久化目标不发布，
+   * 保留原「先标记目标、稍后发布」的两步选项。成功提示与 handleConfirmPreview 一致。
+   */
+  const handleAdvancedMarkTargets = useCallback(async (targets: Record<string, string>) => {
+    const selectedItems = mergedFiles.filter((f) => selectedFiles.has(f.path));
+    const entries = buildTargetEntries(selectedItems, targets);
+    if (entries.length === 0) {
+      addToast({ message: '未指定目标目录，预发布未生效', type: 'warning' });
+      return;
+    }
+    if (!acquireActionLock()) return;
+    setActionLoading(true);
+    try {
+      await persistTargets(entries);
+    } finally {
+      setActionLoading(false);
+      releaseActionLock();
+      // 标记成功即回到列表，后续走工具栏「发布」或侧边栏「发布变更」
+      setShowPublishDialog(false);
+    }
+    addToast({
+      message: entries.length === 1
+        ? `已标记预发布目标：${entries[0]!.previewTarget}`
+        : `已预发布 ${entries.length} 篇`,
+      type: 'success',
+    });
+  }, [mergedFiles, selectedFiles, acquireActionLock, releaseActionLock, persistTargets, addToast]);
 
   const handleMove = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0 || !moveTarget.trim()) return;
@@ -462,7 +569,6 @@ export default function DraftsPage() {
           })),
           userName: user?.login
         });
-        lastDeletedRef.current = { files: repoItems, originalPaths: repoItems.map(f => f.path) };
         setFiles(prev => prev.filter(f => !selectedFiles.has(f.path)));
       }
 
@@ -475,8 +581,10 @@ export default function DraftsPage() {
       addToast({
         message: parts.join('，') || '未删除任何文件',
         type: 'success',
+        // 撤销类 toast 不自动关闭（duration:0）：等用户决策；P1-003
         // 仓库草稿批量删除的撤销：sessionStorage 持久化（P3-4 undoStore），
-        // 刷新后 60s 内仍可撤销（原 ref 方案刷新即丢）
+        // TTL 10 分钟内（含刷新后）可撤销
+        duration: 0,
         onUndo: repoItems.length > 0 ? async () => {
           try {
             if (!selectedRepo) return;
@@ -505,7 +613,7 @@ export default function DraftsPage() {
         } : undefined
       });
 
-      // 仓库草稿写入撤销记录（sessionStorage，TTL 60s，键含 branch）
+      // 仓库草稿写入撤销记录（sessionStorage，TTL 10 分钟（P1-003），键含 branch）
       if (repoItems.length > 0 && selectedRepo) {
         writeUndoRecord<EnhancedFileItem>(
           selectedRepo,
@@ -569,20 +677,29 @@ export default function DraftsPage() {
         userName: user?.login
       });
 
-      lastDeletedRef.current = { files: [file], originalPaths: [file.path] };
-
       setFiles(prev => prev.filter(f => f.path !== file.path));
       clearCache(selectedRepo);
+
+      // 撤销记录与批量删除统一走 undoStore（sessionStorage，TTL 10 分钟，键含 branch）：
+      // 旧实现单篇用 ref、批量用 store，刷新后单篇撤销静默丢失，语义不一致（P2 裁剪）。
+      writeUndoRecord<EnhancedFileItem>(
+        selectedRepo,
+        { files: [file], originalPaths: [file.path], deletedAt: Date.now(), branch: selectedRepo.branch },
+        sessionStorage
+      );
 
       addToast({
         message: `已将 ${file.name} 移至回收站`,
         type: 'success',
+        duration: 0, // 撤销类 toast 不自动关闭（P1-003）
         onUndo: async () => {
           try {
             if (!selectedRepo) return;
-            const restoredFile = lastDeletedRef.current!.files[0];
-            const originalPath = lastDeletedRef.current!.originalPaths[0];
-            if (!restoredFile || !originalPath) return;
+            const record = readUndoRecord<EnhancedFileItem>(selectedRepo, sessionStorage);
+            if (!record || record.branch !== selectedRepo.branch) return;
+            const originalPath = record.originalPaths[0];
+            const restoredFile = record.files[0];
+            if (!originalPath || !restoredFile) return;
             await commitBatch({
               owner: selectedRepo.owner,
               repo: selectedRepo.repo,
@@ -592,11 +709,11 @@ export default function DraftsPage() {
               userName: user?.login
             });
             setFiles(prev => [...prev, restoredFile]);
+            clearUndoRecord(selectedRepo, sessionStorage);
             addToast({ message: '已恢复', type: 'success' });
           } catch (err) {
             addToast({ message: `恢复失败：${(err as Error).message}`, type: 'error' });
           }
-          lastDeletedRef.current = null;
         }
       });
     } catch (err) {
@@ -703,7 +820,7 @@ export default function DraftsPage() {
               aria-label="按文件名或路径筛选草稿"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
             />
           </div>
         </div>
@@ -723,17 +840,16 @@ export default function DraftsPage() {
 
             <div className="w-px h-4 bg-border"></div>
 
-            {/* 发布：需选中项全部完成预发布，否则禁用并提示 */}
+            {/* 发布（P1-002）：单键入口，目标在对话框内联指定；不再要求先预发布 */}
             <button
-              onClick={() => setShowPublishDropdown(true)}
-              disabled={actionLoading || publishBlocked}
-              title={publishBlocked ? '有草稿尚未预发布，请先预发布' : undefined}
+              onClick={openPublishDialog}
+              disabled={actionLoading}
               className="text-sm px-3 py-1.5 text-primary-text hover:bg-accent rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               发布
             </button>
 
-            {/* 预发布：标记目标位置，不产生提交 */}
+            {/* 预发布（高级）：仅标记目标，不产生提交；单键发布为主路径 */}
             <button
               onClick={openPreviewDialog}
               disabled={actionLoading}
@@ -747,7 +863,7 @@ export default function DraftsPage() {
               <button
                 onClick={() => {
                   setShowMoveDropdown(!showMoveDropdown);
-                  setShowPublishDropdown(false);
+                  setShowPublishDialog(false);
                 }}
                 disabled={actionLoading}
                 className="text-sm px-3 py-1.5 text-muted-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40 flex items-center gap-1.5"
@@ -763,7 +879,7 @@ export default function DraftsPage() {
                     value={moveTarget}
                     onChange={(e) => setMoveTarget(e.target.value)}
                     placeholder="输入目标路径，如 content/.draft/sub"
-                    className="w-full px-2.5 py-1.5 text-sm border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary mb-2 transition-colors"
+                    className="w-full px-2.5 py-1.5 text-sm border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring mb-2 transition-colors"
                   />
                   <button
                     onClick={handleMove}
@@ -850,9 +966,9 @@ export default function DraftsPage() {
                   <button
                     onClick={() => openPreviewDialogFor(file)}
                     className="text-sm text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
-                    title="设置预发布目标"
+                    title="设置发布目标目录"
                   >
-                    预发布
+                    设目标
                   </button>
                 ) : (
                   <button
@@ -885,7 +1001,7 @@ export default function DraftsPage() {
                   <button
                     onClick={() => openPreviewDialogFor(file)}
                     className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
-                    title="设置预发布目标"
+                    title="设置发布目标目录"
                   >
                     <Target className="w-4 h-4" />
                   </button>
@@ -949,20 +1065,16 @@ export default function DraftsPage() {
         />
       )}
 
-      {showPublishDropdown && (
+      {showPublishDialog && (
         <PublishDraftDialog
-          entries={filteredFiles
-            .filter((f) => selectedFiles.has(f.path))
-            .map((f) => ({
-              path: f.path,
-              name: f.name,
-              currentPath: f.path,
-              previewTarget: f.previewTarget ?? '',
-              stale: (f.previewState ?? 'draft') === 'preview-stale',
-            }))}
+          entries={publishDialogEntries}
+          dirNodes={dirNodes}
           loading={actionLoading}
-          onConfirm={handlePublish}
-          onClose={() => setShowPublishDropdown(false)}
+          targets={publishTargets}
+          onTargetsChange={setPublishTargets}
+          onConfirm={handleConfirmPublish}
+          onAdvanced={handleAdvancedMarkTargets}
+          onClose={() => setShowPublishDialog(false)}
         />
       )}
     </div>

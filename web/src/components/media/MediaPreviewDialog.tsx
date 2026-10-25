@@ -25,7 +25,7 @@ export function MediaPreviewDialog({
       ariaLabel={`预览 ${file.name}`}
       onClose={onClose}
       overlayClassName="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
-      className="bg-card rounded-sm max-w-3xl w-full max-h-[90vh] overflow-auto"
+      className="bg-card rounded-lg max-w-3xl w-full max-h-[90vh] overflow-auto"
     >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <p className="text-sm font-medium text-foreground truncate font-mono">{file.name}</p>

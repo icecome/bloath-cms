@@ -93,7 +93,9 @@ export async function requestJson<T>(
     throw new HttpError(res.status, `HTTP ${res.status}: ${res.statusText}`);
   }
 
-  // 信封内的业务错误带上 HTTP 状态码，供调用方按 status 判断（详见 HttpError 注释）
+  // 信封内的业务错误带上 HTTP 状态码，供调用方按 status 判断（详见 HttpError 注释）。
+  // res.ok 时的业务错误同样带码：调用方统一按 err.status 判断，不区分错误来源
+  //（旧实现 ok 时抛裸 Error 丢 status，属潜伏契约漏洞，P2-17）
   try {
     const data = parseEnvelope<T>(payload);
     if (!skipDataCheck && data === undefined) {
@@ -101,7 +103,7 @@ export async function requestJson<T>(
     }
     return data;
   } catch (err) {
-    if (err instanceof Error && !res.ok) {
+    if (err instanceof Error && !(err instanceof HttpError)) {
       throw new HttpError(res.status, err.message);
     }
     throw err;

@@ -208,7 +208,7 @@ export async function writeFile(
   branch: string = 'main',
   author?: { name: string; email: string },
   isBase64 = false
-): Promise<void> {
+): Promise<{ sha: string | null }> {
   // 如果内容已经是 base64 编码（如图片），直接使用；否则进行编码
   const base64Content = isBase64 ? content : utf8ToBase64(content);
 
@@ -243,6 +243,14 @@ export async function writeFile(
 
   if (!response.ok) {
     await throwGithubError(response, 'Failed to write file');
+  }
+  // 返回新 blob sha：前端保存成功后必须用回填的 sha 更新本地基线，
+  // 否则下一次保存携带旧 sha 会 409（P0-005）。
+  try {
+    const data = await response.json() as { content?: { sha?: string } };
+    return { sha: data.content?.sha ?? null };
+  } catch {
+    return { sha: null };
   }
 }
 
@@ -681,8 +689,40 @@ export async function getTree(
   owner: string,
   repo: string,
   branch: string = 'main',
-  mode?: 'filename'
+  mode?: 'filename',
+  /** 可选 KV：树缓存（routes 层从 env 透传；未传 = 不缓存，优雅降级） */
+  cacheKv?: KVNamespace
 ): Promise<FileInfo[]> {
+  // 树缓存（audit P2-36）：键 = 分支最新 commit sha（1 子请求探测），命中即
+  // 返回缓存，省掉递归树拉取与媒体模式的最多 32 次 commit 详情。
+  // KV 未绑定/任何缓存故障 → 优雅降级直连；写失败静默。
+  let cacheKey = '';
+  let cachedHeadSha: string | undefined;
+  try {
+    if (cacheKv) {
+      const headResp = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}?per_page=1`,
+        { headers: ghHeaders(token) }
+      );
+      if (headResp.ok) {
+        const head = await headResp.json() as Array<{ sha?: string }>;
+        const headSha = head[0]?.sha;
+        if (headSha) {
+          cacheKey = `tree:${owner}/${repo}:${branch}:${mode || 'plain'}`;
+          const cachedRaw = await cacheKv.get(`${cacheKey}:${headSha}`);
+          if (cachedRaw) {
+            const cached = JSON.parse(cachedRaw) as FileInfo[];
+            if (Array.isArray(cached) && cached.length > 0) return cached;
+          }
+          // 未命中：继续全量拉取，成功后按 headSha 写缓存
+          cachedHeadSha = headSha;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[github] 树缓存读取失败（降级直连）：', err);
+  }
+
   const response = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
     {
@@ -694,7 +734,12 @@ export async function getTree(
     await throwGithubError(response, 'Failed to get tree');
   }
 
-  const data = await response.json() as { tree: Array<{ path: string; sha: string; type: string; size?: number }> };
+  const data = await response.json() as { tree: Array<{ path: string; sha: string; type: string; size?: number }>; truncated?: boolean };
+  // Trees API 对超大仓库（>10 万条 / 7MB 响应）会静默截断：不显式报错的话，
+  // 调用方拿到的是不完整的树，表现为「部分文章凭空消失」——比报错危险得多。
+  if (data.truncated) {
+    throw new GithubApiError('仓库文件树过大被 GitHub 截断，请收窄内容路径或清理仓库后重试', 413);
+  }
   const fileItems: FileInfo[] = data.tree
     .filter((item) => item.type === 'blob')
     .map((item) => {
@@ -708,6 +753,17 @@ export async function getTree(
         lastModified: 0
       };
     });
+
+  // 写缓存（成功全量拉取后）：headSha 键控，TTL 10 分钟兜底（head 不变即命中）
+  try {
+    if (cacheKv && cacheKey && cachedHeadSha && fileItems.length > 0) {
+      await cacheKv.put(
+        `${cacheKey}:${cachedHeadSha}`,
+        JSON.stringify(fileItems),
+        { expirationTtl: 600 }
+      ).catch(() => undefined);
+    }
+  } catch { /* 缓存写失败不影响主流程 */ }
 
   if (fileItems.length === 0) return fileItems;
 

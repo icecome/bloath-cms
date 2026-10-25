@@ -119,7 +119,7 @@ export default function MediaPickerDialog({
     <Modal
       ariaLabel={title}
       onClose={onClose}
-      className="bg-card rounded-md shadow-lg w-full max-w-3xl mx-4 max-h-[75vh] flex flex-col"
+      className="bg-card rounded-lg shadow-lg w-full max-w-3xl mx-4 max-h-[75vh] flex flex-col"
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h3 className="text-sm font-medium text-foreground">{title}</h3>

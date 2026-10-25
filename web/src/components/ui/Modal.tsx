@@ -42,9 +42,15 @@ export default function Modal({
     restoreFocusRef.current = document.activeElement as HTMLElement | null;
 
     const panel = panelRef.current;
-    // 初始焦点：优先首个可聚焦元素，避免焦点留在背景触发按钮上
+    // 初始焦点：面板容器先行，再交给首个可聚焦元素——容器 tabIndex=-1 避免
+    // 焦点直接落在右上角关闭 X 上（回车即误关，P2-7）
+    panel?.focus();
     const first = panel?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
     first?.focus();
+
+    // body 滚动锁定：对话框打开时背景页跟滚（移动端长面板尤其明显），P2-6
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -74,6 +80,7 @@ export default function Modal({
     document.addEventListener('keydown', handleKeyDown, true);
     return () => {
       document.removeEventListener('keydown', handleKeyDown, true);
+      document.body.style.overflow = prevOverflow;
       restoreFocusRef.current?.focus?.();
     };
   }, [onClose]);
@@ -89,7 +96,8 @@ export default function Modal({
         aria-modal="true"
         aria-labelledby={labelledBy}
         aria-label={labelledBy ? undefined : ariaLabel}
-        className={className}
+        tabIndex={-1}
+        className={`${className} overscroll-contain outline-none`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}

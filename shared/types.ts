@@ -89,16 +89,10 @@ export type UploadMode = 'compress' | 'original';
 
 export type MediaSourceType = 'standalone' | 'repo-dir' | 'image-branch' | 's3';
 
-/** S3 兼容图床的连接配置（sourceType = 's3' 时生效；凭据仅存 localStorage，与缓冲层同安全级别） */
+/** S3 兼容图床的外链视图配置（sourceType = 's3' 时生效）。
+ *  连接凭据（endpoint/bucket/AK/SK）已迁至 Worker 侧加密存储（mediaS3Config.service，
+ *  P1-001）：浏览器仅持有 publicBaseUrl——它是拼外链用的公开信息，不含敏感值。 */
 export interface S3MediaConfig {
-  /** S3 兼容端点，如 https://s3.example.com 或 R2 的 https://<account>.r2.cloudflarestorage.com */
-  endpoint: string;
-  region: string;
-  bucket: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  /** 对象键前缀（可空，等于桶根） */
-  prefix: string;
   /** 公网访问基址（含 {path} 占位符；如 https://cdn.example.com/{path}）。缺省时不可复制外链 */
   publicBaseUrl: string;
 }

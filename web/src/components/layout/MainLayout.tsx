@@ -5,7 +5,7 @@ import { useCollections } from '../../contexts/CollectionsContext';
 import { getRepos } from '../../lib/api';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { detectFrameworks, type DetectedRepo } from '../../lib/detectFramework';
-import { pullRepoConfig } from '../../lib/repoConfigSync';
+import { pullRepoConfig, sanitizeSyncedConfig } from '../../lib/repoConfigSync';
 import { filterValidDirs } from '../../lib/path';
 import { PublishButton } from './PublishButton';
 import { DeployBadge } from './DeployBadge';
@@ -24,6 +24,8 @@ import {
   Menu,
   X,
   Search,
+  Sun,
+  Moon,
   Loader2
 } from 'lucide-react';
 
@@ -234,7 +236,7 @@ function SidebarContent({
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="搜索仓库……"
                     aria-label="搜索仓库"
-                    className="w-full pl-7 pr-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus:border-primary bg-card text-foreground placeholder:text-muted-foreground"
+                    className="w-full pl-7 pr-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground placeholder:text-muted-foreground"
                     autoFocus
                   />
                 </div>
@@ -462,6 +464,20 @@ export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   /** 全局搜索对话框（Ctrl/Cmd+K 或顶栏搜索按钮） */
   const [searchOpen, setSearchOpen] = useState(false);
+  // 主题状态与 documentElement 上的 .dark 类互为镜像：初始值读类而非再解析
+  // localStorage——index.html 内联脚本已在首屏前完成「存储/系统偏好 → 类」的判定
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+
+  const toggleTheme = useCallback(() => {
+    setDark((prev) => {
+      const next = !prev;
+      document.documentElement.classList.toggle('dark', next);
+      // 持久化用户显式选择；未操作过时保持跟随系统的初始判定
+      localStorage.setItem('bloath_theme', next ? 'dark' : 'light');
+      return next;
+    });
+  }, []);
+
   const detectedFrameworksRef = useRef(false);
   const syncedRepoKeyRef = useRef('');
 
@@ -489,17 +505,18 @@ export default function MainLayout() {
         // 拉取期间仓库已切换：丢弃过期结果，避免覆盖当前仓库配置
         if (!selectedRepo || selectedRepo.owner !== owner || selectedRepo.repo !== repo) return;
         if (!remote) return;
-        if (remote.collections) {
-          const { paths, label, draftPath, trashPath } = remote.collections;
+        // 剥离历史版本可能已写入仓库文件的 S3 凭据，防止污染本地存储（P1-004）
+        const clean = sanitizeSyncedConfig(remote);
+        if (clean.collections) {
+          const { paths, draftPath, trashPath } = clean.collections;
           updateConfig({
             ...(paths && paths.length > 0 ? { paths } : {}),
-            ...(label ? { label } : {}),
             ...(draftPath ? { draftPath } : {}),
             ...(trashPath ? { trashPath } : {})
           });
         }
-        if (remote.media) {
-          updateMediaConfig(remote.media);
+        if (clean.media) {
+          updateMediaConfig(clean.media);
         }
       })
       .catch((err) => console.error('拉取仓库配置失败：', err));
@@ -647,6 +664,14 @@ export default function MainLayout() {
               <span className="text-border">/</span>
               <span className="text-foreground font-medium">{getCurrentNavLabel(location.pathname)}</span>
             </div>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={dark ? '切换浅色模式' : '切换深色模式'}
+              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent rounded-sm transition-colors"
+            >
+              {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
           </div>
           {selectedRepo && <DeployBadge repo={selectedRepo} />}
         </header>

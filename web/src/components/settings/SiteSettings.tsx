@@ -24,6 +24,7 @@ export function SiteSettings() {
   const [strategy, setStrategy] = useState<DeployStrategy>(() => getDeployStrategy());
   const [workflows, setWorkflows] = useState<WorkflowInfo[]>([]);
   const [workflowsLoading, setWorkflowsLoading] = useState(false);
+  const [workflowsError, setWorkflowsError] = useState(false);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null);
   const [deploying, setDeploying] = useState(false);
 
@@ -45,23 +46,32 @@ export function SiteSettings() {
         const ref = getStoredProfileRef(selectedRepo.owner, selectedRepo.repo);
         setProfileSource(ref?.detected === false ? 'manual' : 'detected');
       })
-      .catch(() => { /* 保持默认 */ })
+      .catch(() => {
+        if (cancelled) return;
+        // 识别失败必须可见：静默回退 custom 会让用户以为检测结果就是 custom（P1-005）
+        addToast({ message: '站点 Profile 自动识别失败，已回退 custom，可手动指定', type: 'warning' });
+      })
       .finally(() => { if (!cancelled) setProfileLoading(false); });
     return () => { cancelled = true; };
-  }, [selectedRepo]);
+  }, [selectedRepo, addToast]);
 
   // 加载可用 workflows（手动部署）
   useEffect(() => {
     if (!selectedRepo) return;
     let cancelled = false;
     setWorkflowsLoading(true);
+    setWorkflowsError(false);
     getWorkflows(selectedRepo.owner, selectedRepo.repo)
       .then((list) => {
         if (cancelled) return;
         setWorkflows(list);
         setSelectedWorkflowId(list[0]?.id ?? null);
       })
-      .catch(() => { if (!cancelled) setWorkflows([]); })
+      .catch(() => {
+        // 加载失败与「确实没有 workflow」必须区分：否则网络错误被文案
+        // 归因为用户配置问题，误导排查方向（P1-005）
+        if (!cancelled) { setWorkflows([]); setWorkflowsError(true); }
+      })
       .finally(() => { if (!cancelled) setWorkflowsLoading(false); });
     return () => { cancelled = true; };
   }, [selectedRepo]);
@@ -144,7 +154,7 @@ export function SiteSettings() {
               <select
                 value={profileId}
                 onChange={(e) => handleProfileChange(e.target.value as ProfileId)}
-                className="px-2.5 py-1.5 text-xs border border-border rounded-sm bg-card text-foreground focus:outline-none focus:border-primary"
+                className="px-2.5 py-1.5 text-xs border border-border rounded-sm bg-card text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {listProfiles().map((p) => (
                   <option key={p.id} value={p.id}>{p.label}</option>
@@ -205,16 +215,38 @@ export function SiteSettings() {
             <Loader2 className="w-3.5 h-3.5 animate-spin" /> 加载 workflows……
           </p>
         ) : workflows.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            仓库中没有可用的 GitHub Actions workflow。手动部署需在仓库的 .github/workflows/ 目录下配置
-            含 workflow_dispatch 触发器的部署 workflow。
-          </p>
+          workflowsError ? (
+            <div className="text-xs">
+              <p className="text-warning mb-1">Workflows 加载失败（网络或权限问题），并非仓库未配置。</p>
+              <button
+                type="button"
+                onClick={() => {
+                  // 重触发 effect：临时切到 null 再设回当前仓库不优雅，
+                  // 直接复用加载逻辑的最小方式是让 effect 依赖错误态重置
+                  setWorkflowsError(false);
+                  setWorkflowsLoading(true);
+                  getWorkflows(selectedRepo.owner, selectedRepo.repo)
+                    .then((list) => { setWorkflows(list); setSelectedWorkflowId(list[0]?.id ?? null); })
+                    .catch(() => setWorkflowsError(true))
+                    .finally(() => setWorkflowsLoading(false));
+                }}
+                className="text-primary-text hover:underline"
+              >
+                重试
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              仓库中没有可用的 GitHub Actions workflow。手动部署需在仓库的 .github/workflows/ 目录下配置
+              含 workflow_dispatch 触发器的部署 workflow。
+            </p>
+          )
         ) : (
           <div className="flex items-center gap-2">
             <select
               value={selectedWorkflowId ?? ''}
               onChange={(e) => setSelectedWorkflowId(Number(e.target.value))}
-              className="px-2.5 py-1.5 text-xs border border-border rounded-sm bg-card text-foreground focus:outline-none focus:border-primary"
+              className="px-2.5 py-1.5 text-xs border border-border rounded-sm bg-card text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {workflows.map((w) => (
                 <option key={w.id} value={w.id}>{w.name}（{w.path}）</option>

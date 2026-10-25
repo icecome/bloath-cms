@@ -15,6 +15,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 失败通知（audit P1-007 §7.6）：CMS 自身部署失败此前应用内完全不可见
+      # （DeployBadge 只查博客仓库），唯一信号是 GitHub 默认邮件。这里补一条
+      # 显式的失败步骤通知：通过 Telegram bot（可选，未配 secret 时静默跳过）。
+      - name: Notify failure
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            echo "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID 未配置，跳过失败通知"
+            exit 0
+          fi
+          curl -sf -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d chat_id="$TG_CHAT" \
+            -d text="❌ Bloath CMS 部署失败（${{ github.ref_name }}）：$GH_URL" \
+            > /dev/null || echo "Telegram 通知发送失败（不影响部署结果判定）"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -46,6 +65,11 @@ jobs:
         run: |
           cd cloudflare-worker
           npx tsc --noEmit
+
+      - name: Test worker
+        run: |
+          cd cloudflare-worker
+          node --experimental-strip-types --no-warnings --test src/services/*.test.ts
 
       - name: Build frontend
         env:
@@ -84,6 +108,7 @@ jobs:
           SESSION_SECRET: ${{ secrets.BLOATH_SESSION_SECRET }}
           FRONTEND_URL: ${{ secrets.BLOATH_FRONTEND_URL }}
           PROD_ORIGINS: ${{ secrets.BLOATH_PROD_ORIGINS }}
+          ADMIN_GITHUB_LOGIN: ${{ secrets.ADMIN_GITHUB_LOGIN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         run: |
@@ -93,6 +118,7 @@ jobs:
           printf '%s' "$SESSION_SECRET" | npx wrangler secret put SESSION_SECRET --config wrangler.deploy.jsonc
           printf '%s' "$FRONTEND_URL" | npx wrangler secret put FRONTEND_URL --config wrangler.deploy.jsonc
           printf '%s' "$PROD_ORIGINS" | npx wrangler secret put PROD_ORIGINS --config wrangler.deploy.jsonc
+          printf '%s' "$ADMIN_GITHUB_LOGIN" | npx wrangler secret put ADMIN_GITHUB_LOGIN --config wrangler.deploy.jsonc
 
       - name: Verify Secrets
         working-directory: cloudflare-worker

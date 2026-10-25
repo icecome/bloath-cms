@@ -1,5 +1,5 @@
 import type { Repo, RepoInfo, CommitOp } from '../../../shared/types';
-import { API_BASE, MAX_TREE_ITEMS } from './constants';
+import { API_BASE } from './constants';
 import { requestJson, type HttpRequestOptions } from './http.ts';
 
 export type { CommitOp };
@@ -47,6 +47,8 @@ interface FileReadResult {
 
 interface WriteResult {
   path: string;
+  /** 写入后的新 blob sha；保存成功后前端据以更新本地基线（P0-005） */
+  sha?: string | null;
 }
 
 interface TreeItem {
@@ -126,86 +128,9 @@ export async function deleteFile(
   }, true);
 }
 
-/**
- * 移动文件（读 + 写新路径 + 删旧路径）
- * 注意：GitHub API 不支持原子移动，此为最佳努力方案
- * 如果写入成功但删除失败，会产生重复文件（需手动清理）
- */
-export async function moveFile(
-  params: RepoInfo & { fromPath: string; toPath: string; sha?: string; message?: string; userName?: string }
-) {
-  const { content: fileContent, sha: currentSha } = await readFile({
-    owner: params.owner,
-    repo: params.repo,
-    path: params.fromPath,
-    branch: params.branch
-  });
-
-  const resolvedMessage = params.message || `移动：${params.fromPath} → ${params.toPath}`;
-
-  await writeFile({
-    owner: params.owner,
-    repo: params.repo,
-    path: params.toPath,
-    content: fileContent,
-    message: resolvedMessage,
-    branch: params.branch,
-    userName: params.userName
-  });
-
-  try {
-    await deleteFile({
-      owner: params.owner,
-      repo: params.repo,
-      path: params.fromPath,
-      sha: params.sha || currentSha,
-      // 删除源文件的 commit 不应再次触发 CI（写入侧已按需触发）
-      message: `[skip ci] ${resolvedMessage}`,
-      userName: params.userName
-    });
-  } catch (err) {
-    // 写入成功但删除失败：向上传播错误，让调用者提示用户手动清理
-    throw new Error(`文件已写入 ${params.toPath}，但删除源文件 ${params.fromPath} 失败，仓库中可能存在重复文件。原因：${err instanceof Error ? err.message : '未知错误'}`);
-  }
-}
-
-/**
- * 重命名文件（写入新路径 + 删除旧路径）
- */
-export async function renameFile(
-  params: RepoInfo & { oldPath: string; newPath: string; content: string; sha?: string; message?: string; branch?: string; userName?: string }
-) {
-  const resolvedMessage = params.message || `重命名：${params.oldPath} → ${params.newPath}`;
-
-  await writeFile({
-    owner: params.owner,
-    repo: params.repo,
-    path: params.newPath,
-    content: params.content,
-    message: resolvedMessage,
-    branch: params.branch,
-    userName: params.userName
-  });
-
-  try {
-    if (params.sha) {
-      await deleteFile({
-        owner: params.owner,
-        repo: params.repo,
-        path: params.oldPath,
-        sha: params.sha,
-        // 删除旧文件的 commit 不应再次触发 CI（写入侧已按需触发）
-        message: `[skip ci] ${resolvedMessage}`,
-        userName: params.userName
-      });
-    } else {
-      throw new Error('缺少 sha，无法删除旧文件');
-    }
-  } catch (err) {
-    // 写入成功但删除失败：向上传播错误，让调用者提示用户手动清理
-    throw new Error(`文件已写入 ${params.newPath}，但删除旧文件 ${params.oldPath} 失败，仓库中可能存在重复文件。原因：${err instanceof Error ? err.message : '未知错误'}`);
-  }
-}
+// moveFile / renameFile 已删除（P2 裁剪）：二者是「写新 + 删旧」两步非原子操作，
+// 中途失败会留重复文件；live 路径全部走 commitBatch（Git Data API 单 commit 原子）。
+// 留着只会误导未来调用者重新踩坑。
 
 export async function getBranches(
   owner: string,
@@ -236,7 +161,8 @@ export async function createBranch(params: {
  * mode: 'filename' = 额外通过 commits API 填充 lastModified（媒体库按最新排序用）
  *       省略      = 不查询 commits，lastModified 保持 0；内容库/草稿箱/回收站
  *                   的排序依赖 front-matter 的 date，不需要该字段
- * 限制：单次最多返回 800 个文件，超限则抛出错误（GitHub API 上限 1000）
+ * 仓库整体超限时由 worker 侧显式报错（truncated 守卫），此处不再按总数硬失败——
+ * 旧 800 上限按整仓计数（md+媒体+主题全算），目标规模仓库会被误伤（P0-003）。
  */
 export async function getTree(params: RepoInfo & { mode?: 'filename' }): Promise<TreeItem[]> {
   const searchParams = new URLSearchParams({
@@ -246,13 +172,7 @@ export async function getTree(params: RepoInfo & { mode?: 'filename' }): Promise
   });
   if (params.mode) searchParams.set('mode', params.mode);
 
-  const result = await apiFetch<TreeItem[]>(`${API_BASE}/api/repos/tree?${searchParams}`);
-
-  if (result.length > MAX_TREE_ITEMS) {
-    throw new Error(`目录文件数超过 ${MAX_TREE_ITEMS} 个上限，请检查仓库规模`);
-  }
-
-  return result;
+  return apiFetch<TreeItem[]>(`${API_BASE}/api/repos/tree?${searchParams}`);
 }
 
 /**
@@ -309,8 +229,9 @@ export async function uploadMediaBinary(params: {
     method: 'PUT',
     headers: { 'Content-Type': 'application/octet-stream' },
     body: params.blob,
-    // 大文件上传需要更宽松的超时：默认 10s 只适用于元数据请求
-    timeoutMs: 120000,
+    // 超时随体积线性放大：固定 120s 在慢上行（手机热点）传大视频时必然中途夭折（P2-16）。
+    // 基准 1MB/2s + 30s 余量，100MB ≈ 230s；上限 10 分钟防死循环。
+    timeoutMs: Math.min(30_000 + (params.blob.size / (1024 * 1024)) * 2_000, 600_000),
   });
 }
 

@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { listDevices, setDeviceTrusted, deleteDevice, type DeviceEntry } from '../../lib/api';
 import { useToast } from '../../contexts/ToastContext';
+import Modal from '../ui/Modal';
 import { Loader2, Monitor, Smartphone, Trash2 } from 'lucide-react';
 
 function formatLoginTime(ts: number): string {
@@ -50,6 +51,8 @@ export function DeviceSettings() {
   const [devices, setDevices] = useState<DeviceEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingFingerprint, setSavingFingerprint] = useState<string | null>(null);
+  /** 待移除设备：点删除图标先入此态弹确认框，确认后才真正调 deleteDevice */
+  const [pendingDelete, setPendingDelete] = useState<DeviceEntry | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,9 +95,6 @@ export function DeviceSettings() {
 
   const handleDelete = useCallback(async (device: DeviceEntry) => {
     if (device.isCurrent) return;
-    if (!window.confirm(`确定要移除设备「${describeDevice(device.ua)}」吗？移除后该设备降级为未信任，会话有效期缩短至 6 小时。`)) {
-      return;
-    }
     setSavingFingerprint(device.fingerprint);
     try {
       await deleteDevice(device.fingerprint);
@@ -120,6 +120,42 @@ export function DeviceSettings() {
 
   return (
     <section className="space-y-2">
+      {/* 移除设备确认框：替代原生 window.confirm，保证与应用一致的焦点管理/遮罩体验 */}
+      {pendingDelete && (
+        <Modal
+          ariaLabel="移除设备确认"
+          onClose={() => setPendingDelete(null)}
+          className="bg-card rounded-md shadow-sm p-4 w-full max-w-sm mx-4 border-2 border-destructive"
+        >
+          <p className="text-sm text-foreground mb-4">
+            确定要移除设备「{describeDevice(pendingDelete.ua)}」吗？<br />
+            <span className="text-destructive">移除后该设备降级为未信任，会话有效期缩短至 6 小时。</span>
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setPendingDelete(null)}
+              disabled={savingFingerprint === pendingDelete.fingerprint}
+              className="px-3 py-1.5 text-sm border border-border text-foreground hover:bg-accent rounded-sm transition-colors disabled:opacity-40"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const device = pendingDelete;
+                setPendingDelete(null);
+                handleDelete(device);
+              }}
+              disabled={savingFingerprint === pendingDelete.fingerprint}
+              className="px-3 py-1.5 text-sm text-white bg-destructive hover:bg-destructive/90 rounded-sm transition-colors disabled:opacity-40"
+            >
+              {savingFingerprint === pendingDelete.fingerprint ? '移除中……' : '移除'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
       <h3 className="text-sm font-medium text-foreground">登录设备</h3>
       <p className="text-xs text-muted-foreground">
         共 {devices.length} 台设备。受信任的设备登录有效期 7 天，未信任的设备为 6 小时；有效期内访问会自动续期。移除设备会降低其信任级别，已签发的会话在到期前仍可使用。
@@ -176,7 +212,7 @@ export function DeviceSettings() {
               {!device.isCurrent && (
                 <button
                   type="button"
-                  onClick={() => handleDelete(device)}
+                  onClick={() => setPendingDelete(device)}
                   disabled={savingFingerprint === device.fingerprint}
                   className="mt-0.5 text-muted-foreground hover:text-destructive focus-visible:text-destructive sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity disabled:sm:opacity-0 disabled:cursor-not-allowed"
                   aria-label="移除设备"

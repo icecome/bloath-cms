@@ -11,6 +11,7 @@ import {
 import type { CommitOp } from '../services/github';
 import { fetchRecentRuns } from '../services/deploy-status';
 import { requireAuth, type AuthResult } from '../middleware/sessionAuth';
+import { writeLimitAfterAuth } from '../middleware/writeLimit';
 import { bytesToBase64 } from '../lib/base64';
 import {
   isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE, MAX_JSON_BODY_SIZE, MAX_MEDIA_BINARY_SIZE,
@@ -18,6 +19,8 @@ import {
 
 const reposApp = new Hono<HonoEnv>();
 reposApp.use('/api/repos/*', requireAuth);
+// 限流必须挂在 requireAuth 之后：key 依赖 auth 中的 githubLogin（见 writeLimit.ts 头注释）
+reposApp.use('/api/repos/*', writeLimitAfterAuth);
 
 function auth(c: Context<HonoEnv>): AuthResult {
   return c.get('auth') as AuthResult;
@@ -71,8 +74,9 @@ reposApp.put('/api/repos/file', async (c: Context<HonoEnv>) => {
   if (typeof fileContent === 'string' && fileContent.length > MAX_CONTENT_SIZE) return c.json(badRequest('文件过大（单文件上限 15 MB）'), 400);
   if (!isSafePathParam(filePath, true) || !isSafePathParam(branch)) return c.json(badRequest('path 或 branch 参数无效'), 400);
   const author = buildCommitAuthor(userName);
-  await writeFile(auth(c).githubToken, owner, repo, filePath, fileContent, message || 'update file', sha, branch, author, !!base64Content);
-  return c.json(success({ path: filePath }));
+  const result = await writeFile(auth(c).githubToken, owner, repo, filePath, fileContent, message || 'update file', sha, branch, author, !!base64Content);
+  // 回传新 blob sha：前端保存成功后据以更新本地基线，避免下次保存带旧 sha 409（P0-005）
+  return c.json(success({ path: filePath, sha: result.sha ?? null }));
 });
 
 // PUT /api/repos/media —— 二进制媒体上传（视频 / 原图模式）
@@ -144,7 +148,7 @@ reposApp.get('/api/repos/tree', async (c: Context<HonoEnv>) => {
   const mode: 'filename' | undefined = modeParam === 'filename' ? 'filename' : undefined;
   if (!isSafePathParam(owner) || !isSafePathParam(repo)) return c.json(badRequest('缺少 owner 或 repo 参数'), 400);
   if (!isSafePathParam(branch)) return c.json(badRequest('branch 参数无效'), 400);
-  const tree = await getTree(auth(c).githubToken, owner, repo, branch, mode);
+  const tree = await getTree(auth(c).githubToken, owner, repo, branch, mode, c.env.CACHE_KV);
   return c.json(success(tree));
 });
 
@@ -167,6 +171,11 @@ reposApp.post('/api/repos/commit', async (c: Context<HonoEnv>) => {
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branch)) return c.json(badRequest('owner、repo 或 branch 参数无效'), 400);
   if (!message) return c.json(badRequest('缺少提交信息 message'), 400);
   if (!Array.isArray(ops) || ops.length === 0 || ops.length > 200) return c.json(badRequest('ops 数量须在 1 至 200 之间'), 400);
+  // 二进制 ops 上限（audit P2-36）：每个 base64Content 在 batchCommit 中触发一次
+  // 独立 blob 上传子请求——免费版每次调用 50 子请求预算，>40 必然在 GitHub 侧
+  // 中途失败（留下半完成的 tree）。文本 write 内联进 create-tree 不受此限。
+  const binaryOps = ops.filter((op) => typeof op.base64Content === 'string' && op.base64Content.length > 0).length;
+  if (binaryOps > 40) return c.json(badRequest(`二进制操作过多（${binaryOps} > 40），请分批提交`), 400);
   for (const op of ops) {
     const source = op.fromPath;
     if ((op.op !== 'write' && op.op !== 'move' && op.op !== 'delete') || !isSafePathParam(op.path, true) || (op.op === 'move' && (!source || !isSafePathParam(source, true)))) {
@@ -189,8 +198,11 @@ reposApp.post('/api/repos/extract', async (c: Context<HonoEnv>) => {
   const data = safeJsonParse(await c.req.raw.text());
   const { owner, repo, branch = 'main', paths } = data as { owner?: string; repo?: string; branch?: string; paths?: string[] };
   if (!isSafePathParam(owner) || !isSafePathParam(repo) || !isSafePathParam(branch)) return c.json(badRequest('owner、repo 或 branch 参数无效'), 400);
-  if (!Array.isArray(paths) || paths.length === 0 || paths.length > 100 || paths.some((p) => !isSafePathParam(p, true))) {
-    return c.json(badRequest('paths 须为 1 至 100 个有效路径'), 400);
+  // 上限 40：免费版每次调用 50 子请求预算，每路径一次 GitHub readFile，
+  // 旧上限 100 时第 51-100 个必然失败，触发前端逐文件回退风暴（P0-004）。
+  // 须与前端 extractFrontMatter.ts 的 EXTRACT_CHUNK_SIZE 同步修改。
+  if (!Array.isArray(paths) || paths.length === 0 || paths.length > 40 || paths.some((p) => !isSafePathParam(p, true))) {
+    return c.json(badRequest('paths 须为 1 至 40 个有效路径'), 400);
   }
   const result = await extractFrontMatters(auth(c).githubToken, owner!, repo!, branch, paths);
   return c.json(success(result));

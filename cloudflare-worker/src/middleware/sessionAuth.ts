@@ -2,9 +2,10 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import type { HonoEnv } from '../env';
 import {
-  validateSessionToken, generateDeviceFingerprint, generateSessionToken,
-  getDeviceRecord, upsertDeviceRecord, SESSION_DURATION_MS, TRUSTED_DURATION_MS
+  validateSessionToken, generateDeviceFingerprint,
+  getDeviceRecord, upsertDeviceRecord, DEVICE_ACTIVE_WRITE_THROTTLE_MS
 } from '../services/session';
+import { isLoginAllowed } from '../services/owner-allowlist';
 
 export function checkCsrf(request: Request): boolean {
   return request.headers.get('X-Requested-With') === 'XMLHttpRequest';
@@ -34,6 +35,8 @@ export interface AuthResult {
   trusted: boolean;
   longLived: boolean;
   issuedAt: number;
+  /** 绝对寿命锚点（首签时刻），续期透传与上限判断依赖（P2-29） */
+  firstIssuedAt: number;
   deviceFingerprint: string;
 }
 
@@ -50,8 +53,13 @@ export async function authenticate(request: Request, env: HonoEnv['Bindings']): 
     const record = await getDeviceRecord(env.DEVICES_KV, currentFingerprint);
     trusted = record.trusted;
     lastSeenAt = record.lastSeenAt || result.issuedAt;
-    const ua = request.headers.get('User-Agent') || '';
-    await upsertDeviceRecord(env.DEVICES_KV, currentFingerprint, Date.now(), trusted, ua || undefined);
+    // 活跃回写节流（M-P1）：距上次活跃 < 10 分钟时跳过 KV 写。
+    // KV 免费层每日 10 万写，每请求 upsert 会打穿配额，殃及同 KV 的
+    // 登出吊销写入；节流的代价仅是设备列表活跃时间精度降为分钟级。
+    if (Date.now() - lastSeenAt >= DEVICE_ACTIVE_WRITE_THROTTLE_MS) {
+      const ua = request.headers.get('User-Agent') || '';
+      await upsertDeviceRecord(env.DEVICES_KV, currentFingerprint, Date.now(), trusted, ua || undefined);
+    }
   }
   return {
     githubToken: result.githubToken,
@@ -60,6 +68,7 @@ export async function authenticate(request: Request, env: HonoEnv['Bindings']): 
     trusted,
     longLived: trusted,
     issuedAt: lastSeenAt,
+    firstIssuedAt: result.firstIssuedAt,
     deviceFingerprint: currentFingerprint
   };
 }
@@ -67,32 +76,21 @@ export async function authenticate(request: Request, env: HonoEnv['Bindings']): 
 export const requireAuth: MiddlewareHandler<HonoEnv> = async (c: Context<HonoEnv>, next: Next) => {
   const authResult = await authenticate(c.req.raw, c.env);
   if (authResult instanceof Response) return authResult;
+  // 第二层所有者校验：callback 白名单之外，这里兜底拦截「白名单放开前签发的
+  // 旧会话」与未来新增路由漏配守卫的情况。非白名单登录态一律视同未认证。
+  if (!isLoginAllowed(authResult.githubLogin, c.env)) {
+    return Response.json({ error: 'Session expired' }, { status: 401 });
+  }
   c.set('auth', authResult);
   await next();
 };
 
 // requireAdminAuth（管理接口白名单守卫）随留言管理模块一并移除：
 // 它是 /api/admin/* 的唯一消费者，该模块下线后已无调用点。
-
-export async function addSessionRenewalCookie(
-  response: Response,
-  authResult: AuthResult,
-  env: HonoEnv['Bindings'],
-  isSecure: boolean
-): Promise<Response> {
-  if (authResult.needsRenewal) {
-    // 续期时必须带上 githubLogin，否则新 token 会因缺少身份凭据而在下一次请求被判失效
-    const newToken = await generateSessionToken(
-      authResult.githubToken, authResult.githubLogin, env,
-      authResult.deviceFingerprint, authResult.trusted
-    );
-    if (typeof newToken === 'string') {
-      const maxAge = authResult.trusted ? TRUSTED_DURATION_MS / 1000 : SESSION_DURATION_MS / 1000;
-      response.headers.set('Set-Cookie', buildSessionCookie(newToken, maxAge, isSecure));
-    }
-  }
-  return response;
-}
+// addSessionRenewalCookie 同批删除（audit n-01）：续期 cookie 现直接在各端点的
+// Response 上设置（logout/auth/device 等），本函数全仓零调用，属死代码。
+// 其中「绝对寿命上限内静默跳过续期」的语义已由 validateSessionToken 的
+// firstIssuedAt 透传 + 判活端点不续期（P2-29）覆盖。
 
 export const requestLog: MiddlewareHandler = async (c, next) => {
   const start = Date.now();

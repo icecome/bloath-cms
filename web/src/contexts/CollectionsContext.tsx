@@ -5,14 +5,12 @@ import { DEFAULT_MEDIA_PATH, DEFAULT_BRANCH_NAME } from '../lib/constants';
 
 interface CollectionConfig {
   paths: string[];
-  label: string;
   draftPath?: string;
   trashPath?: string;
 }
 
 const DEFAULT_COLLECTION_CONFIG: CollectionConfig = {
   paths: ['content/posts'],
-  label: '文章',
   draftPath: '.draft',
   trashPath: '.trash'
 };
@@ -55,7 +53,9 @@ function loadCollectionConfig(): CollectionConfig {
       if (parsed && !Array.isArray(parsed.paths)) {
         return { ...DEFAULT_COLLECTION_CONFIG, paths: parsed.paths ? [parsed.paths] : DEFAULT_COLLECTION_CONFIG.paths };
       }
-      return { ...DEFAULT_COLLECTION_CONFIG, ...parsed };
+      // 旧版存储可能含 label 字段：读取时剥掉，避免类型漂移（审计已判定零消费，P2 裁剪）
+      const { label: _legacyLabel, ...rest } = parsed ?? {};
+      return { ...DEFAULT_COLLECTION_CONFIG, ...rest };
     }
   } catch (err) {
     console.error('Failed to load collections config', err);

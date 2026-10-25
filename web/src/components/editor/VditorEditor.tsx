@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import { useEffect, useRef, useCallback, useLayoutEffect, useState } from 'react';
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
 
@@ -39,6 +39,8 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
   onInputRef.current = onInput;
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  // 初始化失败必须落到用户可见状态：写作主路径的静默空白是最危险的故障形态（P1-005）
+  const [initError, setInitError] = useState<string | null>(null);
 
   const initializeVditor = useCallback(() => {
     if (!editorRef.current || vditorRef.current) return;
@@ -56,6 +58,7 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
         lang: 'zh_CN',
         toolbar: (isMobile ? MOBILE_TOOLBAR : DESKTOP_TOOLBAR) as unknown as string[],
         after: () => {
+          setInitError(null);
           const content = contentRef.current;
           if (content) {
             instance.setValue(content);
@@ -69,8 +72,21 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
       vditorRef.current = instance;
     } catch (err) {
       console.error('Vditor 初始化失败：', err);
+      setInitError(err instanceof Error ? err.message : '编辑器初始化失败，请重试');
     }
   }, []);
+
+  const handleRetry = useCallback(() => {
+    // 销毁半初始化实例后重建；Vditor destroy 抛错时实例状态不可信，直接置空重建
+    try {
+      vditorRef.current?.destroy();
+    } catch {
+      // 忽略销毁异常（同卸载路径）
+    }
+    vditorRef.current = null;
+    setInitError(null);
+    initializeVditor();
+  }, [initializeVditor]);
 
   useEffect(() => {
     return () => {
@@ -89,6 +105,25 @@ export default function VditorEditor({ initialContent, onInput, onReady }: Vdito
     if (!editorRef.current || vditorRef.current) return;
     initializeVditor();
   }, [initializeVditor]);
+
+  if (initError) {
+    return (
+      <div className="h-full flex items-center justify-center" role="alert">
+        <div className="text-center p-8">
+          <p className="text-sm text-destructive mb-1">编辑器加载失败</p>
+          <p className="text-xs text-muted-foreground mb-4 max-w-xs break-all">{initError}</p>
+          <p className="text-xs text-muted-foreground mb-4">未保存内容仍在本页内存与本地草稿副本中，重试不会丢失。</p>
+          <button
+            type="button"
+            onClick={handleRetry}
+            className="px-4 py-2 text-sm bg-foreground text-white rounded-sm hover:bg-foreground/90 transition-colors"
+          >
+            重试
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return <div ref={editorRef} className="h-full" />;
 }

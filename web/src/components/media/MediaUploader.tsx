@@ -12,6 +12,8 @@ interface MediaUploaderProps {
   onUpload: (files: FileList | File[]) => void;
   /** 视频体积上限说明（GitHub 与 S3 不同，由调用方给出已格式化文案） */
   videoLimitHint?: string;
+  /** 拖入内容全部无法识别时回调（由调用方弹错误提示；不传则维持旧行为） */
+  onDropRejected?: () => void;
 }
 
 /** 可接受的扩展名：不用 image/*,video/*，因为要排除 mkv/avi 这类「选进来必然被拒」的格式 */
@@ -26,7 +28,7 @@ const MODES: Array<{ value: UploadMode; label: string; icon: typeof Minimize2 }>
 ];
 
 export function MediaUploader({
-  uploading, quality, mode, onModeChange, onUpload, videoLimitHint,
+  uploading, quality, mode, onModeChange, onUpload, videoLimitHint, onDropRejected,
 }: MediaUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -47,7 +49,12 @@ export function MediaUploader({
           // 拖入整个文件夹时 items 会包含目录条目（size=0 且无 type）：
           // 直接交出 files 会产生若干条无意义的「无法识别」错误
           const files = Array.from(e.dataTransfer.files).filter((f) => f.type !== '' || f.size > 0);
-          if (files.length > 0) onUpload(files);
+          if (files.length > 0) {
+            onUpload(files);
+          } else {
+            // 全被过滤（拖入文件夹/不识别类型）时必须给可见反馈，不能静默吞掉（P1-005）
+            onDropRejected?.();
+          }
         }}
         onClick={openPicker}
         onKeyDown={(e) => {

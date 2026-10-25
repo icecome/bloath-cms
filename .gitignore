@@ -50,3 +50,9 @@ coverage/
 .cloudflared/
 
 docs/
+
+# 数据库数据转储（含访客 PII：邮箱/IP/UA——audit P1-007 §7.8）
+# migrations/ 之外的 SQL 一律不入库；已移出追踪的历史转储仅本地保留
+cloudflare-worker/*.sql
+cloudflare-worker/data_split/
+!cloudflare-worker/src/db/migrations/

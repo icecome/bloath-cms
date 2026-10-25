@@ -6,8 +6,18 @@ import { openWithSecret, sealWithSecret } from './crypto.service';
 export const SESSION_DURATION_MS = 6 * 60 * 60 * 1000;
 export const TRUSTED_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
+// 会话绝对寿命上限（P2-29）：滑动续期可以把 6h 会话无限向后推——被窃取的
+// cookie 只要持续被 ping 就永不失效。首签时刻起 7 天后不再续期，强制重新登录。
+export const ABSOLUTE_SESSION_MS = 7 * 24 * 60 * 60 * 1000;
+
 // KV 设备名单：7 天无活动自动清理
 export const DEVICE_INACTIVE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// 设备活跃回写节流（audit M-P1）：距上次活跃超过该间隔才 upsert 设备记录。
+// KV 免费层每日 10 万写，authenticate 每请求一次 upsert 会把配额打满——
+// 打穿后同用 DEVICES_KV 的登出吊销（revokeSessions）写入也静默失败。
+// 代价仅是设备列表「最近活跃」精度从秒级降到分钟级。
+export const DEVICE_ACTIVE_WRITE_THROTTLE_MS = 10 * 60 * 1000;
 const DEVICE_KEY_PREFIX = 'device:';
 
 // 会话吊销门槛：key 为 revocation:{login}，值为时间戳。
@@ -68,12 +78,19 @@ export async function generateSessionToken(
   githubLogin: string,
   env: Env,
   deviceFingerprint?: string,
-  longLived = false
+  longLived = false,
+  /** 绝对寿命锚点（首签时刻）：续期时必须从旧 payload 透传，不得重置（P2-29） */
+  firstIssuedAt?: number
 ): Promise<string | Response> {
   const issuedAt = Date.now();
   const duration = longLived ? TRUSTED_DURATION_MS : SESSION_DURATION_MS;
   const expiresAt = issuedAt + duration;
-  const payload = JSON.stringify({ githubToken, githubLogin, expiresAt, deviceFingerprint, longLived, issuedAt });
+  const payload = JSON.stringify({
+    githubToken, githubLogin, expiresAt, deviceFingerprint, longLived, issuedAt,
+    // 旧 payload 无该字段：generateSessionToken 不传时取当前时刻（即首签）；
+    // 续期路径（addSessionRenewalCookie）必须显式透传原值
+    firstIssuedAt: firstIssuedAt ?? issuedAt,
+  });
 
   const secretKey = env.SESSION_SECRET;
   if (!secretKey) {
@@ -92,6 +109,8 @@ export interface SessionPayload {
   /** token 快照中的信任标记（最终以 KV 名单为准，见 middleware） */
   longLived: boolean;
   issuedAt: number;
+  /** 绝对寿命锚点：旧 payload 缺失时回退 issuedAt（P2-29） */
+  firstIssuedAt: number;
 }
 
 export async function validateSessionToken(
@@ -138,12 +157,19 @@ export async function validateSessionToken(
     const totalDuration = longLived ? TRUSTED_DURATION_MS : SESSION_DURATION_MS;
     const needsRenewal = remaining < totalDuration / 2;
 
+    // 绝对寿命锚点：旧 payload 缺失 firstIssuedAt 时回退 issuedAt（该会话已存活
+    // 时间未知但 ≤ 单期时长，回退不会错误延长绝对上限）
+    const firstIssuedAt = typeof sessionPayload.firstIssuedAt === 'number'
+      ? sessionPayload.firstIssuedAt
+      : issuedAt;
+
     return {
       githubToken: sessionPayload.githubToken,
       githubLogin: sessionPayload.githubLogin,
       needsRenewal,
       longLived,
-      issuedAt
+      issuedAt,
+      firstIssuedAt
     };
   } catch {
     return null;

@@ -1,11 +1,7 @@
-export interface BlogPushSetting {
-  enabled: boolean;
-  channelIds: number[];
-  emailEnabled: boolean;
-}
-
-const BLOG_PUSH_KEY = 'blog_push';
-const DEFAULT_SETTING: BlogPushSetting = { enabled: true, channelIds: [], emailEnabled: false };
+// app_settings 共享表的通用读写。
+// 历史：本文件曾承载 BlogPushSetting（留言模块推送配置），该模块下线后
+// 对应读写函数一并删除（audit m-04：全仓 grep 无调用点的死代码）。
+// 现存消费者：bufferConfig / mediaS3Config 两个配置服务。
 
 export async function getSettingRaw(db: D1Database, key: string): Promise<string | null> {
   const row = await db
@@ -23,25 +19,4 @@ export async function saveSettingRaw(db: D1Database, key: string, value: string)
     )
     .bind(key, value)
     .run();
-}
-
-export async function getBlogPushSetting(db: D1Database): Promise<BlogPushSetting> {
-  try {
-    const value = await getSettingRaw(db, BLOG_PUSH_KEY);
-    if (!value) return { ...DEFAULT_SETTING };
-    const parsed = JSON.parse(value) as Partial<BlogPushSetting>;
-    return {
-      enabled: parsed.enabled !== false,
-      channelIds: Array.isArray(parsed.channelIds)
-        ? parsed.channelIds.filter((n): n is number => Number.isInteger(n) && n > 0)
-        : [],
-      emailEnabled: parsed.emailEnabled === true,
-    };
-  } catch {
-    return { ...DEFAULT_SETTING };
-  }
-}
-
-export async function saveBlogPushSetting(db: D1Database, setting: BlogPushSetting): Promise<void> {
-  await saveSettingRaw(db, BLOG_PUSH_KEY, JSON.stringify(setting));
 }

@@ -6,7 +6,6 @@ import { useCallback, useMemo, useState, useEffect } from 'react';
 import { useRepo } from '../contexts/RepoContext';
 import {
   readPreviewStore,
-  writePreviewRecord,
   writePreviewRecords,
   removePreviewRecord,
   pruneAndPersist,
@@ -17,11 +16,7 @@ import {
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 
 export interface UseDraftPreviewsResult {
-  /** 当前仓库+分支的全部预发布记录（键为草稿路径） */
-  records: Record<string, DraftPreviewRecord>;
   /** 设置/更新一条预发布记录 */
-  setPreview: (item: EnhancedFileItem, previewTarget: string) => void;
-  /** 批量设置 */
   setPreviewBatch: (entries: ReadonlyArray<{ item: EnhancedFileItem; previewTarget: string }>) => void;
   /** 取消一条预发布 */
   cancelPreview: (path: string) => void;
@@ -43,12 +38,6 @@ export function useDraftPreviews(): UseDraftPreviewsResult {
       return;
     }
     setRecords(readPreviewStore(selectedRepo).records);
-  }, [selectedRepo]);
-
-  const setPreview = useCallback((item: EnhancedFileItem, previewTarget: string) => {
-    if (!selectedRepo) return;
-    const store = writePreviewRecord(selectedRepo, item.path, buildPreviewRecord(item, previewTarget));
-    setRecords(store.records);
   }, [selectedRepo]);
 
   const setPreviewBatch = useCallback(
@@ -95,11 +84,9 @@ export function useDraftPreviews(): UseDraftPreviewsResult {
   }, [records]);
 
   return useMemo<UseDraftPreviewsResult>(() => ({
-    records,
-    setPreview,
     setPreviewBatch,
     cancelPreview,
     pruneOrphansFor,
     applyTo,
-  }), [records, setPreview, setPreviewBatch, cancelPreview, pruneOrphansFor, applyTo]);
+  }), [setPreviewBatch, cancelPreview, pruneOrphansFor, applyTo]);
 }

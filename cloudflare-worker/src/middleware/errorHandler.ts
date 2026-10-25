@@ -15,7 +15,8 @@ export const errorHandler = (err: Error, c: Context<HonoEnv>): Response => {
     return c.json(error(ErrorCode.VALIDATION_ERROR, err.message), err.statusCode as ContentfulStatusCode);
   }
   if (err instanceof ZodError) {
-    const message = err.errors[0]?.message || '请求参数校验失败';
+    // zod v4：errors 访问器更名 issues（v3 的 .errors 是 .issues 的别名）
+    const message = err.issues[0]?.message || '请求参数校验失败';
     return c.json(error(ErrorCode.VALIDATION_ERROR, message), 400);
   }
   console.error('[errorHandler] 未捕获异常：', err);

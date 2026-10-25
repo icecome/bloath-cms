@@ -12,6 +12,8 @@ interface BufferState {
   configLoading: boolean;
   changes: BufferChangeItem[];
   changesCount: number;
+  /** 变更清单最近一次刷新失败（数据为上次结果，不代表缓冲为空） */
+  changesError: boolean;
   publishing: boolean;
   showPublishDialog: boolean;
 }
@@ -31,6 +33,7 @@ export function BufferProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<BufferConfigPublic | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
   const [changes, setChanges] = useState<BufferChangeItem[]>([]);
+  const [changesError, setChangesError] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
 
@@ -50,6 +53,7 @@ export function BufferProvider({ children }: { children: ReactNode }) {
   const refreshChanges = useCallback(async () => {
     if (!selectedRepo || !config?.enabled) {
       setChanges([]);
+      setChangesError(false);
       return;
     }
     try {
@@ -59,8 +63,12 @@ export function BufferProvider({ children }: { children: ReactNode }) {
         branch: selectedRepo.branch,
       });
       setChanges(result.items);
-    } catch {
-      setChanges([]);
+      setChangesError(false);
+    } catch (err) {
+      // 失败必须与「缓冲为空」区分：归零会让侧栏显示 0 条待发布，
+      // 博主以为没变更而跳过发布（数据仍在 S3，只是延迟上线），P1-007 §7.4
+      console.error('[buffer] 变更清单刷新失败，保留上次结果：', err);
+      setChangesError(true);
     }
   }, [selectedRepo, config?.enabled]);
 
@@ -111,13 +119,14 @@ export function BufferProvider({ children }: { children: ReactNode }) {
     configLoading,
     changes,
     changesCount: changes.length,
+    changesError,
     publishing,
     showPublishDialog,
     refreshConfig,
     refreshChanges,
     publish,
     setShowPublishDialog,
-  }), [config, configLoading, changes, publishing, showPublishDialog, refreshConfig, refreshChanges, publish]);
+  }), [config, configLoading, changes, changesError, publishing, showPublishDialog, refreshConfig, refreshChanges, publish]);
 
   return <BufferContext.Provider value={value}>{children}</BufferContext.Provider>;
 }

@@ -63,7 +63,6 @@ export default function TrashPage() {
   const [permanentDeleteConfirm, setPermanentDeleteConfirm] = useState(false);
   const [singleDeleteFile, setSingleDeleteFile] = useState<EnhancedFileItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
 
   const availableDirs = filterValidDirs(config.paths || []);
 
@@ -88,7 +87,6 @@ export default function TrashPage() {
       addToast({ message: `恢复失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
-      setProgress(null);
     }
   };
 
@@ -105,20 +103,20 @@ export default function TrashPage() {
         userName: user?.login
       });
       addToast({ message: `已永久删除 ${file.name}`, type: 'success' });
+      // 永久删除同样必须失效缓存（P2-14）：漏掉会让快照/内存缓存残留已删文件
+      clearCache(selectedRepo);
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
       addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
-      setProgress(null);
     }
   };
 
   const handleBulkRestore = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0 || !restoreTarget.trim()) return;
     setActionLoading(true);
-    setProgress({ current: 0, total: 0 });
     try {
       const filesToRestore = files.filter((f) => selectedFiles.has(f.path));
       // 批量恢复合并为单 commit；同名文件去重目标名避免覆盖
@@ -145,14 +143,12 @@ export default function TrashPage() {
       addToast({ message: `恢复失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
-      setProgress(null);
     }
   };
 
   const handleBulkPermanentDelete = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0) return;
     setActionLoading(true);
-    setProgress({ current: 0, total: 0 });
     try {
       const filesToDelete = files.filter((f) => selectedFiles.has(f.path));
       // 批量永久删除合并为单 commit
@@ -167,13 +163,14 @@ export default function TrashPage() {
       addToast({ message: `已永久删除 ${filesToDelete.length} 个文件`, type: 'success' });
       setSelectedFiles(new Set());
       setPermanentDeleteConfirm(false);
+      // 同单文件永久删除：批量删除也必须失效缓存（P2-14）
+      clearCache(selectedRepo);
       const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
       setFiles(updatedFiles);
     } catch (err) {
       addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
-      setProgress(null);
     }
   };
 
@@ -253,7 +250,7 @@ export default function TrashPage() {
               aria-label="按文件名或路径筛选回收站"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus:border-primary transition-colors"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
             />
           </div>
         </div>
@@ -261,23 +258,9 @@ export default function TrashPage() {
         {/* 批量操作工具栏：并入同一行容器，与筛选框同级 */}
         {selectedFiles.size > 0 && (
           <div className="flex items-center gap-2 flex-wrap px-4 md:px-8 py-2.5 border-b border-border-subtle bg-accent/40">
-              {progress ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-24 h-2 bg-accent rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-foreground/60 rounded-full transition-all duration-300"
-                      style={{ width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` }}
-                    />
-                  </div>
-                  <span className="text-sm text-muted-foreground">
-                    处理中 {progress.current}/{progress.total}
-                  </span>
-                </div>
-              ) : (
-                <span className="text-sm text-muted-foreground bg-accent px-2.5 py-1.5 rounded-sm">
-                  已选 {selectedFiles.size} 个
-                </span>
-              )}
+              <span className="text-sm text-muted-foreground bg-accent px-2.5 py-1.5 rounded-sm">
+                已选 {selectedFiles.size} 个
+              </span>
               <button
                 onClick={handleSelectAll}
                 className="text-sm text-muted-foreground hover:text-foreground hover:bg-accent px-2.5 py-1.5 rounded-sm transition-colors"

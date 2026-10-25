@@ -12,12 +12,11 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "aws4fetch": "^1.0.20",
     "js-yaml": "^4.3.0",
     "lucide-react": "^1.21.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router-dom": "^6.28.0",
+    "react-router-dom": "^7.18.4",
     "smol-toml": "^1.8.0",
     "vditor": "^3.10.8"
   },

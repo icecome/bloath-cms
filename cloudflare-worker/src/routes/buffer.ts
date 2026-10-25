@@ -4,6 +4,7 @@ import type { HonoEnv } from '../env';
 import { ErrorCode } from '../lib/error-codes';
 import { success, error } from '../lib/response';
 import { requireAuth, type AuthResult } from '../middleware/sessionAuth';
+import { writeLimitAfterAuth } from '../middleware/writeLimit';
 import { isSafePathParam, safeJsonParse, MAX_CONTENT_SIZE } from '../middleware/pathGuard';
 import {
   getBufferConfigPublic, saveBufferConfig, type BufferConfigInput,
@@ -17,9 +18,12 @@ import {
 } from '../services/buffer.service';
 import { publishBuffer, type PublishItem } from '../services/publish.service';
 import { GithubApiError } from '../services/github';
+import { gitBlobSha } from '../services/git-blob-sha';
 
 const bufferApp = new Hono<HonoEnv>();
 bufferApp.use('/api/buffer/*', requireAuth);
+// 限流必须挂在 requireAuth 之后：key 依赖 auth 中的 githubLogin（见 writeLimit.ts 头注释）
+bufferApp.use('/api/buffer/*', writeLimitAfterAuth);
 
 function auth(c: Context<HonoEnv>): AuthResult {
   return c.get('auth') as AuthResult;
@@ -74,23 +78,25 @@ bufferApp.put('/api/buffer/config', async (c: Context<HonoEnv>) => {
   }
   const { enabled, endpoint, region, bucket, accessKeyId, secretAccessKey, prefix } = body;
   if (typeof enabled !== 'boolean') return c.json(error(ErrorCode.VALIDATION_ERROR, 'enabled 须为布尔值'), 400);
+  // AK 打码下发后（P2-32），前端回传的 accessKeyId 为空表示沿用已存值
+  const existingForAk = await getBufferConfig(c.env);
+  const effectiveAk = accessKeyId || existingForAk?.accessKeyId || '';
   if (enabled) {
-    if (!endpoint || !bucket || !accessKeyId) {
+    if (!endpoint || !bucket || !effectiveAk) {
       return c.json(error(ErrorCode.VALIDATION_ERROR, 'endpoint、bucket 与 accessKeyId 不能为空'), 400);
     }
     if (!/^https?:\/\//.test(endpoint) || isBlockedS3Endpoint(endpoint)) {
       return c.json(error(ErrorCode.VALIDATION_ERROR, 'endpoint 须为公网 http(s) URL，不允许内网或本机地址'), 400);
     }
     // secretAccessKey 允许为空（沿用已存值），但首次启用必须提供
-    const existing = await getBufferConfig(c.env);
-    if (!secretAccessKey && !existing) {
+    if (!secretAccessKey && !existingForAk) {
       return c.json(error(ErrorCode.VALIDATION_ERROR, '首次启用须提供 secretAccessKey'), 400);
     }
   }
   try {
     await saveBufferConfig(c.env, {
       enabled, endpoint: endpoint || '', region, bucket: bucket || '',
-      accessKeyId: accessKeyId || '', secretAccessKey: secretAccessKey || '', prefix,
+      accessKeyId: effectiveAk, secretAccessKey: secretAccessKey || '', prefix,
     });
   } catch (err) {
     return c.json(error(ErrorCode.INTERNAL_ERROR, '配置保存失败'), 500);
@@ -148,8 +154,8 @@ bufferApp.post('/api/buffer/config/test', async (c: Context<HonoEnv>) => {
     // 避免仅对象级权限的凭证（如 R2 细粒度 token）在 HeadBucket 上被误判为连接失败
     const probeKey = `${prefix || 'tmp/blog'}/${rand || 'test'}/.keep`;
     await putObject({
-      enabled: true, endpoint: normalizedEndpoint, region: region || 'auto',
-      bucket, accessKeyId, secretAccessKey, prefix: prefix || 'tmp/blog', rand: rand || 'test',
+      endpoint: normalizedEndpoint, region: region || 'auto',
+      bucket, accessKeyId, secretAccessKey,
     }, probeKey, '');
     return c.json(success({ ok: true }, '连接成功'));
   } catch (err) {
@@ -220,6 +226,11 @@ bufferApp.put('/api/buffer/file', async (c: Context<HonoEnv>) => {
       baseSha,
       savedAt: Date.now(),
       publishTarget: resolvedTarget,
+      // write 条目记录内容 blob sha：发布时与远端比对实现幂等（P1-006）。
+      // 计算失败不阻断写入——预检对无 sha 条目按旧行为（总是推送）处理。
+      contentSha: op === 'write' && content
+        ? await gitBlobSha(content).catch(() => undefined)
+        : undefined,
     });
     return c.json(success({ path, op }, '已存入缓冲'));
   } catch (err) {

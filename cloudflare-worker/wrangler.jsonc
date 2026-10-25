@@ -10,6 +10,10 @@
     {
       "binding": "DEVICES_KV",
       "id": "${KV_NAMESPACE_ID}"
+    },
+    {
+      "binding": "CACHE_KV",
+      "id": "${CACHE_KV_NAMESPACE_ID}"
     }
   ],
   "d1_databases": [
@@ -22,6 +26,6 @@
   ],
   "vars": {
     "ENVIRONMENT": "production",
-    "CORS_ORIGIN": "https://blog.icecome.com"
+    "CORS_ORIGIN": "https://bloath.icecome.com"
   }
 }

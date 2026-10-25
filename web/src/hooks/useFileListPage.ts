@@ -10,7 +10,6 @@ interface UseFileListPageParams {
   basePath: string;
   selectedRepo: RepoInfo | null;
   user: User | null;
-  enabled?: boolean;
   onError?: (err: Error) => void;
 }
 
@@ -18,7 +17,6 @@ export function useFileListPage({
   basePath,
   selectedRepo,
   user,
-  enabled = true,
   onError,
 }: UseFileListPageParams) {
   const [files, setFiles] = useState<EnhancedFileItem[]>([]);
@@ -31,7 +29,7 @@ export function useFileListPage({
   onErrorRef.current = onError;
 
   useEffect(() => {
-    if (!selectedRepo || !user || !enabled) {
+    if (!selectedRepo || !user) {
       setFiles([]);
       setCurrentPage(1);
       return;
@@ -69,7 +67,7 @@ export function useFileListPage({
       });
 
     return () => { cancelled = true; };
-  }, [selectedRepo, user, basePath, enabled]);
+  }, [selectedRepo, user, basePath]);
 
   const filteredFiles = useMemo(() =>
     files.filter((f) =>

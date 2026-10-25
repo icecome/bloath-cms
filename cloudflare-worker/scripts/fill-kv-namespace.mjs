@@ -28,6 +28,9 @@ async function resolveId(envKey) {
 }
 
 const kvNamespaceId = await resolveId('KV_NAMESPACE_ID');
+// CACHE_KV 可选：树缓存用。未提供时部署脚本保留占位符会导致 wrangler 校验失败，
+// 因此缺省时直接去掉 CACHE_KV 绑定（worker 侧按 CACHE_KV 未绑定优雅降级）。
+const cacheKvNamespaceId = await resolveId('CACHE_KV_NAMESPACE_ID');
 
 if (!kvNamespaceId) {
   console.error(
@@ -45,6 +48,13 @@ if (!template.includes('${KV_NAMESPACE_ID}')) {
   process.exit(1);
 }
 template = template.replaceAll('${KV_NAMESPACE_ID}', kvNamespaceId);
+
+if (cacheKvNamespaceId) {
+  template = template.replaceAll('${CACHE_KV_NAMESPACE_ID}', cacheKvNamespaceId);
+} else {
+  console.warn('[fill-kv-namespace] 未提供 CACHE_KV_NAMESPACE_ID：移除树缓存 KV 绑定（getTree 将直连 GitHub，无缓存）');
+  template = template.replaceAll(/,\s*\{\s*"binding":\s*"CACHE_KV",\s*"id":\s*"\$\{CACHE_KV_NAMESPACE_ID\}"\s*\}/g, '');
+}
 
 await writeFile(outputPath, template);
 console.log(`[fill-kv-namespace] 已生成 ${outputPath}（KV Namespace ID 已注入）。`);

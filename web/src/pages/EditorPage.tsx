@@ -41,6 +41,8 @@ export default function EditorPage() {
   const navigate = useNavigate();
   const vditorInstanceRef = useRef<Vditor | null>(null);
   const saveSeqRef = useRef(0);
+  /** 保存同步锁：堵双击窗口（P2-11） */
+  const saveLockRef = useRef(false);
 
   const owner = searchParams.get('owner') || '';
   const repo = searchParams.get('repo') || '';
@@ -194,6 +196,14 @@ export default function EditorPage() {
   // ---------- 草稿本地自动保存（P1-4 防丢稿） ----------
   const draftRepoKey = useMemo(() => ({ owner, repo, branch }), [owner, repo, branch]);
 
+  /**
+   * 新建文章的副本键：currentFilePath 为空时（新建且未首存）用合成路径
+   * 参与防丢稿链路，否则 30s 节流 effect 与卸载落盘对新建文章永远不生效，
+   * 会话过期跳转登录页会整体蒸发未保存内容（P0-006）。
+   * 首存成功后按真实路径另行落盘/清除，合成键副本随 discardDraftBackup 清理。
+   */
+  const draftBackupPath = currentFilePath || (isNew ? `${config.draftPath || '.draft'}/.new-draft-local` : '');
+
   /** 节流写入本地副本：30s 窗口内的最后一次为准；组件卸载时立即落盘 */
   const scheduleDraftBackup = useCallback((copy: EditorDraftCopy) => {
     draftBackupStateRef.current = copy;
@@ -206,16 +216,17 @@ export default function EditorPage() {
     }, 30_000);
   }, [draftRepoKey]);
 
-  // 内容变化 → 重置节流；front-matter 与正文任一变化都触发（写同一个 ref，幂等）
+  // 内容变化 → 重置节流；front-matter 与正文任一变化都触发（写同一个 ref，幂等）。
+  // 新建文章（draftBackupPath 为合成键）同样覆盖：路径为空不再是跳过理由。
   useEffect(() => {
-    if (!hasLoadedOnce || !currentFilePath) return;
+    if (!hasLoadedOnce || !draftBackupPath) return;
     scheduleDraftBackup({
-      path: currentFilePath,
+      path: draftBackupPath,
       frontmatter,
       body: bodyContent,
       savedAt: Date.now(),
     });
-  }, [frontmatter, bodyContent, currentFilePath, hasLoadedOnce, scheduleDraftBackup]);
+  }, [frontmatter, bodyContent, draftBackupPath, hasLoadedOnce, scheduleDraftBackup]);
 
   // 卸载或切换仓库时：立即落盘 + 清定时器
   useEffect(() => {
@@ -230,6 +241,24 @@ export default function EditorPage() {
         draftBackupStateRef.current = null;
       }
     };
+  }, [draftRepoKey]);
+
+  // auth:expired 全局事件：ProtectedRoute 会立即跳登录页并卸载编辑器，
+  // 跳转前必须把内存中的最新草稿强制落盘（30s 节流窗口内的内容同样要保住）。
+  // 新建文章走合成键（draftBackupPath），同样覆盖。事件在 user 清空后触发，
+  // 本组件卸载 effect 也会跑一次——writeEditorDraft 幂等，双写无害。
+  useEffect(() => {
+    const flushOnAuthExpired = () => {
+      if (draftBackupTimerRef.current) {
+        clearTimeout(draftBackupTimerRef.current);
+        draftBackupTimerRef.current = null;
+      }
+      if (draftBackupStateRef.current) {
+        writeEditorDraft(draftRepoKey, draftBackupStateRef.current);
+      }
+    };
+    window.addEventListener('auth:expired', flushOnAuthExpired);
+    return () => window.removeEventListener('auth:expired', flushOnAuthExpired);
   }, [draftRepoKey]);
 
   /** 保存成功后清除本地副本（无未保存内容了） */
@@ -282,9 +311,14 @@ export default function EditorPage() {
 
   const handleSave = async () => {
     if (!user) return;
+    // 同步锁（P2-11）：冲突检查 await 期间 setSaving 尚未生效，双击 Ctrl+S
+    // 会两路写入。ref 读写同步，堵住该窗口（同 DraftsPage actionLockRef 范式）。
+    if (saveLockRef.current) return;
+    saveLockRef.current = true;
     // 缓冲配置未就绪时禁止写入：否则会静默走 GitHub，造成「S3 无文件却进了 .draft」
     if (bufferConfigLoading) {
       addToast({ message: '缓冲配置加载中，请稍候再保存', type: 'warning' });
+      saveLockRef.current = false;
       return;
     }
 
@@ -304,6 +338,9 @@ export default function EditorPage() {
     const validationError = validateFrontmatter(effectiveFm, profile);
     if (validationError) {
       addToast({ message: validationError, type: 'warning' });
+      // 校验失败早退同样必须释放保存锁：锁已在此前获取，泄漏会让本页
+      // 之后所有保存静默失效（仅 toast 提示、无任何请求发出）
+      saveLockRef.current = false;
       return;
     }
 
@@ -312,6 +349,7 @@ export default function EditorPage() {
       targetSlug = sanitizeSlug(resolved.fileStem);
     } catch (err) {
       addToast({ message: `URL 校验失败：${(err as Error).message}`, type: 'warning' });
+      saveLockRef.current = false;
       return;
     }
     const editorContent = bodyContent || vditorInstanceRef.current?.getValue();
@@ -321,7 +359,10 @@ export default function EditorPage() {
 
     // 保存前冲突检查：远端已变/已删时由用户决策是否覆盖（缓冲模式走 S3 baseSha，无需此检查）
     const noConflict = await confirmNoRemoteConflict(targetPath);
-    if (!noConflict) return;
+    if (!noConflict) {
+      saveLockRef.current = false;
+      return;
+    }
 
     setSaving(true);
     const seq = ++saveSeqRef.current;
@@ -352,6 +393,8 @@ export default function EditorPage() {
             syncUrlState(effectiveFm.url);
             discardDraftBackup(targetPath);
             if (isNew) {
+              // 首存前的合成键副本一并清除（P0-006）
+              discardDraftBackup(`${config.draftPath || '.draft'}/.new-draft-local`);
               const draftDir = config.draftPath || '.draft';
               setCurrentFilePath(`${draftDir}/${targetSlug}.md`);
               navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}&basePath=${encodeURIComponent(draftDir)}`);
@@ -395,7 +438,7 @@ export default function EditorPage() {
           { skipCi: !isContentLibraryArticle }
         );
 
-        await writeFile({
+        const writeResult = await writeFile({
           owner, repo, path: targetPath, content: fullContent,
           message: saveMessage, branch,
           sha: currentFileSha || undefined, userName: user?.login
@@ -403,9 +446,13 @@ export default function EditorPage() {
 
         if (seq === saveSeqRef.current) {
           syncUrlState(effectiveFm.url);
+          // 用回传的新 blob sha 更新本地基线：否则下一次保存携带旧 sha 必然 409（P0-005）
+          setCurrentFileSha(writeResult.sha || '');
           // 保存成功 → 清除本地防丢稿副本
           discardDraftBackup(targetPath);
           if (isNew) {
+            // 首存前的合成键副本（.new-draft-local）一并清除，避免下次打开弹恢复框
+            discardDraftBackup(`${config.draftPath || '.draft'}/.new-draft-local`);
             const draftDir = config.draftPath || '.draft';
             setCurrentFilePath(`${draftDir}/${targetSlug}.md`);
             navigate(`/editor/${targetSlug}?owner=${owner}&repo=${repo}&branch=${branch}&basePath=${encodeURIComponent(draftDir)}`);
@@ -422,6 +469,7 @@ export default function EditorPage() {
       }
     } finally {
       setSaving(false);
+      saveLockRef.current = false;
     }
   };
 

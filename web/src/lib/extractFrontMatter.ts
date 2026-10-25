@@ -1,5 +1,6 @@
 import { readFile, extractBatch } from './api';
 import { parseFrontmatterBody, FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } from './frontmatter';
+import { mapLimit } from './concurrency';
 import type { ArticleFrontmatter, RepoInfo } from '../../../shared/types';
 import type { DraftPreviewState } from './draftPreviewStore';
 
@@ -160,9 +161,17 @@ async function batchFetchFallback(
 
 /**
  * 提取 front-matter 元数据。
- * 优先走 Worker 聚合端点（1 次往返，每块最多 100 个文件）；
+ * 优先走 Worker 聚合端点（每块 40 个文件、最多 3 块并行）；
  * 聚合请求失败时回退到单文件分批并发读取，保证端点未升级时功能可用。
+ *
+ * 块大小 40 与 worker 侧 /api/repos/extract 的 paths 上限一致（免费版
+ * Cloudflare 每调用 50 子请求预算：1 次 GitHub 树查询已占用，40 留出余量；
+ * 旧值 100 在免费版下第 51-100 个文件必然失败，触发逐文件回退风暴，P0-004）。
+ * 两端常量必须同步修改。
  */
+const EXTRACT_CHUNK_SIZE = 40;
+const EXTRACT_CHUNK_PARALLEL = 3;
+
 export async function extractFrontMatters(
   files: EnhancedFileItem[],
   repoInfo: RepoInfo,
@@ -171,12 +180,17 @@ export async function extractFrontMatters(
   if (files.length === 0) return [];
 
   const resolvedOptions = { ...DEFAULT_OPTIONS, ...options };
-  const CHUNK_SIZE = 100;
   const results = [...files];
 
+  // 预切全部块，再 mapLimit 并行提取；结果按原索引回填，顺序与入参一致。
+  // 旧实现 for-await 严格串行，2000 文件冷扫 = 20 次串行往返。
+  const chunks: Array<{ offset: number; files: EnhancedFileItem[] }> = [];
+  for (let i = 0; i < files.length; i += EXTRACT_CHUNK_SIZE) {
+    chunks.push({ offset: i, files: files.slice(i, i + EXTRACT_CHUNK_SIZE) });
+  }
+
   try {
-    for (let i = 0; i < files.length; i += CHUNK_SIZE) {
-      const chunk = files.slice(i, i + CHUNK_SIZE);
+    await mapLimit(chunks, EXTRACT_CHUNK_PARALLEL, async ({ offset, files: chunk }) => {
       const { results: extracted, errors: extractErrors } = await extractBatch({
         owner: repoInfo.owner,
         repo: repoInfo.repo,
@@ -202,9 +216,10 @@ export async function extractFrontMatters(
         const file = chunk[j];
         const hit = file ? byPath.get(file.path) : undefined;
         if (!file || !hit || !hit.raw) continue;
-        results[i + j] = applyExtracted(file, hit.raw, hit.format);
+        results[offset + j] = applyExtracted(file, hit.raw, hit.format);
       }
-    }
+      return null;
+    });
     return results;
   } catch (err) {
     console.error('[extractFrontMatter] 聚合提取失败，回退单文件读取：', err);

@@ -16,7 +16,8 @@ export interface BufferConfigPublic {
   endpoint: string;
   region: string;
   bucket: string;
-  accessKeyId: string;
+  /** AK 打码（尾 4 位）：真实 AK 不下发浏览器（P2-32） */
+  accessKeyIdMasked: string;
   secretAccessKeyMasked: string;
   prefix: string;
   rand: string;

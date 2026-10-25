@@ -11,11 +11,12 @@ import {
   SESSION_DURATION_MS, TRUSTED_DURATION_MS,
 } from '../services/session';
 import {
-  authenticate, buildSessionCookie, addSessionRenewalCookie,
+  authenticate, buildSessionCookie,
   checkCsrf, getSessionTokenFromCookie,
 } from '../middleware/sessionAuth';
 import { isAllowedFrontendUrl, resolveFrontendUrl, addSecurityHeaders } from '../middleware/cors';
 import { safeJsonParse } from '../middleware/pathGuard';
+import { isLoginAllowed } from '../services/owner-allowlist';
 
 const authApp = new Hono<HonoEnv>();
 
@@ -97,8 +98,14 @@ authApp.get('/api/auth/callback', async (c: Context<HonoEnv>) => {
   }
 
   const accessToken = await exchangeCode(code, c.env.GITHUB_CLIENT_SECRET, c.env.GITHUB_CLIENT_ID, workerUrl + '/api/auth/callback');
-  // 取登录名：既是会话身份凭据（管理接口白名单依赖它），也用于 /api/me 回显
+  // 取登录名：既是会话身份凭据，也用于所有者白名单比对与 /api/me 回显
   const user = await getUserInfo(accessToken);
+  // 所有者白名单（fail-closed）：单人使用姿态下，缓冲层 S3 配置与命名空间是部署者
+  // 全局资源，会话签发必须限制在白名单账号内。不匹配者不签发会话、立即重定向。
+  if (!isLoginAllowed(user.login, c.env)) {
+    console.warn(`[auth] 非白名单账号登录被拒绝：${user.login}`);
+    return c.redirect(`${storedFrontendUrl}/login?error=forbidden`, 302);
+  }
   const deviceFingerprint = await generateDeviceFingerprint(c.req.raw);
   let longLived = false;
   if (c.env.DEVICES_KV) {
@@ -162,8 +169,9 @@ authApp.get('/api/me', async (c: Context<HonoEnv>) => {
   const user = await getUserInfo(authResult.githubToken);
   const url = new URL(c.req.url);
   const isSecure = url.protocol === 'https:';
-  const response = c.json(success({ user: { login: user.login, avatar_url: user.avatar_url, name: user.name } }));
-  return await addSessionRenewalCookie(response, authResult, c.env, isSecure);
+  // 判活端点不再续期（P2-29）：前端 30min 复验原本会滑动推迟过期，
+  // 让被窃取的 cookie 在持续 ping 下永不过期。判活语义保留（200/401 不变）。
+  return c.json(success({ user: { login: user.login, avatar_url: user.avatar_url, name: user.name } }));
 });
 
 // POST /api/auth/device — 切换信任

@@ -40,6 +40,21 @@ export const MAX_EDITOR_DRAFT_COPIES = 50;
 import { resolveStorage, type StorageLike } from './storageLike.ts';
 export type { StorageLike };
 
+/** 写失败回调（配额满/隐私模式）：由应用层注入 toast（避免 store 反向依赖 UI）。
+ *  仅在状态从「可用」变「失败」时触发一次，恢复后重置。 */
+let onWriteFailure: (() => void) | null = null;
+let lastWriteFailed = false;
+
+export function setEditorDraftWriteFailureHandler(handler: (() => void) | null): void {
+  onWriteFailure = handler;
+}
+
+function notifyWriteFailure(): void {
+  if (lastWriteFailed) return;
+  lastWriteFailed = true;
+  onWriteFailure?.();
+}
+
 interface RepoScope {
   owner: string;
   repo: string;
@@ -107,8 +122,10 @@ export function writeEditorDraft(
 
     const next: EditorDraftStore = { version: STORE_VERSION, copies };
     store.setItem(editorDraftStorageKey(repo), JSON.stringify(next));
+    lastWriteFailed = false; // 写成功即恢复状态，下次失败可再次提示
   } catch (err) {
     console.warn('[editorDraft] 本地草稿写入失败（防丢稿功能降级）：', err);
+    notifyWriteFailure();
   }
 }
 

@@ -91,6 +91,11 @@ function TreeNode({
 
 function NewSubDirInput({ onConfirm }: { onConfirm: (name: string) => void }) {
   const [name, setName] = useState('');
+  // 与自由输入框同一套非法字符判定：目录名单段不允许 ..、反斜杠、控制字符或以 / 开头
+  // no-control-regex 豁免：这里的控制字符匹配是刻意的输入拒绝校验（路径不允许 \x00-\x1f），
+  // 规则针对的是「正则里误用控制字符做匹配目标」的场景，与本校验意图相反
+  // eslint-disable-next-line no-control-regex
+  const invalid = name.trim() === '' || /[\\\u0000-\u001f]/.test(name) || name.includes('..') || name.startsWith('/');
   return (
     <input
       type="text"
@@ -98,10 +103,11 @@ function NewSubDirInput({ onConfirm }: { onConfirm: (name: string) => void }) {
       autoFocus
       onChange={(e) => setName(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' && name.trim()) onConfirm(name.trim());
+        if (e.key === 'Enter' && !invalid) onConfirm(name.trim());
       }}
       placeholder="新目录名"
-      className="w-24 px-1.5 py-0.5 text-xs border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary"
+      aria-invalid={invalid || undefined}
+      className="w-24 px-1.5 py-0.5 text-xs border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     />
   );
 }
@@ -139,13 +145,27 @@ export function DirectoryTreePicker({ nodes, value, onChange, placeholder }: Pro
   };
 
   const handleCreate = (parentPath: string, name: string) => {
-    const clean = name.trim().replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
-    if (!clean || clean.includes('..')) return;
+    // 只判定不清洗：静默改写用户输入的路径会造成「看到的和建出来的不一致」，
+    // 非法值应在输入侧被拦下并给出明确提示
+    const clean = name.trim();
+    // eslint-disable-next-line no-control-regex -- 控制字符拒绝校验，同 NewSubDirInput 注释
+    if (!clean || /[\\\u0000-\u001f]/.test(clean) || clean.includes('..') || clean.startsWith('/')) return;
     const next = `${parentPath}/${clean}`;
     setExpanded((prev) => new Set(prev).add(parentPath));
     setCreating(false);
     onChange(next);
   };
+
+  // 自由输入的路径校验：trim 后非空，且不含 ..、反斜杠、控制字符、不以 / 开头。
+  // 只报错不代为修正——路径是会写进仓库的语义内容，静默清洗容易产出非预期目标
+  const trimmedValue = value.trim();
+  const inputInvalid =
+    trimmedValue === '' ||
+    value.includes('..') ||
+    /[\\]/.test(value) ||
+    // eslint-disable-next-line no-control-regex -- 控制字符拒绝校验，同 NewSubDirInput 注释
+    /[\u0000-\u001f]/.test(value) ||
+    value.startsWith('/');
 
   return (
     <div className="space-y-1.5">
@@ -188,8 +208,16 @@ export function DirectoryTreePicker({ nodes, value, onChange, placeholder }: Pro
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || '如 content/posts/sub'}
-        className="w-full px-2.5 py-1.5 text-sm border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus:border-primary transition-colors"
+        aria-invalid={inputInvalid || undefined}
+        className={`w-full px-2.5 py-1.5 text-sm border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors ${
+          inputInvalid ? 'border-destructive' : 'border-border'
+        }`}
       />
+      {inputInvalid && (
+        <p className="text-[11px] text-destructive" role="alert">
+          路径不能包含 ..、反斜杠或以 / 开头
+        </p>
+      )}
       {isNewDir && (
         <p className="text-[11px] text-muted-foreground">
           该目录当前不存在，发布时会自动创建

@@ -73,7 +73,7 @@ function PublishDialog() {
 }
 
 export function PublishButton() {
-  const { config, changesCount, publishing, showPublishDialog, setShowPublishDialog } = useBuffer();
+  const { config, changesCount, changesError, publishing, showPublishDialog, setShowPublishDialog, refreshChanges } = useBuffer();
 
   if (!config?.enabled) return null;
 
@@ -93,7 +93,24 @@ export function PublishButton() {
               {changesCount > 99 ? '99+' : changesCount}
             </span>
           )}
+          {changesError && (
+            <span
+              className="absolute -top-1.5 -left-1.5 w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-warning text-white rounded-full"
+              title="缓冲状态刷新失败：当前数字可能不是最新，点击重试"
+            >
+              !
+            </span>
+          )}
         </button>
+        {changesError && (
+          <button
+            type="button"
+            onClick={() => { void refreshChanges(); }}
+            className="w-full mt-1 text-[10px] text-warning hover:underline"
+          >
+            缓冲状态刷新失败，点击重试（当前数字可能过期）
+          </button>
+        )}
       </div>
       {showPublishDialog && <PublishDialog />}
     </>

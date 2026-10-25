@@ -8,6 +8,7 @@ export interface ToastItem {
   type: ToastType;
   onUndo?: () => void;
   undoText?: string;
+  /** 自动关闭毫秒数；0 = 不自动关闭（撤销类提示），缺省 4000 */
   duration?: number;
 }
 
@@ -42,7 +43,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       return next.length > MAX_TOASTS ? next.slice(next.length - MAX_TOASTS) : next;
     });
 
+    // duration: 0 = 不自动关闭（撤销类提示必须等到用户决策；P1-003：
+    // 旧实现 4s 自动消失，用户还没看清撤销按钮提示就没了，撤销记录随之作废）
     const duration = item.duration ?? DEFAULT_DURATION_MS;
+    if (duration <= 0) return;
     const timer = setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
       timersRef.current.delete(id);
@@ -54,6 +58,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     clearTimer(id);
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, [clearTimer]);
+
+  // 防丢稿副本写失败（localStorage 配额满/隐私模式）全局提示（P2-39）：
+  // store 层经 window 事件解耦，这里消费并只提示一次（事件源已做去重）
+  useEffect(() => {
+    const handler = () => {
+      addToast({
+        message: '本地草稿副本保存失败（存储空间不足或隐私模式）。请尽快手动保存文章，避免内容丢失。',
+        type: 'warning',
+        duration: 8000,
+      });
+    };
+    window.addEventListener('draft:storage-failed', handler);
+    return () => window.removeEventListener('draft:storage-failed', handler);
+  }, [addToast]);
 
   useEffect(() => {
     const timers = timersRef.current;

@@ -58,17 +58,23 @@ export function GlobalSearchDialog({ open, onClose, repo, contentPaths, draftPat
   const [indexSize, setIndexSize] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 打开时聚焦并建立索引
+  // 索引按 repo/paths/会话缓存：旧实现每次击键重建索引，冷会话下每键
+  // JSON.parse 整个 localStorage 快照（数千条），useDeferredValue 只是缓冲不消除（P2-21）
+  const indexedItems = useMemo(
+    () => (open ? collectIndexedItems(repo, contentPaths) : []),
+    [open, repo, contentPaths]
+  );
+
+  // 打开时聚焦并显示索引规模
   useEffect(() => {
     if (open) {
       setTerms('');
       setResults([]);
-      const items = collectIndexedItems(repo, contentPaths);
-      setIndexSize(items.length);
+      setIndexSize(indexedItems.length);
       // 焦点：Modal 自身会抢一次，这里在下一帧补
       requestAnimationFrame(() => inputRef.current?.focus());
     }
-  }, [open, repo, contentPaths]);
+  }, [open, indexedItems]);
 
   // 输入即搜（数据全在内存，无需防抖；条目多时 useDeferredValue 缓冲输入法逐字）
   const deferredTerms = useDeferredValue(terms);
@@ -78,9 +84,8 @@ export function GlobalSearchDialog({ open, onClose, repo, contentPaths, draftPat
       setResults([]);
       return;
     }
-    const items = collectIndexedItems(repo, contentPaths);
-    setResults(searchEntries(items, deferredTerms));
-  }, [deferredTerms, open, repo, contentPaths]);
+    setResults(searchEntries(indexedItems, deferredTerms));
+  }, [deferredTerms, open, indexedItems]);
 
   const openResult = (result: GlobalSearchResult) => {
     onClose();

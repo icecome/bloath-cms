@@ -21,7 +21,8 @@ export interface BufferConfigPublic {
   endpoint: string;
   region: string;
   bucket: string;
-  accessKeyId: string;
+  /** AK 打码（尾 4 位）：audit P2-32——GET 响应明文回显 accessKeyId 扩大了泄露面 */
+  accessKeyIdMasked: string;
   secretAccessKeyMasked: string; // 仅展示尾 4 位
   prefix: string;
   rand: string;
@@ -121,7 +122,7 @@ export async function getBufferConfigPublic(env: Env): Promise<BufferConfigPubli
       endpoint: parsed.endpoint || '',
       region: parsed.region || 'auto',
       bucket: parsed.bucket || '',
-      accessKeyId: parsed.accessKeyId || '',
+      accessKeyIdMasked: maskSecret(parsed.accessKeyId || ''),
       secretAccessKeyMasked: masked,
       prefix: parsed.prefix || DEFAULT_PREFIX,
       rand: parsed.rand || '',

@@ -1,10 +1,9 @@
 // 媒体库列表加载（共享 hook）：媒体库页与「从媒体库选择」对话框共用同一份分流逻辑。
 //
 // 为什么需要抽出来：存储后端不同 → 数据通道不同，但「列表」语义相同：
-//   · S3 兼容图床：浏览器直连 ListObjectsV2（s3MediaClient），URL 走 publicBaseUrl，
-//     不经过 Worker，也不需要登录会话（凭据在 MediaConfig.s3）。
-//   · GitHub 四种形态：Worker 代理 Trees API（getTree），URL 由 CDN 模板拼装，
-//     需要登录会话。
+//   · S3 兼容图床：经 Worker 代理 /api/media/s3/objects（P1-001：凭据已迁服务端），
+//     URL 走 publicBaseUrl 拼装。
+//   · GitHub 四种形态：Worker 代理 Trees API（getTree），URL 由 CDN 模板拼装。
 // 分流放在这一层，UI 层就不再写 sourceType 分支。
 //
 // 历史原因：MediaPickerDialog 只写了 GitHub 通道（getTree + mediaCdnUrl），而 S3 源下
@@ -21,7 +20,7 @@ import { useCollections } from '../contexts/CollectionsContext';
 import { useRepo } from '../contexts/RepoContext';
 import { resolveMediaSource, mediaCdnUrl } from '../lib/resolveMediaSource';
 import { s3ListObjects, s3PublicUrl } from '../lib/s3MediaClient';
-import { s3MediaPrefix } from '../lib/resolveS3MediaSource';
+import { getMediaS3Config } from '../lib/mediaS3Api';
 import { sortByLastModified } from '../lib/sortFiles';
 import {
   IMAGE_EXT_RE,
@@ -81,8 +80,23 @@ export function useMediaLibrary(
     [mediaConfig, selectedRepo]
   );
   const isS3Source = mediaConfig.sourceType === 's3';
-  const s3Config = mediaConfig.s3;
-  const s3Prefix = useMemo(() => s3MediaPrefix(mediaConfig), [mediaConfig]);
+  const s3View = mediaConfig.s3; // 仅外链基址（publicBaseUrl）；凭据已迁 Worker（P1-001）
+  // S3 前缀由 Worker 侧配置持有；列举时经代理使用服务端前缀，此处仅作缓存键
+  const [s3Prefix, setS3Prefix] = useState('');
+
+  // S3 源挂载时探测服务端配置：未配置时列表保持空 + 提示文案（替代旧本地字段校验）
+  useEffect(() => {
+    if (!isS3Source) return;
+    let cancelled = false;
+    getMediaS3Config()
+      .then((cfg) => {
+        if (cancelled) return;
+        if (cfg) setS3Prefix(cfg.prefix || '');
+        else if (!silentProbeRef.current) setError('请在设置页完成 S3 图床配置');
+      })
+      .catch(() => { if (!cancelled) setError('S3 图床配置读取失败，请稍后重试'); });
+    return () => { cancelled = true; };
+  }, [isS3Source]);
 
   const [items, setItems] = useState<MediaLibraryItem[]>([]);
   const [repoFilePaths, setRepoFilePaths] = useState<Set<string>>(new Set());
@@ -91,11 +105,13 @@ export function useMediaLibrary(
 
   // 陈旧响应防护：每次加载自增序号，落地前比对；同时用于卸载后阻止 setState
   const requestIdRef = useRef(0);
+  // S3 配置探测失败只提示一次（避免 load 循环里反复 setError）
+  const silentProbeRef = useRef(false);
 
   const load = useCallback(
     async (silent = false): Promise<MediaLibraryItem[] | null> => {
       if (!source.configured) return null;
-      // S3 走浏览器直连（凭据在本地配置），GitHub 通道才需要会话
+      // S3 通道走 Worker 代理（会话鉴权在代理层），GitHub 通道才需要本地登录态判断
       if (!isS3Source && !user) return null;
 
       const requestId = ++requestIdRef.current;
@@ -108,8 +124,8 @@ export function useMediaLibrary(
         /** 未过滤的原始条目：名称/路径/URL 三要素 */
         let all: MediaFile[];
 
-        if (isS3Source && s3Config) {
-          const entries = await s3ListObjects(s3Config, s3Prefix);
+        if (isS3Source) {
+          const entries = await s3ListObjects(s3View ?? { publicBaseUrl: '' }, s3Prefix);
           all = entries
             .filter((e) => kindOf(e.key) !== null)
             .map((e) => ({
@@ -118,7 +134,7 @@ export function useMediaLibrary(
               // S3 无 blob sha：以 lastModified 作变更标识（与 MediaPage 一致）
               sha: String(e.lastModified),
               size: e.size,
-              url: s3PublicUrl(s3Config, e.key) || '',
+              url: s3PublicUrl(s3View ?? { publicBaseUrl: '' }, e.key) || '',
               lastModified: e.lastModified,
             }));
         } else {
@@ -150,7 +166,7 @@ export function useMediaLibrary(
 
         // 注册 CDN builder：缩略图路径 → URL（mediaUtils 不反向依赖 React 上下文）
         registerCdnUrlBuilder((path: string) =>
-          isS3Source && s3Config ? s3PublicUrl(s3Config, path) : mediaCdnUrl(source, mediaConfig, path)
+          isS3Source ? s3PublicUrl(s3View ?? { publicBaseUrl: '' }, path) : mediaCdnUrl(source, mediaConfig, path)
         );
 
         // 展示项：剔除派生产物（thumb-*）与类型不匹配的文件，再按更新时间倒序
@@ -177,7 +193,7 @@ export function useMediaLibrary(
         if (requestId === requestIdRef.current && !silent) setLoading(false);
       }
     },
-    [source, isS3Source, s3Config, s3Prefix, user, mediaConfig, kind]
+    [source, isS3Source, s3View, s3Prefix, user, mediaConfig, kind]
   );
 
   // 作废在途请求（卸载/依赖变更/关闭对话框）：seq 自增后，旧请求落地时会因 id 不匹配被丢弃。
