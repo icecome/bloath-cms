@@ -8,6 +8,7 @@ import {
   VIDEO_MAX_BYTES_GITHUB, VIDEO_MAX_BYTES_S3,
 } from './mediaLimits.ts';
 import { sanitizeMediaFileName, extForFormat, videoEmbedSnippet } from './mediaUtils.ts';
+import { contentTypeForKey } from './s3MediaClient.ts';
 
 /** 构造带指定头部字节的假文件 */
 function makeFile(name: string, bytes: number[], size?: number): File {
@@ -204,5 +205,40 @@ describe('extForFormat / videoEmbedSnippet', () => {
     const snippet = videoEmbedSnippet('https://x/a.mp4');
     assert.ok(snippet.includes('controls'));
     assert.ok(snippet.includes('src="https://x/a.mp4"'));
+  });
+});
+
+describe('contentTypeForKey —— 与 extForFormat 的覆盖交叉校验', () => {
+  // 两张表必须同步：EXT_BY_FORMAT 决定落盘扩展名，contentTypeForKey 决定该扩展名的 MIME。
+  // 任一侧新增格式而另一侧漏加，会导致对象以 application/octet-stream 返回、浏览器拒播。
+  const ALL_FORMATS = ['jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'svg', 'mp4', 'm4v', 'webm', 'ogv', 'ogg', 'mov'];
+
+  for (const format of ALL_FORMATS) {
+    it(`${format} 的落盘扩展名有对应 MIME`, () => {
+      const ext = extForFormat(format);
+      const mime = contentTypeForKey(`a.${ext}`);
+      assert.notEqual(mime, 'application/octet-stream', `${format} → .${ext} 缺少 Content-Type 映射`);
+    });
+  }
+
+  it('ogv → video/ogg（本回归的原始报告项）', () => {
+    assert.equal(contentTypeForKey('clip.ogv'), 'video/ogg');
+  });
+
+  it('ogg → video/ogg', () => {
+    assert.equal(contentTypeForKey('clip.ogg'), 'video/ogg');
+  });
+
+  it('未知扩展名 → application/octet-stream', () => {
+    assert.equal(contentTypeForKey('a.bin'), 'application/octet-stream');
+  });
+
+  it('无扩展名 → application/octet-stream', () => {
+    assert.equal(contentTypeForKey('noext'), 'application/octet-stream');
+  });
+
+  it('扩展名大小写不敏感', () => {
+    assert.equal(contentTypeForKey('A.OGV'), 'video/ogg');
+    assert.equal(contentTypeForKey('A.MP4'), 'video/mp4');
   });
 });

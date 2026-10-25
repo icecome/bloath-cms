@@ -30,23 +30,15 @@ function client(cfg: S3MediaConfig): AwsClient {
   });
 }
 
-/** 上传文本/二进制（base64 已由调用方转 Blob） */
-export async function s3PutObject(cfg: S3MediaConfig, key: string, blob: Blob): Promise<void> {
-  const aws = client(cfg);
-  // Content-Type 必须显式设置：缺省时对象以 application/octet-stream 返回，
-  // 部分 CDN / 浏览器下 <video> 与 <img> 会直接拒绝渲染
-  const res = await aws.fetch(`${baseUrl(cfg)}/${encodeKey(key)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': blob.type || guessContentType(key) },
-    body: blob,
-  });
-  if (!res.ok) {
-    throw new Error(`S3 PutObject 失败（${res.status}）：${(await res.text().catch(() => '')).slice(0, 200)}`);
-  }
-}
+/** 无法从扩展名判定时的兜底 MIME */
+const OCTET_STREAM = 'application/octet-stream';
 
-/** 按扩展名兜底推断 Content-Type（Blob.type 为空时使用） */
-function guessContentType(key: string): string {
+/**
+ * 按扩展名推断 Content-Type。
+ * 覆盖范围需与 mediaUtils 的 EXT_BY_FORMAT 保持一致：那边决定落盘扩展名，
+ * 这边决定同一扩展名的 MIME；新增格式时两处同改（mediaUploadPlan.test.ts 有交叉校验）。
+ */
+export function contentTypeForKey(key: string): string {
   const ext = (key.split('.').pop() ?? '').toLowerCase();
   const map: Record<string, string> = {
     jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
@@ -54,7 +46,30 @@ function guessContentType(key: string): string {
     mp4: 'video/mp4', m4v: 'video/x-m4v', webm: 'video/webm',
     ogv: 'video/ogg', ogg: 'video/ogg', mov: 'video/quicktime',
   };
-  return map[ext] ?? 'application/octet-stream';
+  return map[ext] ?? OCTET_STREAM;
+}
+
+/** 上传文本/二进制（base64 已由调用方转 Blob） */
+export async function s3PutObject(cfg: S3MediaConfig, key: string, blob: Blob): Promise<void> {
+  const aws = client(cfg);
+  // Content-Type 必须显式设置：缺省时对象以 application/octet-stream 返回，
+  // 部分 CDN / 浏览器下 <video> 与 <img> 会直接拒绝渲染。
+  //
+  // 优先级：**落盘扩展名优先于 blob.type**。原因：上传管线用魔数嗅探纠正扩展名
+  // （见 mediaUploadPlan 的 plan.ext），但 File.type 仍是浏览器按**原**扩展名给的 MIME。
+  // 用户把 webm 改名成 .mp4 上传时，key 是 .webm 而 blob.type 是 video/mp4，
+  // 若优先取 blob.type 会写入与内容不符的 MIME，浏览器解码直接失败。
+  // key 无法识别时才回退 blob.type（如 canvas 产物、自定义扩展名）。
+  const byExt = contentTypeForKey(key);
+  const contentType = byExt === OCTET_STREAM ? (blob.type || OCTET_STREAM) : byExt;
+  const res = await aws.fetch(`${baseUrl(cfg)}/${encodeKey(key)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': contentType },
+    body: blob,
+  });
+  if (!res.ok) {
+    throw new Error(`S3 PutObject 失败（${res.status}）：${(await res.text().catch(() => '')).slice(0, 200)}`);
+  }
 }
 
 export async function s3DeleteObject(cfg: S3MediaConfig, key: string): Promise<void> {
