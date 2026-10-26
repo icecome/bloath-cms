@@ -234,18 +234,20 @@ export async function importWithRetry<T>(
  * 不用「永不 settle 的 promise」：即便待定 promise 无人引用时能被 GC 回收（实测可回收，
  * 不构成泄漏），一旦导航没有发生，界面会永远停在加载中且没有任何错误出口——
  * 这违反「禁止静默失败」。超时把控制权交回 UI，用户可以就地重试或手动刷新。
+ *
+ * 定时器**不做 unref**：unref 会让 Node 在「还有 promise 待定」时就把事件循环判空，
+ * Node 22 的 test runner 会据此把在飞的用例记成 cancelledByParent 并让整步退出码为 1
+ * （CI 实测踩过）。保持定时器被引用，等待关系对运行时可见。
  */
 function waitForReload<T>(lastError: unknown, timeoutMs: number): Promise<T> {
   return new Promise<T>((_, reject) => {
-    const timer: unknown = setTimeout(() => {
+    setTimeout(() => {
       reject(
         lastError instanceof Error
           ? lastError
           : new Error('页面重载没有生效'),
       );
     }, timeoutMs);
-    // Node 环境下未清理的定时器会拖住进程退出；浏览器返回 number，无此方法
-    (timer as { unref?: () => void }).unref?.();
   });
 }
 

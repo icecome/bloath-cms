@@ -124,23 +124,29 @@ describe('importWithRetry', () => {
     assert.equal(reloadCalls, 1);
   });
 
-  it('触发重载时保持加载态：窗口内 promise 不 settle', async () => {
-    const settled = await Promise.race([
-      importWithRetry(
-        async () => {
-          throw chunkError();
-        },
-        { retries: 0, sleep: sleepStub, reloadForNewVersion: () => true, reloadTimeoutMs: 1_000 },
-      ).then(
-        () => 'resolved',
-        () => 'rejected',
-      ),
-      new Promise<string>((resolve) => {
-        setTimeout(() => resolve('pending'), 20);
+  it('触发重载时保持加载态：窗口内不 settle，超时后落到错误态', async () => {
+    const outcome = importWithRetry(
+      async () => {
+        throw chunkError();
+      },
+      { retries: 0, sleep: sleepStub, reloadForNewVersion: () => true, reloadTimeoutMs: 60 },
+    ).then(
+      () => 'resolved' as const,
+      () => 'rejected' as const,
+    );
+
+    // 窗口内既不 resolve 也不 reject：UI 停在加载态，不闪失败提示
+    const early = await Promise.race([
+      outcome,
+      new Promise<'pending'>((resolve) => {
+        setTimeout(() => resolve('pending'), 10);
       }),
     ]);
+    assert.equal(early, 'pending');
 
-    assert.equal(settled, 'pending');
+    // 收尾必须等它 settle：留下待定 promise 时，Node 22 的 test runner 会在事件循环
+    // 排空后把剩余用例记成 cancelledByParent（CI 实测踩过，退出码 1）
+    assert.equal(await outcome, 'rejected');
   });
 
   it('重载没有生效：超时后以最后一次分块错误失败，让 UI 落到错误态', async () => {

@@ -79,7 +79,7 @@ npm run db:migrate:local     # D1 迁移（本地）
 npm run db:migrate:remote    # D1 迁移（生产）
 ```
 
-**本地与 CI 的差异**：CI（`.github/workflows/deploy.yml`）worker 测试只跑 `node --experimental-strip-types --test src/services/*.test.ts`——**新测试必须放 `src/services/` 下才会被 CI 执行**；本地 `npm test` 则是 `src/**/*.test.ts` 全量。
+**本地与 CI 的差异**：CI（`.github/workflows/deploy.yml`）worker 测试只跑 `node --experimental-strip-types --test src/services/*.test.ts`——**新测试必须放 `src/services/` 下才会被 CI 执行**；本地 `npm test` 则是 `src/**/*.test.ts` 全量。**Node 版本也不同**：workflow 固定 `node-version: '22'`，本地常见 v24，事件循环排空时机这类差异只在 CI 暴露（见 §9）。web/worker 测试都带 `--test-reporter=spec`，非 TTY 环境下不再吐 TAP 巨量日志。
 
 本地环境变量模板：`cloudflare-worker/.dev.vars.example`；部署与排错见 [docs/05-delivery/](docs/05-delivery/)。
 
@@ -242,6 +242,9 @@ const loadEditorPage = () => import('./pages/EditorPage'); // 模块级常量，
 | 生产站开着 Cloudflare Rocket Loader，把 `type="module"` 改写成 `<hash>-module` 后异步注入 | 入口脚本靠 `vite.config.ts` 的 `rocketLoaderOptOut` 插件补 `data-cfasync="false"`（Vite 构建会丢弃该属性，改完必须看 `dist/index.html`）；根治要关 zone 级开关（KI-08） |
 | Pages 对未命中的 `/assets/*` 回落 `index.html`（**200 + text/html**） | 旧分块的「404」被伪装成 200 HTML，浏览器只报 `Failed to fetch dynamically imported module`。排查缺块别只看状态码，看 `Content-Type`：拿到 `text/html` 就是回落 |
 | `web/public/_headers` 决定产物缓存语义 | `/assets/*` 必须 `immutable`，HTML 必须 `max-age=0`。写反（分块 `max-age=0`）＝每次进编辑器都要回源，部署一换哈希就取不到 |
+| 本地 Node v24、CI Node 22（workflow 固定 `node-version: '22'`） | 「事件循环何时排空」这类差异只在 CI 暴露（2026-10-26 run #161 因此红）。改异步相关代码/测试后，把 Node 22 目录前置到 `PATH` 跑一次 `npm test`；不要用「把 CI 升到 v24」来掩盖测试缺陷 |
+| 测试里留下未 settle 的 promise，或对兜底定时器 `unref()` | Node 22 的 test runner 见「事件循环已排空但用例 promise 待定」会把在飞用例批量记成 `cancelledByParent`、整步退出码 1。用例必须 `await` 到 settle；定时器保持被引用 |
+| 非 TTY 环境下 `node --test` 默认吐 TAP，一轮 2000 行把失败淹没 | `npm test` 与 workflow 的 worker 测试步都带 `--test-reporter=spec`（253 例 1938 行 → 426 行）；新增测试入口沿用该 flag |
 
 ## 10. 文档体系与维护
 

@@ -69,7 +69,7 @@ jobs:
       - name: Test worker
         run: |
           cd cloudflare-worker
-          node --experimental-strip-types --no-warnings --test src/services/*.test.ts
+          node --experimental-strip-types --no-warnings --test-reporter=spec --test src/services/*.test.ts
 
       - name: Build frontend
         env:
