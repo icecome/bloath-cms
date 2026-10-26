@@ -1,0 +1,19 @@
+# Cloudflare Pages 响应头。
+#
+# /assets/* 的文件名含内容哈希，内容变化必然换名，因此可以强缓存一年、无需回源：
+# 老标签页里已经拉到过的旧分块继续可用，不会因为一次新部署就失效。
+#
+# HTML 必须每次回源校验（max-age=0 + must-revalidate）：它记录了当前构建的分块哈希，
+# 一旦被缓存住，客户端就会去请求已经下线的旧分块。
+# 未命中路径的回落在 Pages 侧由 SPA 模式完成（无 404.html 时回 index.html），
+# 因此这里看不到它——旧分块取不到时返回的是 200 + text/html，表现为动态 import 失败。
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/
+  Cache-Control: public, max-age=0, must-revalidate

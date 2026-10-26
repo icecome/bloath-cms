@@ -35,7 +35,7 @@ bloath/
 │       ├── components/         # 组件，按域分子目录：drafts/editor/layout/media/settings/ui
 │       ├── contexts/           # 5 个 Context：Auth/Buffer/Collections/Repo/Toast
 │       ├── hooks/              # useAuth/useDraftPreviews/useFileListPage/useMediaLibrary
-│       ├── lib/                # 纯逻辑 + 测试（16 个 *.test.ts 与模块同目录）
+│       ├── lib/                # 纯逻辑 + 测试（17 个 *.test.ts 与模块同目录）
 │       ├── pages/              # 页面组件
 │       └── styles/
 ├── cloudflare-worker/          # API 网关（Hono on Workers）
@@ -70,7 +70,7 @@ npm run typecheck      # 前后端 tsc --noEmit
 npm run deploy         # 手动部署（构建前端 + wrangler deploy）；常规部署 push main 即可
 
 # web/ 内
-npm test               # Node 原生 test runner，跑 src/lib/*.test.ts（16 个文件）
+npm test               # Node 原生 test runner，跑 src/lib/*.test.ts（17 个文件）
 npm run lint           # eslint（仅 web/ 配置了 lint；worker 没有）
 
 # cloudflare-worker/ 内
@@ -194,6 +194,22 @@ Provider 的 `value` 若为对象字面量，用 `useMemo` 包装；其中每个
 - **禁止静默失败**：初始化失败、加载失败、配额已满必须显示给用户（重试状态 / ErrorBoundary / toast）。写作主路径上「失败但无任何提示」是最危险的故障形态，参考 `VditorEditor.tsx` 的 `initError` 重试状态。
 - 撤销类 toast 不自动关闭（`duration: 0`），撤销窗口 10 分钟。
 
+### 6.6 懒加载路由必须走 LazyRoute
+
+代码分块（`React.lazy` / `import()`）的加载失败是**部署期常态故障**，不是异常分支：
+
+```tsx
+const loadEditorPage = () => import('./pages/EditorPage'); // 模块级常量，引用必须稳定
+
+<Route path="editor/*" element={<LazyRoute load={loadEditorPage} fallback={<LoadingFallback />} />} />
+```
+
+**禁止直接使用 `React.lazy`**：它的 rejected payload 会被永久缓存，一次取块失败就导致该路由在本次会话内再也打不开，且错误冒到根 ErrorBoundary 会连布局外壳一起打死。`LazyRoute`（`web/src/components/ui/LazyRoute.tsx`）负责加载状态、就地重试与失败提示，恢复策略在 `web/src/lib/chunkRecovery.ts`：分块类错误重试 2 次 → 仍失败则整页换版本重载一次（60 秒冷却窗口 + 进程内兜底时间戳防刷新循环）→ 冷却窗口内再失败才显示「编辑器没能加载」。**重载发起后必须带兜底超时**（`reloadTimeoutMs`，默认 5 秒）：导航可能被拦截或 no-op，此时按最后一次分块错误失败、交回 UI 重试，不许返回永不 settle 的 promise——待定 promise 本身不构成泄漏（实测闭包可回收），但界面会永远停在加载中且没有错误出口。
+
+判断是否是分块失败用 `isChunkLoadError`（按三引擎错误文案匹配）；**模块内部求值抛出的异常不会被当成加载失败**，因此不会重放真正的代码缺陷。新增其它动态 `import()` 时同样用 `importWithRetry`，`main.tsx` 的 `unhandledrejection` 监听只是漏网兜底。
+
+**依据**：2026-10-26 编辑器偶发整页崩溃（[docs/04-issues/2026-10-26-editor-chunk-load-failure.md](docs/04-issues/2026-10-26-editor-chunk-load-failure.md)）。
+
 ## 7. 后端约定（cloudflare-worker/）
 
 - 分层：`src/routes` 端点、`src/services` 业务、`src/middleware` 中间件、`src/lib` 基础设施。
@@ -223,6 +239,9 @@ Provider 的 `value` 若为对象字面量，用 `useMemo` 包装；其中每个
 | Vditor 从 jsdmirror CDN 加载，镜像不可用时编辑器挂 | 已知长期风险（KI-03），raw 是回退；排查编辑器白屏先查 CDN 可达性 |
 | `wrangler dev` 连的 KV/D1 与生产不同 | 本地用 `--local`（miniflare 模拟）；`db:migrate:local` 只动本地库，remote 才是生产 |
 | clone 后没有 `docs/` | `.gitignore` 排除；文档只在本地工作站，链接失效时回到本机 `apps/Bloath/docs/` 找 |
+| 生产站开着 Cloudflare Rocket Loader，把 `type="module"` 改写成 `<hash>-module` 后异步注入 | 入口脚本靠 `vite.config.ts` 的 `rocketLoaderOptOut` 插件补 `data-cfasync="false"`（Vite 构建会丢弃该属性，改完必须看 `dist/index.html`）；根治要关 zone 级开关（KI-08） |
+| Pages 对未命中的 `/assets/*` 回落 `index.html`（**200 + text/html**） | 旧分块的「404」被伪装成 200 HTML，浏览器只报 `Failed to fetch dynamically imported module`。排查缺块别只看状态码，看 `Content-Type`：拿到 `text/html` 就是回落 |
+| `web/public/_headers` 决定产物缓存语义 | `/assets/*` 必须 `immutable`，HTML 必须 `max-age=0`。写反（分块 `max-age=0`）＝每次进编辑器都要回源，部署一换哈希就取不到 |
 
 ## 10. 文档体系与维护
 

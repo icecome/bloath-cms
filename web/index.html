@@ -17,6 +17,10 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- data-cfasync="false" 让 Cloudflare Rocket Loader 跳过入口模块脚本（该站开着
+         Rocket Loader，它会改写 type="module" 并异步重新注入，破坏模块执行上下文）。
+         构建时这条属性会被 Vite 丢弃，由 vite.config.ts 的 rocketLoaderOptOut 插件
+         在产物里重新打上，两处不要只改一处。 -->
+    <script type="module" data-cfasync="false" src="/src/main.tsx"></script>
   </body>
 </html>

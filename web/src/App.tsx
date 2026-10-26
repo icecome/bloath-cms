@@ -1,5 +1,4 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { AuthProvider } from './contexts/AuthContext';
 import { CollectionsProvider } from './contexts/CollectionsContext';
@@ -14,9 +13,11 @@ import TrashPage from './pages/TrashPage';
 import MediaPage from './pages/MediaPage';
 import SettingsPage from './pages/SettingsPage';
 import ToastContainer from './components/ui/ToastContainer';
+import LazyRoute from './components/ui/LazyRoute';
 import './styles/globals.css';
 
-const EditorPage = lazy(() => import('./pages/EditorPage'));
+// 模块级常量：LazyRoute 依赖其引用稳定，写成内联箭头函数会导致每次渲染重新拉取分块
+const loadEditorPage = () => import('./pages/EditorPage');
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -68,9 +69,7 @@ export default function App() {
                 <Route path="drafts" element={<DraftsPage />} />
                 <Route path="trash" element={<TrashPage />} />
                 <Route path="editor/*" element={
-                  <Suspense fallback={<LoadingFallback />}>
-                    <EditorPage />
-                  </Suspense>
+                  <LazyRoute load={loadEditorPage} fallback={<LoadingFallback />} />
                 } />
                 <Route path="media" element={<MediaPage />} />
                 <Route path="settings" element={<SettingsPage />} />
