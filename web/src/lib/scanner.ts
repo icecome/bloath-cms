@@ -1,5 +1,6 @@
 import { getTree } from './api';
 import { extractFrontMatters, type EnhancedFileItem } from './extractFrontMatter';
+import { sortByFrontMatterDate } from './sortFiles.ts';
 import {
   diffAgainstSnapshot,
   saveSnapshot,
@@ -90,7 +91,10 @@ export async function scanMdFilesWithStats(
 
   // 快照 diff：sha 未变且有元数据的文件直接复用，网络只处理变更部分
   const diff = diffAgainstSnapshot(repo, mdFiles);
-  const files = await extractAndMerge(mdFiles, diff, repo);
+
+  // 排序放在扫描出口：首页/草稿箱/回收站以及各页面动作后的重扫都消费本函数，
+  // 在出口统一排序后，调用点不必各自补一遍（漏一处就乱一处）。
+  const files = sortByFrontMatterDate(await extractAndMerge(mdFiles, diff, repo));
 
   saveSnapshot(repo, files);
 

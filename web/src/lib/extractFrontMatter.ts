@@ -3,6 +3,11 @@ import { parseFrontmatterBody, FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } 
 import { mapLimit } from './concurrency';
 import type { ArticleFrontmatter, RepoInfo } from '../../../shared/types';
 import type { DraftPreviewState } from './draftPreviewStore';
+import { parseDateToTimestamp } from './dateParse.ts';
+
+// 时间戳解析已抽到零依赖模块 dateParse.ts（供 sortFiles 单测直接加载），
+// 这里保留转出以兼容既有调用方。
+export { parseDateToTimestamp };
 
 /**
  * 文件来源：仓库 / 缓冲（未发布）/ 缓冲有改动 / 缓冲待删除
@@ -50,51 +55,6 @@ const DEFAULT_OPTIONS: Required<ExtractOptions> = {
   timeoutMs: 8000,
   maxRetries: 2,
 };
-
-/**
- * 将 Front Matter date 字段转换为时间戳
- * 支持格式：
- * - Date 对象：TOML 解析器会将日期解析为 Date 对象
- * - ISO 8601 字符串：「2026-07-07T12:00:00+08:00」
- * - 日期字符串：「2026-07-07」
- * - 完整日期：「Fri Mar 07 2025 18:00:00 GMT+0800」
- * - 时间戳：1688774400000
- */
-export function parseDateToTimestamp(dateValue?: string | number | Date): number {
-  if (!dateValue) return 0;
-
-  if (dateValue instanceof Date) return dateValue.getTime();
-
-  if (typeof dateValue === 'number') return dateValue;
-
-  if (typeof dateValue === 'string') {
-    const ts = new Date(dateValue).getTime();
-    if (!isNaN(ts)) return ts;
-
-    const dateMatch = dateValue.match(/(\d{4})[-/年](\d{1,2})[-/月]?(\d{1,2})?[\s日]?/);
-    if (dateMatch) {
-      const year = parseInt(dateMatch[1] ?? '', 10);
-      const month = parseInt(dateMatch[2] ?? '', 10) - 1;
-      if (isNaN(year) || isNaN(month)) return 0;
-      const day = dateMatch[3] ? parseInt(dateMatch[3], 10) : 1;
-      const fallbackTs = new Date(year, month, day).getTime();
-      if (!isNaN(fallbackTs)) return fallbackTs;
-    }
-
-    const compactMatch = dateValue.match(/(\d{8})/);
-    if (compactMatch) {
-      const num = parseInt(compactMatch[1] ?? '', 10);
-      if (isNaN(num)) return 0;
-      const year = Math.floor(num / 10000);
-      const month = Math.floor((num % 10000) / 100) - 1;
-      const day = num % 100;
-      const fallbackTs = new Date(year, month, day).getTime();
-      if (!isNaN(fallbackTs)) return fallbackTs;
-    }
-  }
-
-  return 0;
-}
 
 function applyExtracted(file: EnhancedFileItem, raw: string, format: 'yaml' | 'toml'): EnhancedFileItem {
   const parsed = parseFrontmatterBody(raw, format);

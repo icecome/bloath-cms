@@ -35,7 +35,7 @@ bloath/
 │       ├── components/         # 组件，按域分子目录：drafts/editor/layout/media/settings/ui
 │       ├── contexts/           # 5 个 Context：Auth/Buffer/Collections/Repo/Toast
 │       ├── hooks/              # useAuth/useDraftPreviews/useFileListPage/useMediaLibrary
-│       ├── lib/                # 纯逻辑 + 测试（17 个 *.test.ts 与模块同目录）
+│       ├── lib/                # 纯逻辑 + 测试（18 个 *.test.ts 与模块同目录）
 │       ├── pages/              # 页面组件
 │       └── styles/
 ├── cloudflare-worker/          # API 网关（Hono on Workers）
@@ -70,7 +70,7 @@ npm run typecheck      # 前后端 tsc --noEmit
 npm run deploy         # 手动部署（构建前端 + wrangler deploy）；常规部署 push main 即可
 
 # web/ 内
-npm test               # Node 原生 test runner，跑 src/lib/*.test.ts（17 个文件）
+npm test               # Node 原生 test runner，跑 src/lib/*.test.ts（18 个文件）
 npm run lint           # eslint（仅 web/ 配置了 lint；worker 没有）
 
 # cloudflare-worker/ 内
@@ -125,6 +125,9 @@ S3 凭据由 D1 加密存储（`services/mediaS3Config.service.ts`，AES-GCM）�
 
 **R9 D1 迁移不可逆。**
 `src/db/migrations/`（0001–0009）中已应用的迁移文件不得修改，回退方式是新增反向迁移；执行删表类迁移前先确认数据已导出。
+
+**R10 纯函数必须接返回值，禁止靠副作用调用。**
+`sortFiles.ts` 的 `sortByFrontMatterDate` / `sortByLastModified` 返回新数组（非破坏性），调用点必须 `const sorted = ...` 后再用于 `setState` / 写缓存。2026-09-09 把这两个函数从原地排序改成返回副本时调用点没同步，文章列表排序静默失效约 7 周（`useFileListPage.ts` 只调用不接收，编译与单测都发现不了）。列表排序**只在 `scanner.ts` 出口做一次**，调用点不再各自补排序；带排序/时间语义的纯逻辑必须配同目录 `.test.ts`，依赖较重时把纯函数抽成零依赖模块（范例 `lib/dateParse.ts`：`sortFiles.ts` 原先的值导入缺 `.ts` 后缀，node ESM 下无法加载，导致长期没有测试）。
 
 ## 6. 前端约定（web/）
 
@@ -245,6 +248,10 @@ const loadEditorPage = () => import('./pages/EditorPage'); // 模块级常量，
 | 本地 Node v24、CI Node 22（workflow 固定 `node-version: '22'`） | 「事件循环何时排空」这类差异只在 CI 暴露（2026-10-26 run #161 因此红）。改异步相关代码/测试后，把 Node 22 目录前置到 `PATH` 跑一次 `npm test`；不要用「把 CI 升到 v24」来掩盖测试缺陷 |
 | 测试里留下未 settle 的 promise，或对兜底定时器 `unref()` | Node 22 的 test runner 见「事件循环已排空但用例 promise 待定」会把在飞用例批量记成 `cancelledByParent`、整步退出码 1。用例必须 `await` 到 settle；定时器保持被引用 |
 | 非 TTY 环境下 `node --test` 默认吐 TAP，一轮 2000 行把失败淹没 | `npm test` 与 workflow 的 worker 测试步都带 `--test-reporter=spec`（253 例 1938 行 → 426 行）；新增测试入口沿用该 flag |
+| 工具函数改成返回副本（非破坏性）后，靠副作用调用的调用点静默失效 | 列表排序失效事故（2026-09-09 → 10-27）：`sortByFrontMatterDate` 改为 `[...files].sort()` 后 `useFileListPage` 仍只调用不接收，排序空转 7 周且无任何报错。处置见 R10；排序统一在 `scanner.ts` 出口做，`sortFiles.test.ts` 锁死「非空操作 / 全序 / 输入顺序无关」，背景见 [docs/04-issues/2026-10-27-article-list-sort-regression.md](docs/04-issues/2026-10-27-article-list-sort-regression.md) |
+| 比较器混用两把排序键（有日期按日期、无日期按文件名）不是合法比较器 | 不满足传递性，可构造 A<B<C<A 的环，V8 TimSort 输出依赖输入顺序且局部逆序。排序键必须**每个元素算一个单键**（`timeSortKey`），同键用 path 兜底 |
+| 缺 `.ts` 后缀的值导入让模块在 node ESM 下无法加载，从而写不出单测 | `sortFiles.ts` 原先 `from './extractFrontMatter'`（值导入）→ `ERR_MODULE_NOT_FOUND`，排序逻辑 4 个月无测试覆盖。纯逻辑应抽到零依赖模块并显式带 `.ts` 后缀导入（范例 `lib/dateParse.ts`） |
+| YAML/TOML 的时间字段未必是字符串 | `date: 20260707` 被 js-yaml 解析成数字 `20260707`，旧实现原样当毫秒用 → 排序键落到 1970。解析器必须区分 8 位 YYYYMMDD / 10 位秒 / 13 位毫秒（`lib/dateParse.ts`） |
 
 ## 10. 文档体系与维护
 

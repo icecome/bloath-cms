@@ -1,6 +1,7 @@
 // 草稿列表与缓冲清单合并：以草稿路径为范围，缓冲项作为「未发布」变体并入
 import type { BufferChangeItem } from './bufferApi';
 import type { EnhancedFileItem, FileSource } from './extractFrontMatter';
+import { compareByTimeDesc } from './sortFiles.ts';
 
 /**
  * 合并规则（缓冲优先）：
@@ -46,7 +47,9 @@ export function mergeDraftList(
         sha: prev?.sha || '',
         type: 'file',
         frontmatter: prev?.frontmatter,
-        sortDate: prev?.sortDate ?? c.savedAt,
+        // 用 || 而非 ??：parseDateToTimestamp 解析失败返回 0 而不是 undefined，
+        // 0 不是 nullish，?? 会让 savedAt 永远不生效（草稿排序键恒为 0、沉底）。
+        sortDate: prev?.sortDate || c.savedAt,
         lastModified: c.savedAt,
         source: existed ? ('buffer-modified' as FileSource) : ('buffer' as FileSource),
         publishTarget: c.publishTarget,
@@ -76,6 +79,6 @@ export function mergeDraftList(
   }
 
   const items = Array.from(result.values());
-  items.sort((a, b) => (b.sortDate ?? b.lastModified ?? 0) - (a.sortDate ?? a.lastModified ?? 0));
-  return items;
+  // 与列表页共用同一比较器（时间字段 → 文件名时间 → path），避免出现第三套排序方言
+  return items.sort(compareByTimeDesc);
 }

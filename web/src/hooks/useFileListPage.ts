@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { scanMdFiles } from '../lib/scanner';
-import type { EnhancedFileItem } from '../lib/extractFrontMatter';
-import { getCachedFiles, setCachedFiles } from '../lib/fileCache';
-import { sortByFrontMatterDate } from '../lib/sortFiles';
-import { PAGE_SIZE } from '../lib/constants';
+import { scanMdFiles } from '../lib/scanner.ts';
+import type { EnhancedFileItem } from '../lib/extractFrontMatter.ts';
+import { getCachedFiles, setCachedFiles } from '../lib/fileCache.ts';
+import { sortByFrontMatterDate } from '../lib/sortFiles.ts';
+import { PAGE_SIZE } from '../lib/constants.ts';
 import type { RepoInfo, User } from '../../../shared/types';
 
 interface UseFileListPageParams {
@@ -49,9 +49,12 @@ export function useFileListPage({
     scanMdFiles(selectedRepo, basePath)
       .then((scannedFiles) => {
         if (cancelled) return;
-        sortByFrontMatterDate(scannedFiles);
-        setCachedFiles(selectedRepo, basePath, scannedFiles);
-        setFiles(scannedFiles);
+        // sortByFrontMatterDate 非破坏性（返回新数组），必须接住返回值：
+        // 旧写法 `sortByFrontMatterDate(scannedFiles);` 靠副作用调用，
+        // 在排序函数改为返回副本后静默失效，列表退回 getTree 原始顺序。
+        const sorted = sortByFrontMatterDate(scannedFiles);
+        setCachedFiles(selectedRepo, basePath, sorted);
+        setFiles(sorted);
       })
       .catch((err: Error) => {
         if (cancelled) return;
