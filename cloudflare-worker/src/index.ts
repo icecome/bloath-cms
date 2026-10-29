@@ -9,6 +9,7 @@ import authRoutes from './routes/auth';
 import reposRoutes from './routes/repos';
 import bufferRoutes from './routes/buffer';
 import mediaS3Routes from './routes/mediaS3';
+import mediaS3FileRoutes from './routes/mediaS3File';
 
 const app = new Hono<HonoEnv>();
 
@@ -70,6 +71,10 @@ app.route('/', authRoutes);
 app.route('/', reposRoutes);
 app.route('/', bufferRoutes);
 app.route('/', mediaS3Routes);
+// 公开只读文件代理（/media-file/*）：不走 /api/* 前缀——它是给浏览器 <img>/视频
+// 直链用的公开路由，不需要也不应有登录态；同时避开上面对 /api/media/s3/* 的
+// no-store 中间件（该路由恰恰需要边缘长缓存）。
+app.route('/', mediaS3FileRoutes);
 
 // 非 API 请求：重定向到前端
 app.all('*', (c) => {

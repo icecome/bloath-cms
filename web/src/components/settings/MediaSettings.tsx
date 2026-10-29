@@ -215,9 +215,25 @@ function MediaS3Settings() {
                 // 外链模板非敏感，仍存 mediaConfig（随配置同步；repoConfigSync 已剥离凭据）
                 updateMediaConfig({ s3: { publicBaseUrl: e.target.value.trim() } });
               }}
-              placeholder="https://cdn.example.com/{path}"
+              placeholder="https://bucket.cos.ap-beijing.myqcloud.com/{path}"
               className={s3InputClass}
             />
+            {/* 常见误填即时提示：基址是桶的公网域名模板，不是仓库/站点地址；{bucket} 会被替换为空 */}
+            {publicBaseUrl && !publicBaseUrl.includes('{path}') && !publicBaseUrl.includes('{key}') && (
+              <p className="mt-1 text-[11px] text-destructive" role="alert">
+                基址缺少 {'{path}'} 占位符：所有外链都会指向基址本身而非图片文件，请写成 桶的公网域名/{'{path}'}
+              </p>
+            )}
+            {publicBaseUrl.includes('{bucket}') && (
+              <p className="mt-1 text-[11px] text-destructive" role="alert">
+                {'{bucket}'} 会被替换成空串（外链配置不含桶名），请把完整桶域名直接写进基址
+              </p>
+            )}
+            {/github\.com\//.test(publicBaseUrl) && (
+              <p className="mt-1 text-[11px] text-destructive" role="alert">
+                这里应填 S3 桶的公网访问域名（不是 GitHub 仓库地址），如 https://bucket.cos.ap-beijing.myqcloud.com/{'{path}'}
+              </p>
+            )}
           </div>
           <div className="flex gap-2 pt-1">
             <button

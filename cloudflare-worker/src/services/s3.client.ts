@@ -53,6 +53,19 @@ export async function getObject(cfg: S3Credentials, key: string): Promise<string
   return res.text();
 }
 
+/**
+ * 取对象的原始 S3 响应（不判状态码），供公开文件代理路由流式回传。
+ * 与 getObject 的差异：保留 body 流与响应头（Content-Type/ETag/Accept-Ranges），
+ * 支持透传 Range（206 由调用方判定），文本版会把二进制按 UTF-8 读坏。
+ */
+export async function fetchObjectResponse(cfg: S3Credentials, key: string, range?: string): Promise<Response> {
+  const aws = client(cfg);
+  return aws.fetch(`${baseUrl(cfg)}/${encodeKey(key)}`, {
+    method: 'GET',
+    headers: range ? { range } : undefined,
+  });
+}
+
 export async function deleteObject(cfg: S3Credentials, key: string): Promise<void> {
   const aws = client(cfg);
   const res = await aws.fetch(`${baseUrl(cfg)}/${encodeKey(key)}`, { method: 'DELETE' });
