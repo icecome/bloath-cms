@@ -88,7 +88,15 @@ mediaS3App.put('/api/media/s3/config', async (c: Context<HonoEnv>) => {
     }
     if (err instanceof S3Error) {
       console.error(`[mediaS3] 连接探测失败 ${err.op} ${err.status}:`, err.detail);
-      return c.json(error(ErrorCode.VALIDATION_ERROR, `配置已保存，但连接探测失败（${err.status}），请检查凭据与权限`), 400);
+      // 405 属方法层拒绝（先于签名校验）：多为 endpoint 填了 CDN/静态网站域名或网关不支持写入
+      const hint =
+        err.status === 405
+          ? '；405 表示写入被网关拒绝——endpoint 若为 CDN/静态网站域名（仅允许 GET）或非 S3 协议服务会这样，请改用 S3 API 端点'
+          : '';
+      return c.json(
+        error(ErrorCode.VALIDATION_ERROR, `配置已保存，但连接探测失败（${err.status}），请检查凭据与权限${hint}`),
+        400,
+      );
     }
     return respondError(c, err);
   }
@@ -135,7 +143,13 @@ mediaS3App.post('/api/media/s3/config/test', async (c: Context<HonoEnv>) => {
     );
     return c.json(success({ ok: true }, '连接成功'));
   } catch (err) {
-    const msg = err instanceof S3Error ? err.message : `连接异常：${(err as Error).message}`;
+    // 同 PUT /config 探测：405 是方法层拒绝，指向 endpoint 选错而非凭据
+    const hint =
+      err instanceof S3Error && err.status === 405
+        ? '（405：endpoint 若为 CDN/静态网站域名会拒绝写入，请使用 S3 API 端点）'
+        : '';
+    const msg =
+      err instanceof S3Error ? err.message + hint : `连接异常：${(err as Error).message}`;
     return c.json(error(ErrorCode.VALIDATION_ERROR, msg), 400);
   }
 });
