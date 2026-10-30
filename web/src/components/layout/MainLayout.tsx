@@ -5,7 +5,7 @@ import { useCollections } from '../../contexts/CollectionsContext';
 import { getRepos } from '../../lib/api';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { detectFrameworks, type DetectedRepo } from '../../lib/detectFramework';
-import { pullRepoConfig, sanitizeSyncedConfig } from '../../lib/repoConfigSync';
+import { pullRepoConfig, sanitizeSyncedConfig, isSafeToOverwriteMedia } from '../../lib/repoConfigSync';
 import { filterValidDirs } from '../../lib/path';
 import { PublishButton } from './PublishButton';
 import { DeployBadge } from './DeployBadge';
@@ -516,7 +516,17 @@ export default function MainLayout() {
           });
         }
         if (clean.media) {
-          updateMediaConfig(clean.media);
+          // 护栏：仓库配置若是并行多桶上线前的旧结构（无 backends），直接用它会
+          // 把本地 backends 清空 → 用户已保存的 S3/图床后端在切仓库后集体消失。
+          // 仅在仓库侧确实提供了非空 backends 时才覆盖，否则保留本地配置并留日志。
+          if (isSafeToOverwriteMedia(clean.media)) {
+            updateMediaConfig(clean.media);
+          } else {
+            console.info(
+              '[MainLayout] 仓库 .bloath/config.json 的 media 未包含 backends，'
+              + '已跳过覆盖以保留本地媒体仓库配置；如需以仓库为准请先在设置页推送一次配置'
+            );
+          }
         }
       })
       .catch((err) => console.error('拉取仓库配置失败：', err));

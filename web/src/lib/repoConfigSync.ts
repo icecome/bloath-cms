@@ -3,6 +3,11 @@
 import { readFile, writeFile } from './api';
 import { HttpError } from './http';
 import type { MediaConfig } from '../../../shared/types';
+// 纯逻辑（凭据剥离 + 覆盖护栏）抽至零依赖模块：本文件含 IO 与无后缀 import，
+// node 测试链路无法加载（见 repoConfigSyncPure.ts 头注释与 AGENTS.md R10）
+import { stripLegacyS3Credentials } from './repoConfigSyncPure.ts';
+
+export { stripLegacyS3Credentials, isSafeToOverwriteMedia } from './repoConfigSyncPure.ts';
 
 export const REPO_CONFIG_PATH = '.bloath/config.json';
 
@@ -22,15 +27,21 @@ export interface RepoSyncedConfig {
  * 推送前剥离 S3 凭据：.bloath/config.json 会随仓库提交，博客仓库通常是公开的，
  * AccessKey/Secret 一旦写入即公开泄露。剥离是双保险——上游 SettingsPage 传入的
  * mediaConfig 含完整 s3 对象，此处是凭据进仓库的最后一道闸（P1-004 审计已核验）。
+ *
+ * 实现见 repoConfigSyncPure.ts（零依赖、可单测）。
  */
 function stripMediaCredentials(media: MediaConfig): MediaConfig {
-  if (!media.s3) return media;
-  const { s3: _s3, ...rest } = media;
-  return rest as MediaConfig;
+  return stripLegacyS3Credentials(media);
 }
 
-/** 拉取侧凭据剥离：旧版本推送的 config.json 可能已含 s3 凭据，
- *  不得让其进入本地 mediaConfig（否则污染 localStorage 明文存储） */
+/**
+ * 拉取侧凭据剥离：旧版本推送的 config.json 可能已含 s3 凭据，
+ *  不得让其进入本地 mediaConfig（否则污染 localStorage 明文存储）。
+ *
+ * 与 stripMediaCredentials 对称：只剥 media.s3 扁平字段，**不得动 backends**——
+ * backends 是并行多桶的运行态真相，仓库侧本就不含凭据，
+ * 误删会让用户所有媒体仓库在切仓库后集体消失。
+ */
 export function sanitizeSyncedConfig(config: RepoSyncedConfig): RepoSyncedConfig {
   if (!config.media?.s3) return config;
   const { media, ...rest } = config;

@@ -1,7 +1,15 @@
 // 媒体库工具函数与常量
 
 export const MEDIA_PAGE_SIZE = 40;
-export const MAX_IMAGE_DIM = 4096;
+/**
+ * 压缩重编码时最长边上限（px）。
+ *
+ * 历史教训（2026-10-30 CDN 裂图根因复检）：原值 4096 会导致 12MP 手机照片
+ * 压缩后仍有 300-600KB，在第三方镜像（jsdmirror.cn 实测单流 ~510KB/s、
+ * 回源限流 403/429）上大图必然超时裂图。博客展示宽度通常 ≤1200px，
+ * 1920 保留 2x 高分屏余量；配合 q77 WebP，中位图可从 ~420KB 降到 ~100KB。
+ */
+export const MAX_IMAGE_DIM = 1920;
 export const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 /** 列表缩略图最长边（px） */
 export const THUMBNAIL_DIM = 400;
@@ -146,18 +154,34 @@ function getCdnUrlForPath(path: string, fallback: string): string {
   return cdnUrlBuilder ? cdnUrlBuilder(path) : fallback;
 }
 
+/**
+ * 计算压缩后的目标尺寸（纯函数，可单测）。
+ *
+ * 规则：最长边超过 MAX_IMAGE_DIM 时按最长边等比缩放，否则原样返回。
+ * 短边至少 1px（极端长宽比下 Math.round 可能得到 0，Canvas 拒绝 0 尺寸）。
+ */
+export function scaledImageSize(
+  width: number,
+  height: number,
+  maxDim: number = MAX_IMAGE_DIM
+): { width: number; height: number } {
+  if (width <= 0 || height <= 0) return { width: 1, height: 1 };
+  const longest = Math.max(width, height);
+  if (longest <= maxDim) return { width, height };
+  const scale = maxDim / longest;
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
 export function compressImage(file: File, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      let { naturalWidth: width, naturalHeight: height } = img;
-      if (width > MAX_IMAGE_DIM || height > MAX_IMAGE_DIM) {
-        const scale = MAX_IMAGE_DIM / Math.max(width, height);
-        width = Math.round(width * scale);
-        height = Math.round(height * scale);
-      }
+      const { width, height } = scaledImageSize(img.naturalWidth, img.naturalHeight);
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');

@@ -1,6 +1,7 @@
-import { X, Copy, Check, Trash2 } from 'lucide-react';
+import { X, Copy, Check, Trash2, ImageOff } from 'lucide-react';
 import type { MediaFile } from '../../lib/mediaUtils';
 import { formatSize, formatDate, isVideoName } from '../../lib/mediaUtils';
+import { cdnImageErrorHandler } from '../../lib/cdnFallback';
 import Modal from '../ui/Modal';
 
 interface MediaPreviewDialogProps {
@@ -50,11 +51,31 @@ export function MediaPreviewDialog({
               className="max-w-full max-h-[60vh] bg-black"
             />
           ) : (
-            <img
-              src={file.url}
-              alt={file.name}
-              className="max-w-full max-h-[60vh] object-contain"
-            />
+            <div className="flex flex-col items-center justify-center gap-2">
+              <img
+                src={file.url}
+                alt={file.name}
+                className="max-w-full max-h-[60vh] object-contain"
+                onError={(e) =>
+                  // 全部候选域失败时显示友好占位，避免预览区完全空白。
+                  // 占位 div 靠 flex 布局：remove('hidden') 后必须补 add('flex')，
+                  // 否则 display 回落为 block，flex-col/items-center 全部失效
+                  cdnImageErrorHandler(e, (img) => {
+                    const holder = img.nextElementSibling;
+                    if (holder instanceof HTMLElement) {
+                      holder.classList.remove('hidden');
+                      holder.classList.add('flex');
+                    }
+                  })
+                }
+              />
+              {/* 占位：默认 hidden；CDN 全失败时由 onGiveUp 切换为 flex 显示 */}
+              <div className="hidden flex-col items-center gap-2 py-8 text-muted-foreground">
+                <ImageOff className="w-10 h-10" />
+                <p className="text-xs">图片加载失败，所有 CDN 源均不可用</p>
+                <code className="text-[11px] font-mono text-muted-foreground/70 max-w-full break-all px-4">{file.url}</code>
+              </div>
+            </div>
           )}
         </div>
         <div className="px-4 py-3 border-t border-border space-y-2">

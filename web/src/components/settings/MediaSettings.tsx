@@ -300,6 +300,8 @@ function S3BackendForm({ backend, onChange }: { backend: MediaBackend; onChange:
   const { addToast } = useToast();
   const [remote, setRemote] = useState<MediaS3ConfigPublic | null>(null);
   const [loaded, setLoaded] = useState(false);
+  /** 读取失败标记：区分「服务端确实没配」与「读取出错」，避免两者都表现为空白表单 */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [form, setForm] = useState({ endpoint: '', region: 'auto', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '' });
@@ -308,6 +310,7 @@ function S3BackendForm({ backend, onChange }: { backend: MediaBackend; onChange:
 
   useEffect(() => {
     let cancelled = false;
+    setLoadError(null);
     getMediaS3Config(backend.id)
       .then((cfg) => {
         if (cancelled) return;
@@ -317,7 +320,14 @@ function S3BackendForm({ backend, onChange }: { backend: MediaBackend; onChange:
         }
         setLoaded(true);
       })
-      .catch(() => { if (!cancelled) setLoaded(true); });
+      .catch((err) => {
+        if (cancelled) return;
+        // 读取失败必须显式告知：否则用户看到的是一个全空表单，
+        // 无法区分「从未配置」与「配置还在但读不回来」（2026-10-30 反馈的现象）
+        setRemote(null);
+        setLoadError(err instanceof Error ? err.message : '读取配置失败');
+        setLoaded(true);
+      });
     return () => { cancelled = true; };
     // backend.id 变化时重新加载该后端的凭据
   }, [backend.id]);
@@ -379,6 +389,16 @@ function S3BackendForm({ backend, onChange }: { backend: MediaBackend; onChange:
         </p>
       ) : (
         <>
+          {loadError && (
+            <p className="text-[11px] text-destructive" role="alert">
+              读取服务端配置失败：{loadError}。下方表单为空白属读取异常，非「未配置」；请重试或重新保存。
+            </p>
+          )}
+          {!loadError && !remote && (
+            <p className="text-[11px] text-muted-foreground">
+              尚未配置该图床凭据。填写下方表单后保存；凭据加密存于服务端，浏览器不持有明文。
+            </p>
+          )}
           {remote && (
             <p className="text-[11px] text-muted-foreground">
               已配置：{remote.endpoint} / {remote.bucket}（AK {remote.accessKeyIdMasked}）。留空 Secret 表示沿用已存密钥。

@@ -27,6 +27,7 @@ import {
   MEDIA_PAGE_SIZE,
   type MediaFile
 } from '../lib/mediaUtils';
+import { cdnImageErrorHandler } from '../lib/cdnFallback';
 import { MediaUploadDialog } from '../components/media/MediaUploadDialog';
 import { MediaPreviewDialog } from '../components/media/MediaPreviewDialog';
 import { DeleteConfirmDialog } from '../components/media/DeleteConfirmDialog';
@@ -81,8 +82,12 @@ const MediaCard = memo(function MediaCard({
             loading="lazy"
             decoding="async"
             onError={(e) => {
-              (e.target as HTMLImageElement).style.display = 'none';
-              (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+              // 换域重试由 cdnImageErrorHandler 内部处理；全部候选域失败时
+              // 经 onGiveUp 降级为占位图标（与 MediaPickerDialog 一致的体验）
+              cdnImageErrorHandler(e, (img) => {
+                img.style.display = 'none';
+                img.nextElementSibling?.classList.remove('hidden');
+              });
             }}
           />
         ) : null}

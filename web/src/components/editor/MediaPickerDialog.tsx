@@ -9,10 +9,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMediaLibrary, type MediaKindFilter } from '../../hooks/useMediaLibrary';
 import { listImageUrlFor, isVideoName } from '../../lib/mediaUtils';
+import { cdnImageErrorHandler } from '../../lib/cdnFallback';
 import { computeShiftRange } from '../../lib/selectionRange';
 import type { MediaLibraryItem } from '../../hooks/useMediaLibrary';
 import Modal from '../ui/Modal';
-import { X, Loader2, AlertCircle, Play, Check, Search, Upload } from 'lucide-react';
+import { X, Loader2, AlertCircle, Play, Check, Search, Upload, ImageOff } from 'lucide-react';
 
 /** 类型过滤：image=只列图片（默认）；video=只列视频；all=混排 */
 export type MediaPickerAccept = MediaKindFilter;
@@ -231,13 +232,29 @@ export default function MediaPickerDialog({
                       <Play className="w-6 h-6" />
                     </span>
                   ) : (
-                    <img
-                      src={listImageUrlFor(item, repoFilePaths)}
-                      alt={item.name}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                      decoding="async"
-                    />
+                    <>
+                      <img
+                        src={listImageUrlFor(item, repoFilePaths)}
+                        alt={item.name}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) =>
+                          // 全部候选域失败时由 onGiveUp 显示占位，避免方形缩略图区变空白
+                          // （cdnImageErrorHandler 自身只负责换域重试与隐藏 img）
+                          cdnImageErrorHandler(e, (img) => {
+                            const holder = img.nextElementSibling;
+                            if (holder instanceof HTMLElement) holder.classList.remove('invisible');
+                          })
+                        }
+                      />
+                      {/* 占位：与 img 绝对定位叠放（button 是 aspect-square，img 与占位
+                          若各占一行会撑破方形布局）。默认 invisible 不抢戏；
+                          img 加载成功时被完全覆盖，失败时 onGiveUp 移除 invisible 露出 */}
+                      <span className="absolute inset-0 flex items-center justify-center bg-accent text-muted-foreground invisible">
+                        <ImageOff className="w-6 h-6" />
+                      </span>
+                    </>
                   )}
                   <span className="absolute inset-x-0 bottom-0 px-1 py-0.5 bg-black/55 text-[10px] text-white truncate text-left">
                     {item.name}
