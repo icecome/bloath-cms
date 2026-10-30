@@ -6,7 +6,7 @@
 //
 // 分键约定：`media_s3_config:<backendId>`；历史单桶键 `media_s3_config` 仅在
 // 读取缺省 backend 时作为迁移源（幂等：原键保留，重复读不再触发）。
-import { normalizeBackendId } from './mediaBackendId.ts';
+import { normalizeBackendId, DEFAULT_BACKEND_ID } from './mediaBackendId.ts';
 
 /** 分键前缀 */
 export const S3_CONFIG_KEY_PREFIX = 'media_s3_config';
@@ -36,7 +36,7 @@ export async function getStoredS3Config(
   if (value !== null) return value || null;
 
   // 分键缺失：仅缺省 id 才回退历史单桶键并迁移（显式 id 的 backend 不误读他人配置）
-  if (backendId === 'default') {
+  if (backendId === DEFAULT_BACKEND_ID) {
     const legacy = await store.get(LEGACY_CONFIG_KEY);
     if (legacy) {
       // 迁移 = 拷贝到分键；原键保留（迁移不可逆约定下不做破坏性删除，幂等）

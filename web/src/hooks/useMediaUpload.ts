@@ -29,6 +29,7 @@ import {
 import { transcodeMotionPhotoVideo, type TranscodeProgress } from '../lib/motionPhotoTranscode';
 import { mapLimit } from '../lib/concurrency';
 import { mediaCdnUrl } from '../lib/resolveMediaSource';
+import { resolveBackendSource } from '../lib/mediaBackendResolve';
 import {
   compressImage,
   blobToBase64,
@@ -41,7 +42,6 @@ import {
   type MediaFile,
 } from '../lib/mediaUtils';
 import type { MediaConfig } from '../../../shared/types';
-import type { ResolvedMediaSource } from '../lib/resolveMediaSource';
 
 export interface MediaUploadParams {
   /** 媒体库配置（质量、重名策略、模板来源、并行仓库列表） */
@@ -131,8 +131,14 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
       }
       const isS3Source = backend.kind === 's3';
       const s3View = { publicBaseUrl: backend.s3PublicBaseUrl || '', backendId: backend.id };
-      // GitHub 类后端的定位信息（owner/repo/branch/pathPrefix）
-      const source = resolveBackendSource(backend, selectedRepo);
+      // GitHub 类后端的定位信息（owner/repo/branch/pathPrefix）：
+      // 复用 mediaBackendResolve 的公共实现，避免与本文件外的解析逻辑分叉
+      const source = resolveBackendSource(backend.kind, selectedRepo, {
+        owner: backend.owner,
+        repo: backend.repo,
+        branch: backend.branch,
+        pathPrefix: backend.pathPrefix,
+      });
       /** 路径 → 外链 URL：S3 用 publicBaseUrl，其余用 CDN 模板 */
       const urlFor = (path: string): string =>
         isS3Source ? (s3PublicUrl(s3View, path) || '') : mediaCdnUrl(source, mediaConfig, path);
@@ -502,44 +508,4 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
   return {
     upload, uploading, error, success, transcodeNotice, clearError, clearSuccess,
   };
-}
-
-/**
- * 按 backend 定位信息解析上传路径（GitHub 类后端）。
- * S3 后端不参与（走对象存储 key 体系），返回空定位即可。
- * configured 固定 true：定位参数在设置页已校验，此处只做取值映射。
- */
-function resolveBackendSource(
-  backend: { kind: string; owner?: string; repo?: string; branch?: string; pathPrefix?: string },
-  selectedRepo: SelectedRepo | null
-): ResolvedMediaSource {
-  switch (backend.kind) {
-    case 'standalone':
-      return {
-        owner: backend.owner || '',
-        repo: backend.repo || '',
-        branch: backend.branch || 'main',
-        pathPrefix: '',
-        configured: true,
-      };
-    case 'repo-dir':
-      return {
-        owner: selectedRepo?.owner || '',
-        repo: selectedRepo?.repo || '',
-        branch: selectedRepo?.branch || 'main',
-        pathPrefix: (backend.pathPrefix || 'assets').replace(/^\/+|\/+$/g, ''),
-        configured: !!selectedRepo,
-      };
-    case 'image-branch':
-      return {
-        owner: selectedRepo?.owner || '',
-        repo: selectedRepo?.repo || '',
-        branch: backend.branch || 'assets',
-        pathPrefix: '',
-        configured: !!selectedRepo,
-      };
-    default:
-      // s3：对象存储不落在 GitHub 路径体系
-      return { owner: '', repo: '', branch: '', pathPrefix: '', configured: true };
-  }
 }

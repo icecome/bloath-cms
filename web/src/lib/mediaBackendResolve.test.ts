@@ -2,7 +2,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  resolveMediaSource, resolveMediaBackend, getBackend, enabledBackends,
+  resolveMediaSource, resolveMediaBackend, resolveBackendSource, getBackend, enabledBackends,
 } from './mediaBackendResolve.ts';
 import type { MediaConfig, SelectedRepo } from '../../../shared/types';
 
@@ -139,5 +139,37 @@ describe('getBackend / enabledBackends', () => {
       defaultBackendId: 'a',
     });
     assert.deepEqual(enabledBackends(c).map((b) => b.id), ['a']);
+  });
+});
+
+describe('resolveBackendSource（上传管线复用）', () => {
+  it('standalone 定位', () => {
+    const s = resolveBackendSource('standalone', repo, { owner: 'o', repo: 'r', branch: 'main' });
+    assert.equal(s.owner, 'o');
+    assert.equal(s.repo, 'r');
+    assert.equal(s.branch, 'main');
+    assert.equal(s.configured, true);
+  });
+
+  it('repo-dir 用选中仓库 + pathPrefix', () => {
+    const s = resolveBackendSource('repo-dir', repo, { pathPrefix: 'static/images' });
+    assert.equal(s.owner, 'me');
+    assert.equal(s.pathPrefix, 'static/images');
+  });
+
+  it('image-branch 用 branch 字段', () => {
+    const s = resolveBackendSource('image-branch', repo, { branch: 'assets' });
+    assert.equal(s.branch, 'assets');
+  });
+
+  it('s3 返回空定位', () => {
+    const s = resolveBackendSource('s3', repo, {});
+    assert.equal(s.owner, '');
+    assert.equal(s.configured, true);
+  });
+
+  it('repo-dir 无选中仓库时 configured=false', () => {
+    const s = resolveBackendSource('repo-dir', null, { pathPrefix: 'x' });
+    assert.equal(s.configured, false);
   });
 });

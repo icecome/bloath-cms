@@ -22,8 +22,13 @@ export interface ResolvedMediaSource {
   missingHint?: string;
 }
 
-/** 按 kind 解析单个 backend 的定位信息（内部公共逻辑） */
-function resolveBackendByKind(
+/**
+ * 按 kind 解析单个 backend 的定位信息（公共逻辑）。
+ *
+ * 入参 loc 承载 backend 的定位字段（owner/repo/branch/pathPrefix），
+ * 便于在已知 backend 对象时直接解析（上传管线即为此用法）。
+ */
+export function resolveBackendSource(
   kind: MediaBackend['kind'],
   selectedRepo: SelectedRepo | null,
   loc: { owner?: string; repo?: string; branch?: string; pathPrefix?: string }
@@ -115,7 +120,7 @@ export function resolveMediaBackend(
       missingHint: '请先在设置页配置媒体仓库',
     };
   }
-  return resolveBackendByKind(target.kind, selectedRepo, {
+  return resolveBackendSource(target.kind, selectedRepo, {
     owner: target.owner,
     repo: target.repo,
     branch: target.branch,
@@ -137,7 +142,7 @@ export function resolveMediaSource(
     if (target) return resolveMediaBackend(config, target.id, selectedRepo);
   }
   // 并行列表为空（旧配置尚未迁移）：按 sourceType 走旧路径
-  return resolveBackendByKind(config.sourceType, selectedRepo, {
+  return resolveBackendSource(config.sourceType, selectedRepo, {
     owner: config.imageOwner,
     repo: config.imageRepo,
     branch: config.imageBranch,

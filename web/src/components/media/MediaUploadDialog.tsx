@@ -83,7 +83,12 @@ export function MediaUploadDialog({
   /** 目标后端：空串 = 跟随默认仓库（上传管线按 defaultBackendId 回退） */
   const [targetBackendId, setTargetBackendId] = useState('');
 
-  // 每次打开重置为设置页默认值 —— 上一次的临时修改不残留
+  // 每次打开重置为设置页默认值 —— 上一次的临时修改不残留。
+  //
+  // 依赖含 backendOptions：后端列表变化（设置页增删/禁用仓库）后重新打开弹窗时，
+  // 需要按最新列表校正 targetBackendId，避免指向已被删除/禁用的后端。
+  // 调用方（MediaPage/EditorPage）的 backendOptions 均经 useMemo 稳定引用，
+  // 同一配置下不会因渲染而触发本 effect。
   useEffect(() => {
     if (!open) return;
     setQueue([]);
@@ -92,7 +97,15 @@ export function MediaUploadDialog({
     setQuality(defaultQuality);
     setRenameTemplate(defaultRenameTemplate);
     setTargetBackendId('');
-  }, [open, defaultMode, defaultQuality, defaultRenameTemplate]);
+  }, [open, defaultMode, defaultQuality, defaultRenameTemplate, backendOptions]);
+
+  // 目标后端有效性校正：当前选中的 targetBackendId 不在可选列表中（被删除/禁用）
+  // 时回退到空串（= 跟随默认仓库）。单独成一个 effect，避免与「打开时重置」耦合——
+  // 后者会清空用户本次已在弹窗内做的选择。
+  useEffect(() => {
+    if (!targetBackendId) return;
+    if (!backendOptions.some((b) => b.id === targetBackendId)) setTargetBackendId('');
+  }, [backendOptions, targetBackendId]);
 
   const migratedTemplate = useMemo(
     () => migrateLegacyTemplate(renameTemplate || '{{filename}}'),

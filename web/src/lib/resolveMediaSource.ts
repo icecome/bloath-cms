@@ -4,7 +4,8 @@
 import type { MediaConfig } from '../../../shared/types';
 
 export {
-  resolveMediaSource, resolveMediaBackend, getBackend, enabledBackends,
+  resolveMediaSource, resolveMediaBackend, resolveBackendSource,
+  getBackend, enabledBackends,
   type ResolvedMediaSource,
 } from './mediaBackendResolve';
 
