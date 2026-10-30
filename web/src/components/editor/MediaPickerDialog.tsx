@@ -34,6 +34,11 @@ interface MediaPickerDialogProps {
   onUploadNew?: () => void;
   /** 外部刷新信号：上传完成后调用方递增，触发媒体库重新拉取 */
   reloadSignal?: number;
+  /**
+   * 并行媒体仓库：要浏览的后端 id。
+   * 缺省 = 默认仓库（媒体库列表与上传目标保持一致）。
+   */
+  backendId?: string;
 }
 
 /** 单页渲染条数：媒体库可达数百项，一次性铺满 DOM 在移动端会明显卡顿 */
@@ -47,8 +52,9 @@ export default function MediaPickerDialog({
   accept = 'image',
   onUploadNew,
   reloadSignal = 0,
+  backendId,
 }: MediaPickerDialogProps) {
-  const { items, repoFilePaths, loading, error, isConfigured } = useMediaLibrary(accept, open, reloadSignal);
+  const { items, repoFilePaths, loading, error, isConfigured } = useMediaLibrary(accept, open, reloadSignal, backendId);
 
   /** 已选路径（数组保序：角标序号 = 点击顺序） */
   const [selected, setSelected] = useState<string[]>([]);
@@ -166,7 +172,7 @@ export default function MediaPickerDialog({
             aria-label="按文件名筛选媒体库"
             value={nameQuery}
             onChange={(e) => setNameQuery(e.target.value)}
-            className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
+            className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
           />
         </div>
         {onUploadNew && (

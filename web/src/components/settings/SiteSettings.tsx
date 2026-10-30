@@ -154,7 +154,7 @@ export function SiteSettings() {
               <select
                 value={profileId}
                 onChange={(e) => handleProfileChange(e.target.value as ProfileId)}
-                className="px-2.5 py-1.5 text-xs border border-border rounded-sm bg-card text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="px-2.5 py-1.5 text-xs border border-border rounded-sm bg-card text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {listProfiles().map((p) => (
                   <option key={p.id} value={p.id}>{p.label}</option>
@@ -246,7 +246,7 @@ export function SiteSettings() {
             <select
               value={selectedWorkflowId ?? ''}
               onChange={(e) => setSelectedWorkflowId(Number(e.target.value))}
-              className="px-2.5 py-1.5 text-xs border border-border rounded-sm bg-card text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="px-2.5 py-1.5 text-xs border border-border rounded-sm bg-card text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {workflows.map((w) => (
                 <option key={w.id} value={w.id}>{w.name}（{w.path}）</option>

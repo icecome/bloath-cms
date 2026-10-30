@@ -4,7 +4,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useCollections } from '../contexts/CollectionsContext';
 import { useRepo } from '../contexts/RepoContext';
 import { useMediaLibrary } from '../hooks/useMediaLibrary';
-import { resolveMediaSource, mediaCdnUrl } from '../lib/resolveMediaSource';
+import { enabledBackends } from '../lib/resolveMediaSource';
+import { listBackendFiles } from '../lib/listBackendFiles';
 import { useMediaUpload } from '../hooks/useMediaUpload';
 import { MediaUploadDialog } from '../components/media/MediaUploadDialog';
 import { readFile, writeFile, commitBatch, formatTimestamp } from '../lib/api';
@@ -175,14 +176,10 @@ export default function EditorPage() {
   /** 媒体库刷新信号：上传完成后递增，让选择器重新拉取列表 */
   const [mediaReloadSignal, setMediaReloadSignal] = useState(0);
 
-  /** 媒体库列表（与选择器共用同一 hook 实例的数据源，便于上传后统一刷新） */
-  const mediaSource = useMemo(
-    () => resolveMediaSource(mediaConfig, selectedRepo),
-    [mediaConfig, selectedRepo]
-  );
-  const isS3MediaSource = mediaConfig.sourceType === 's3';
-  /** S3 图床外链视图（仅 publicBaseUrl）；凭据已迁 Worker 侧 */
-  const s3MediaConfig = mediaConfig.s3;
+  /** 媒体库列表（与选择器共用同一 hook 实例的数据源，便于上传后统一刷新）。
+   *  并行媒体仓库：编辑器内不提供仓库切换，列表跟随默认仓库。 */
+  /** 编辑器内上传的目标仓库选项（启用中的全部后端） */
+  const editorBackendOptions = useMemo(() => enabledBackends(mediaConfig), [mediaConfig]);
 
   /** 媒体库列表数据源：供上传管线的重名判定与上传后刷新使用 */
   const { reload: reloadMediaLibrary } = useMediaLibrary('image', true, mediaReloadSignal);
@@ -195,13 +192,12 @@ export default function EditorPage() {
     clearError: clearMediaUploadError,
   } = useMediaUpload({
     mediaConfig,
-    source: mediaSource,
+    selectedRepo,
     login: user?.login ?? null,
-    isS3Source: isS3MediaSource,
-    s3View: s3MediaConfig,
     // 重名判定与上传后刷新复用媒体库 hook 的 reload
     loadFiles: reloadMediaLibrary,
-    getCdnUrl: (path: string) => mediaCdnUrl(mediaSource, mediaConfig, path),
+    // 跨仓库上传的重名判定必须按目标后端拉取，不能用默认仓库列表
+    listFilesForBackend: (backendId: string) => listBackendFiles(mediaConfig, backendId, selectedRepo),
   });
 
   /** 媒体库选择回填：把选中的 URL 逐个写回 Vditor 正文（图片 Markdown 语法） */
@@ -813,13 +809,16 @@ export default function EditorPage() {
         reloadSignal={mediaReloadSignal}
       />
 
-      {/* 选择器内的「上传新图片」：上传完成后刷新选择器列表 */}
+      {/* 选择器内的「上传新图片」：上传完成后刷新选择器列表。
+          并行媒体仓库下也可在此指定目标仓库（与媒体库页行为一致）。 */}
       <MediaUploadDialog
         open={mediaUploadOpen}
         onClose={() => setMediaUploadOpen(false)}
         defaultMode={mediaConfig.uploadMode}
         defaultQuality={mediaConfig.quality}
         defaultRenameTemplate={mediaConfig.renameTemplate}
+        backendOptions={editorBackendOptions}
+        defaultBackendId={mediaConfig.defaultBackendId}
         onUpload={async (files, options) => {
           const succeeded = await runMediaUpload(files, options);
           // 上传成功后让选择器重新拉取；上传失败时保留弹窗给用户看到错误

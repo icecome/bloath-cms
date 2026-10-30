@@ -89,12 +89,43 @@ export type UploadMode = 'compress' | 'original';
 
 export type MediaSourceType = 'standalone' | 'repo-dir' | 'image-branch' | 's3';
 
+/** 后端媒体仓库类型（与旧 MediaSourceType 同枚举，语义并行：多实例可同时启用） */
+export type MediaBackendKind = MediaSourceType;
+
 /** S3 兼容图床的外链视图配置（sourceType = 's3' 时生效）。
  *  连接凭据（endpoint/bucket/AK/SK）已迁至 Worker 侧加密存储（mediaS3Config.service，
  *  P1-001）：浏览器仅持有 publicBaseUrl——它是拼外链用的公开信息，不含敏感值。 */
 export interface S3MediaConfig {
   /** 公网访问基址（含 {path} 占位符；如 https://cdn.example.com/{path}）。缺省时不可复制外链 */
   publicBaseUrl: string;
+}
+
+/**
+ * 并行后端媒体仓库：可同时启用多个不同类型/同类型的后端，
+ * 上传时选择目标仓库，未指定则落 defaultBackendId 对应的默认仓库。
+ *
+ * 定位参数按 kind 取用：
+ *  - standalone：owner/repo/branch（独立图床仓库）
+ *  - repo-dir：   pathPrefix（当前博客仓库子目录）
+ *  - image-branch：branch = imageBranchName 对应的独立分支
+ *  - s3：         s3PublicBaseUrl（外链基址；凭据在 Worker 侧按 id 分键加密存储）
+ */
+export interface MediaBackend {
+  /** 稳定标识（创建时生成一次，不随 label 变更；用于 Worker S3 配置分键） */
+  id: string;
+  kind: MediaBackendKind;
+  /** 显示名（上传下拉 / 页面切换器用） */
+  label: string;
+  /** 并行开关：关闭后不出现在上传下拉与列表选择器中 */
+  enabled: boolean;
+  // —— GitHub 类定位参数 ——
+  owner?: string;
+  repo?: string;
+  branch?: string;
+  /** repo-dir 用：存放目录（空 = assets） */
+  pathPrefix?: string;
+  // —— S3 定位参数（凭据在 Worker 侧，浏览器仅持外链基址） ——
+  s3PublicBaseUrl?: string;
 }
 
 export interface MediaConfig {
@@ -113,6 +144,13 @@ export interface MediaConfig {
   uploadMode: UploadMode;
   /** S3 兼容图床配置（sourceType='s3' 时必填） */
   s3?: S3MediaConfig;
+  /**
+   * 并行后端媒体仓库列表（新）。存量配置无此字段：读取时由旧 sourceType+扁平字段
+   * 迁移为单个 backend 并写入；旧字段保留为「迁移源」，不再作为运行时权威。
+   */
+  backends: MediaBackend[];
+  /** 默认后端 id：上传未指定目标时回退到此；媒体库页初始活跃仓库也指向它 */
+  defaultBackendId: string;
 }
 
 export interface ArticleFrontmatter {

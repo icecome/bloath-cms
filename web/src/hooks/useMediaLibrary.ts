@@ -18,7 +18,7 @@ import { getTree } from '../lib/api';
 import { useAuth } from './useAuth';
 import { useCollections } from '../contexts/CollectionsContext';
 import { useRepo } from '../contexts/RepoContext';
-import { resolveMediaSource, mediaCdnUrl } from '../lib/resolveMediaSource';
+import { resolveMediaBackend, mediaCdnUrl } from '../lib/resolveMediaSource';
 import { s3ListObjects, s3PublicUrl } from '../lib/s3MediaClient';
 import { getMediaS3Config } from '../lib/mediaS3Api';
 import { sortByLastModified } from '../lib/sortFiles';
@@ -67,22 +67,29 @@ function kindOf(name: string): MediaKind | null {
  * @param kind 只返回该类型（'all' 返回图片 + 视频）
  * @param enabled false 时不自动加载（对话框未打开时省一次请求）
  * @param reloadSignal 外部刷新信号：值变化即重新拉取（上传完成后调用方递增）
+ * @param backendId 并行仓库：活跃查看的后端 id；缺省 = 默认仓库
  */
 export function useMediaLibrary(
   kind: MediaKindFilter = 'all',
   enabled = true,
-  reloadSignal = 0
+  reloadSignal = 0,
+  backendId?: string
 ): UseMediaLibraryResult {
   const { user } = useAuth();
   const { mediaConfig } = useCollections();
   const { selectedRepo } = useRepo();
 
+  const activeBackendId = backendId || mediaConfig.defaultBackendId;
   const source = useMemo(
-    () => resolveMediaSource(mediaConfig, selectedRepo),
-    [mediaConfig, selectedRepo]
+    () => resolveMediaBackend(mediaConfig, activeBackendId, selectedRepo),
+    [mediaConfig, selectedRepo, activeBackendId]
   );
-  const isS3Source = mediaConfig.sourceType === 's3';
-  const s3View = mediaConfig.s3; // 仅外链基址（publicBaseUrl）；凭据已迁 Worker（P1-001）
+  const activeBackend = useMemo(
+    () => (mediaConfig.backends || []).find((b) => b.id === activeBackendId),
+    [mediaConfig.backends, activeBackendId]
+  );
+  const isS3Source = activeBackend?.kind === 's3';
+  const s3View = { publicBaseUrl: activeBackend?.s3PublicBaseUrl || '', backendId: activeBackendId };
   // S3 前缀由 Worker 侧配置持有；列举时经代理使用服务端前缀，此处仅作缓存键
   const [s3Prefix, setS3Prefix] = useState('');
 
@@ -90,7 +97,7 @@ export function useMediaLibrary(
   useEffect(() => {
     if (!isS3Source) return;
     let cancelled = false;
-    getMediaS3Config()
+    getMediaS3Config(activeBackendId)
       .then((cfg) => {
         if (cancelled) return;
         if (cfg) setS3Prefix(cfg.prefix || '');
@@ -98,7 +105,7 @@ export function useMediaLibrary(
       })
       .catch(() => { if (!cancelled) setError('S3 图床配置读取失败，请稍后重试'); });
     return () => { cancelled = true; };
-  }, [isS3Source]);
+  }, [isS3Source, activeBackendId]);
 
   const [items, setItems] = useState<MediaLibraryItem[]>([]);
   const [repoFilePaths, setRepoFilePaths] = useState<Set<string>>(new Set());
@@ -127,7 +134,7 @@ export function useMediaLibrary(
         let all: MediaFile[];
 
         if (isS3Source) {
-          const entries = await s3ListObjects(s3View ?? { publicBaseUrl: '' }, s3Prefix);
+          const entries = await s3ListObjects(s3View, s3Prefix);
           all = entries
             .filter((e) => kindOf(e.key) !== null)
             .map((e) => ({
@@ -136,7 +143,7 @@ export function useMediaLibrary(
               // S3 无 blob sha：以 lastModified 作变更标识（与 MediaPage 一致）
               sha: String(e.lastModified),
               size: e.size,
-              url: s3PublicUrl(s3View ?? { publicBaseUrl: '' }, e.key) || '',
+              url: s3PublicUrl(s3View, e.key) || '',
               lastModified: e.lastModified,
             }));
         } else {
@@ -168,7 +175,7 @@ export function useMediaLibrary(
 
         // 注册 CDN builder：缩略图路径 → URL（mediaUtils 不反向依赖 React 上下文）
         registerCdnUrlBuilder((path: string) =>
-          isS3Source ? s3PublicUrl(s3View ?? { publicBaseUrl: '' }, path) : mediaCdnUrl(source, mediaConfig, path)
+          isS3Source ? s3PublicUrl(s3View, path) : mediaCdnUrl(source, mediaConfig, path)
         );
 
         // 展示项：剔除派生产物（thumb-*）与类型不匹配的文件，再按更新时间倒序
@@ -195,7 +202,7 @@ export function useMediaLibrary(
         if (requestId === requestIdRef.current && !silent) setLoading(false);
       }
     },
-    [source, isS3Source, s3View, s3Prefix, user, mediaConfig, kind]
+    [source, isS3Source, s3View, s3Prefix, user, mediaConfig, kind, activeBackendId]
   );
 
   // 作废在途请求（卸载/依赖变更/关闭对话框）：seq 自增后，旧请求落地时会因 id 不匹配被丢弃。

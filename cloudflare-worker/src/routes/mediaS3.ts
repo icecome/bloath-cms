@@ -1,10 +1,10 @@
 // 媒体库 S3 代理路由：浏览器不再持有 S3 凭据（P1-001），所有对象存储操作
 // 经本路由以 Worker 侧加密存储的凭据执行。
 //
-// 端点：
+// 端点（并行多桶：?backendId= 指定后端，缺省 = default；见 service 头注释）：
 //   GET  /api/media/s3/config          脱敏配置（AK 打码，secret 不回传）
 //   PUT  /api/media/s3/config          保存（secret 留空沿用；endpoint 过 SSRF 守卫）
-//   DELETE /api/media/s3/config        清除配置（前端切走 S3 源时调用）
+//   DELETE /api/media/s3/config        清除配置（前端删除该后端时调用）
 //   POST /api/media/s3/config/test     连接测试（PutObject 写 .keep 探针，同 buffer 模式）
 //   GET  /api/media/s3/objects         列举（ListObjectsV2，prefix 下）
 //   PUT  /api/media/s3/objects?key=    上传二进制（body 原始字节，上限同媒体二进制端点）
@@ -22,7 +22,7 @@ import { writeLimitAfterAuth } from '../middleware/writeLimit';
 import { isSafePathParam, safeJsonParse, MAX_MEDIA_BINARY_SIZE } from '../middleware/pathGuard';
 import {
   getMediaS3Config, getMediaS3ConfigPublic, saveMediaS3Config, deleteMediaS3Config,
-  MissingSecretError,
+  MissingSecretError, normalizeBackendId,
   type MediaS3ConfigInput,
 } from '../services/mediaS3Config.service';
 import { putObject, getObject, deleteObject, listObjects } from '../services/s3.client';
@@ -37,6 +37,21 @@ function auth(c: Context<HonoEnv>): AuthResult {
   return c.get('auth') as AuthResult;
 }
 
+/**
+ * 从 query 解析并校验 backendId。
+ *
+ * 语义说明：normalizeBackendId 对「未传 / 空串 / 纯空白」返回 DEFAULT_BACKEND_ID
+ * （缺省后端），对「格式非法」（含路径分隔符、空白字符、超长等）返回 null。
+ * 因此这里的 !id 判定**只对非法格式生效**，空值不是错误而是缺省语义——
+ * 旧版前端不带该参数也能正常工作（向后兼容）。
+ * 不要改成 `!id || id === null`：前者已覆盖 null，该写法不改变任何行为。
+ */
+function backendIdOf(c: Context<HonoEnv>): string | Response {
+  const id = normalizeBackendId(c.req.query('backendId'));
+  if (!id) return c.json(error(ErrorCode.VALIDATION_ERROR, 'backendId 无效'), 400);
+  return id;
+}
+
 function respondError(c: Context<HonoEnv>, err: unknown) {
   if (err instanceof S3Error) {
     // S3 原始响应体只进日志，不回传客户端（同 buffer 路由约定）
@@ -47,14 +62,18 @@ function respondError(c: Context<HonoEnv>, err: unknown) {
   return c.json(error(ErrorCode.INTERNAL_ERROR, '服务器内部错误'), 500);
 }
 
-// GET /api/media/s3/config
+// GET /api/media/s3/config?backendId=
 mediaS3App.get('/api/media/s3/config', async (c: Context<HonoEnv>) => {
-  const cfg = await getMediaS3ConfigPublic(c.env);
+  const bid = backendIdOf(c);
+  if (bid instanceof Response) return bid;
+  const cfg = await getMediaS3ConfigPublic(c.env, bid);
   return c.json(success(cfg));
 });
 
-// PUT /api/media/s3/config
+// PUT /api/media/s3/config?backendId=
 mediaS3App.put('/api/media/s3/config', async (c: Context<HonoEnv>) => {
+  const bid = backendIdOf(c);
+  if (bid instanceof Response) return bid;
   let body: Partial<MediaS3ConfigInput>;
   try { body = safeJsonParse(await c.req.raw.text()) as Partial<MediaS3ConfigInput>; } catch {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
@@ -71,10 +90,10 @@ mediaS3App.put('/api/media/s3/config', async (c: Context<HonoEnv>) => {
       endpoint, region, bucket, accessKeyId,
       secretAccessKey: secretAccessKey || '',
       prefix: prefix || '',
-    });
+    }, bid);
     // 保存后用实际动作探测（PutObject 写 .keep）：与 buffer 的「测试连接」一致，
     // HeadBucket 对对象级权限凭证会误判
-    const cfg = await getMediaS3Config(c.env);
+    const cfg = await getMediaS3Config(c.env, bid);
     if (cfg) {
       const probeKey = `${cfg.prefix ? cfg.prefix + '/' : ''}.keep`;
       await putObject(cfg, probeKey, '');
@@ -102,18 +121,22 @@ mediaS3App.put('/api/media/s3/config', async (c: Context<HonoEnv>) => {
   }
 });
 
-// DELETE /api/media/s3/config
+// DELETE /api/media/s3/config?backendId=
 mediaS3App.delete('/api/media/s3/config', async (c: Context<HonoEnv>) => {
+  const bid = backendIdOf(c);
+  if (bid instanceof Response) return bid;
   try {
-    await deleteMediaS3Config(c.env);
+    await deleteMediaS3Config(c.env, bid);
     return c.json(success(null, '媒体图床配置已清除'));
   } catch (err) {
     return respondError(c, err);
   }
 });
 
-// POST /api/media/s3/config/test
+// POST /api/media/s3/config/test?backendId=
 mediaS3App.post('/api/media/s3/config/test', async (c: Context<HonoEnv>) => {
+  const bid = backendIdOf(c);
+  if (bid instanceof Response) return bid;
   let body: Partial<MediaS3ConfigInput>;
   try { body = safeJsonParse(await c.req.raw.text()) as Partial<MediaS3ConfigInput>; } catch {
     return c.json(error(ErrorCode.VALIDATION_ERROR, '请求体格式错误'), 400);
@@ -128,7 +151,7 @@ mediaS3App.post('/api/media/s3/config/test', async (c: Context<HonoEnv>) => {
   let secret = secretAccessKey || '';
   if (!secret) {
     // 留空沿用已存密钥
-    const existing = await getMediaS3Config(c.env);
+    const existing = await getMediaS3Config(c.env, bid);
     if (!existing) return c.json(error(ErrorCode.VALIDATION_ERROR, '缺少 secretAccessKey'), 400);
     secret = existing.secretAccessKey;
     if (!endpoint && !bucket && !accessKeyId) {
@@ -154,9 +177,11 @@ mediaS3App.post('/api/media/s3/config/test', async (c: Context<HonoEnv>) => {
   }
 });
 
-// GET /api/media/s3/objects?prefix=
+// GET /api/media/s3/objects?prefix=&backendId=
 mediaS3App.get('/api/media/s3/objects', async (c: Context<HonoEnv>) => {
-  const cfg = await getMediaS3Config(c.env);
+  const bid = backendIdOf(c);
+  if (bid instanceof Response) return bid;
+  const cfg = await getMediaS3Config(c.env, bid);
   if (!cfg) return c.json(error(ErrorCode.VALIDATION_ERROR, '媒体图床未配置'), 400);
   const prefix = c.req.query('prefix') || '';
   try {
@@ -167,9 +192,11 @@ mediaS3App.get('/api/media/s3/objects', async (c: Context<HonoEnv>) => {
   }
 });
 
-// PUT /api/media/s3/objects?key=&contentType= — 上传二进制
+// PUT /api/media/s3/objects?key=&contentType=&backendId= — 上传二进制
 mediaS3App.put('/api/media/s3/objects', async (c: Context<HonoEnv>) => {
-  const cfg = await getMediaS3Config(c.env);
+  const bid = backendIdOf(c);
+  if (bid instanceof Response) return bid;
+  const cfg = await getMediaS3Config(c.env, bid);
   if (!cfg) return c.json(error(ErrorCode.VALIDATION_ERROR, '媒体图床未配置'), 400);
   const key = c.req.query('key') || '';
   if (!isSafePathParam(key, true)) {
@@ -189,9 +216,11 @@ mediaS3App.put('/api/media/s3/objects', async (c: Context<HonoEnv>) => {
   }
 });
 
-// DELETE /api/media/s3/objects?key=
+// DELETE /api/media/s3/objects?key=&backendId=
 mediaS3App.delete('/api/media/s3/objects', async (c: Context<HonoEnv>) => {
-  const cfg = await getMediaS3Config(c.env);
+  const bid = backendIdOf(c);
+  if (bid instanceof Response) return bid;
+  const cfg = await getMediaS3Config(c.env, bid);
   if (!cfg) return c.json(error(ErrorCode.VALIDATION_ERROR, '媒体图床未配置'), 400);
   const key = c.req.query('key') || '';
   if (!isSafePathParam(key, true)) {

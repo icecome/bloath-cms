@@ -107,7 +107,7 @@ function NewSubDirInput({ onConfirm }: { onConfirm: (name: string) => void }) {
       }}
       placeholder="新目录名"
       aria-invalid={invalid || undefined}
-      className="w-24 px-1.5 py-0.5 text-xs border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="w-24 px-1.5 py-0.5 text-xs border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     />
   );
 }
@@ -209,7 +209,7 @@ export function DirectoryTreePicker({ nodes, value, onChange, placeholder }: Pro
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || '如 content/posts/sub'}
         aria-invalid={inputInvalid || undefined}
-        className={`w-full px-2.5 py-1.5 text-sm border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors ${
+        className={`w-full px-2.5 py-1.5 text-sm border bg-card text-foreground placeholder-muted-foreground rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors ${
           inputInvalid ? 'border-destructive' : 'border-border'
         }`}
       />

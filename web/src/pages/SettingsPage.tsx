@@ -169,7 +169,7 @@ export default function SettingsPage() {
                     handleAddPath();
                   }
                 }}
-                className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-muted text-foreground placeholder-muted-foreground"
+                className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder-muted-foreground"
                 placeholder="添加新路径，如 content/articles"
               />
               <button

@@ -5,12 +5,19 @@
 // 且弹窗还要求「本次上传可临时改配置」。因此把「计划 → 执行 → 汇总」三段
 // 管线整体搬到这里，配置项改为通过参数传入，不再从 context 里读死值。
 //
+// 并行媒体仓库（targetBackendId）：每次上传可指定目标后端仓库，
+// 未指定则落默认仓库（mediaConfig.defaultBackendId）。目标后端的 kind 决定
+// 数据通道：'s3' 走 Worker 代理（凭据在服务端），其余走 GitHub Trees/Contents API。
+// 重名判定必须针对**目标后端**的文件列表（不能用当前浏览的仓库），
+// 否则跨仓库上传会把同名文件误判为已存在。
+//
 // 行为保持不变：
 //   · 决策与执行分离的原因见 lib/mediaUploadPlan.ts 顶部注释。
 //   · 图片并发 3、视频并发 1（视频独占带宽，GitHub 端点对同文件并发写会 409）。
 //   · Motion Photo（安卓动态照片）拆分路径、派生资产失败不阻断主流程。
 import { useCallback, useState } from 'react';
 import type { UploadMode } from '../../../shared/types';
+import type { SelectedRepo } from '../../../shared/types';
 import { uploadImage, uploadMediaBinary } from '../lib/api';
 import { fillTemplate, fillPathTemplate, migrateLegacyTemplate } from '../lib/template';
 import { s3PutObject, s3PublicUrl } from '../lib/s3MediaClient';
@@ -21,6 +28,7 @@ import {
 } from '../lib/motionPhoto';
 import { transcodeMotionPhotoVideo, type TranscodeProgress } from '../lib/motionPhotoTranscode';
 import { mapLimit } from '../lib/concurrency';
+import { mediaCdnUrl } from '../lib/resolveMediaSource';
 import {
   compressImage,
   blobToBase64,
@@ -32,24 +40,24 @@ import {
   extForFormat,
   type MediaFile,
 } from '../lib/mediaUtils';
+import type { MediaConfig } from '../../../shared/types';
 import type { ResolvedMediaSource } from '../lib/resolveMediaSource';
-import type { MediaConfig, S3MediaConfig } from '../../../shared/types';
 
 export interface MediaUploadParams {
-  /** 媒体库配置（质量、重名策略、模板来源） */
+  /** 媒体库配置（质量、重名策略、模板来源、并行仓库列表） */
   mediaConfig: MediaConfig;
-  /** 解析后的媒体源定位（owner/repo/branch/pathPrefix） */
-  source: ResolvedMediaSource;
+  /** 当前选中的博客仓库（repo-dir / image-branch 后端定位用） */
+  selectedRepo: SelectedRepo | null;
   /** 登录用户（GitHub 通道需要 login；S3 通道不需要） */
   login: string | null;
-  /** 是否 S3 图床 */
-  isS3Source: boolean;
-  /** S3 外链视图（仅 publicBaseUrl） */
-  s3View?: S3MediaConfig;
-  /** 静默刷新列表用（上传后拿最新路径集合以做重名判定） */
+  /** 静默刷新当前浏览仓库的列表用（上传后刷新页面列表） */
   loadFiles: (silent?: boolean) => Promise<MediaFile[] | null>;
-  /** 路径 → CDN URL */
-  getCdnUrl: (path: string) => string;
+  /**
+   * 列出指定后端的文件（重名判定用）。
+   * 缺省时回退 loadFiles —— 仅在单仓库场景下等价；并行多仓库时必须提供，
+   * 否则会把「当前浏览仓库」的文件列表误当作目标仓库的。
+   */
+  listFilesForBackend?: (backendId: string) => Promise<MediaFile[] | null>;
 }
 
 export interface MediaUploadResult {
@@ -61,7 +69,7 @@ export interface MediaUploadResult {
    */
   upload: (
     files: FileList | File[],
-    options: { mode: UploadMode; quality: number; renameTemplate: string }
+    options: { mode: UploadMode; quality: number; renameTemplate: string; targetBackendId?: string }
   ) => Promise<Set<File>>;
   uploading: boolean;
   /** 失败信息（多行分条） */
@@ -77,14 +85,15 @@ export interface MediaUploadResult {
 /**
  * 媒体上传管线。
  *
- * 与 MediaPage 原实现的关键差异仅有两处：
- *   1. 模式/质量/重命名模板由参数传入（支持弹窗内临时改配置），
+ * 与 MediaPage 原实现的关键差异：
+ *   1. 模式/质量/重命名模板/目标后端由参数传入（支持弹窗内临时改配置），
  *      不再读取 context 中的固定值。
  *   2. 错误/成功信息由本 hook 持有并暴露，调用方决定如何展示。
+ *   3. 并行仓库：目标后端的 kind 决定上传通道（见文件头注释）。
  */
 export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
   const {
-    mediaConfig, source, login, isS3Source, s3View, loadFiles, getCdnUrl,
+    mediaConfig, selectedRepo, login, loadFiles, listFilesForBackend,
   } = params;
 
   const [uploading, setUploading] = useState(false);
@@ -95,7 +104,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
   const upload = useCallback(
     async (
       fileList: FileList | File[],
-      options: { mode: UploadMode; quality: number; renameTemplate: string }
+      options: { mode: UploadMode; quality: number; renameTemplate: string; targetBackendId?: string }
     ): Promise<Set<File>> => {
       const { mode: uploadMode, quality, renameTemplate: rawTemplate } = options;
 
@@ -108,6 +117,25 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
         setError('未选择任何文件');
         return new Set();
       }
+
+      // ---- 目标后端解析：未指定则用默认仓库 ----
+      const backends = mediaConfig.backends || [];
+      const targetBackendId = options.targetBackendId || mediaConfig.defaultBackendId;
+      const backend =
+        backends.find((b) => b.id === targetBackendId) ||
+        backends.find((b) => b.id === mediaConfig.defaultBackendId) ||
+        backends[0];
+      if (!backend) {
+        setError('请先在设置页配置媒体仓库');
+        return new Set();
+      }
+      const isS3Source = backend.kind === 's3';
+      const s3View = { publicBaseUrl: backend.s3PublicBaseUrl || '', backendId: backend.id };
+      // GitHub 类后端的定位信息（owner/repo/branch/pathPrefix）
+      const source = resolveBackendSource(backend, selectedRepo);
+      /** 路径 → 外链 URL：S3 用 publicBaseUrl，其余用 CDN 模板 */
+      const urlFor = (path: string): string =>
+        isS3Source ? (s3PublicUrl(s3View, path) || '') : mediaCdnUrl(source, mediaConfig, path);
 
       setUploading(true);
       setError('');
@@ -133,7 +161,10 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
       }
 
       // 2. 执行阶段：图片并发 3、视频并发 1
-      let currentFiles = await loadFiles(true);
+      // 重名判定针对**目标后端**的文件列表：并行仓库下当前浏览的仓库 ≠ 目标仓库
+      let currentFiles = listFilesForBackend
+        ? await listFilesForBackend(backend.id)
+        : await loadFiles(true);
       const dirPart = fillPathTemplate(source.pathPrefix);
       const userName = login ?? '';
 
@@ -216,7 +247,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
 
           // 3. 上传主图（与普通图片同路径）
           if (isS3Source) {
-            await s3PutObject(s3View ?? { publicBaseUrl: '' }, stillPath, stillPayload);
+            await s3PutObject(s3View, stillPath, stillPayload);
           } else {
             await uploadImage({
               owner: source.owner,
@@ -238,7 +269,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
             if (thumb) {
               const thumbPath = thumbnailPathFor(stillPath);
               if (isS3Source) {
-                await s3PutObject(s3View ?? { publicBaseUrl: '' }, thumbPath, thumb);
+                await s3PutObject(s3View, thumbPath, thumb);
               } else {
                 await uploadImage({
                   owner: source.owner,
@@ -264,7 +295,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
               notes.push(`${videoFileName}：已存在同名视频，按「跳过」策略未覆盖`);
             } else {
               if (isS3Source) {
-                await s3PutObject(s3View ?? { publicBaseUrl: '' }, videoPath, videoBlob);
+                await s3PutObject(s3View, videoPath, videoBlob);
               } else {
                 await uploadMediaBinary({
                   owner: source.owner,
@@ -288,7 +319,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
               if (poster) {
                 const posterPath = thumbnailPathFor(videoPath);
                 if (isS3Source) {
-                  await s3PutObject(s3View ?? { publicBaseUrl: '' }, posterPath, poster);
+                  await s3PutObject(s3View, posterPath, poster);
                 } else {
                   await uploadImage({
                     owner: source.owner,
@@ -308,16 +339,13 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
 
           // 5. 更新本地列表缓存
           if (currentFiles) {
-            const stillUrl = isS3Source
-              ? (s3PublicUrl(s3View ?? { publicBaseUrl: '' }, stillPath) || '')
-              : getCdnUrl(stillPath);
             currentFiles = [{
               name: stillFileName,
               path: stillPath,
               sha: stillExisting?.sha || '',
               size: stillPayload.size,
               lastModified: Date.now(),
-              url: stillUrl,
+              url: urlFor(stillPath),
             }, ...currentFiles];
             if (videoBlob) {
               const videoPath = dirPart ? `${dirPart}/${baseName}.mp4` : `${baseName}.mp4`;
@@ -327,9 +355,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
                 sha: '',
                 size: videoBlob.size,
                 lastModified: Date.now(),
-                url: isS3Source
-                  ? (s3PublicUrl(s3View ?? { publicBaseUrl: '' }, videoPath) || '')
-                  : getCdnUrl(videoPath),
+                url: urlFor(videoPath),
               }, ...currentFiles];
             }
           }
@@ -356,7 +382,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
 
         if (isS3Source) {
           // S3：经 Worker 代理上传（SigV4），大视频不经 Worker
-          await s3PutObject(s3View ?? { publicBaseUrl: '' }, resolvedFilePath, payload);
+          await s3PutObject(s3View, resolvedFilePath, payload);
         } else if (kind === 'video') {
           // 视频：走二进制端点，避免 base64 的 33% 膨胀与双份内存
           await uploadMediaBinary({
@@ -389,7 +415,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
           try {
             const thumbPath = thumbnailPathFor(resolvedFilePath);
             if (isS3Source) {
-              await s3PutObject(s3View ?? { publicBaseUrl: '' }, thumbPath, derived);
+              await s3PutObject(s3View, thumbPath, derived);
             } else {
               await uploadImage({
                 owner: source.owner,
@@ -413,9 +439,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
             sha: existing?.sha || '',
             size: payload.size,
             lastModified: Date.now(),
-            url: isS3Source
-              ? (s3PublicUrl(s3View ?? { publicBaseUrl: '' }, resolvedFilePath) || '')
-              : getCdnUrl(resolvedFilePath),
+            url: urlFor(resolvedFilePath),
           }, ...currentFiles];
         }
         return true;
@@ -452,6 +476,8 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
 
       if (uploaded > 0) {
         setSuccess(`成功上传 ${uploaded} 个文件${skipped > 0 ? `，跳过 ${skipped} 个重名文件` : ''}`);
+        // 刷新当前浏览仓库的列表（上传可能落在另一个后端，刷新当前视图即可，
+        // 目标后端的列表由 listFilesForBackend 在下次上传时重新拉取）
         await loadFiles();
       }
       if (notes.length > 0) {
@@ -466,7 +492,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
       return succeeded;
     },
     [
-      mediaConfig, source, login, isS3Source, s3View, loadFiles, getCdnUrl,
+      mediaConfig, selectedRepo, login, loadFiles, listFilesForBackend,
     ]
   );
 
@@ -476,4 +502,44 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
   return {
     upload, uploading, error, success, transcodeNotice, clearError, clearSuccess,
   };
+}
+
+/**
+ * 按 backend 定位信息解析上传路径（GitHub 类后端）。
+ * S3 后端不参与（走对象存储 key 体系），返回空定位即可。
+ * configured 固定 true：定位参数在设置页已校验，此处只做取值映射。
+ */
+function resolveBackendSource(
+  backend: { kind: string; owner?: string; repo?: string; branch?: string; pathPrefix?: string },
+  selectedRepo: SelectedRepo | null
+): ResolvedMediaSource {
+  switch (backend.kind) {
+    case 'standalone':
+      return {
+        owner: backend.owner || '',
+        repo: backend.repo || '',
+        branch: backend.branch || 'main',
+        pathPrefix: '',
+        configured: true,
+      };
+    case 'repo-dir':
+      return {
+        owner: selectedRepo?.owner || '',
+        repo: selectedRepo?.repo || '',
+        branch: selectedRepo?.branch || 'main',
+        pathPrefix: (backend.pathPrefix || 'assets').replace(/^\/+|\/+$/g, ''),
+        configured: !!selectedRepo,
+      };
+    case 'image-branch':
+      return {
+        owner: selectedRepo?.owner || '',
+        repo: selectedRepo?.repo || '',
+        branch: backend.branch || 'assets',
+        pathPrefix: '',
+        configured: !!selectedRepo,
+      };
+    default:
+      // s3：对象存储不落在 GitHub 路径体系
+      return { owner: '', repo: '', branch: '', pathPrefix: '', configured: true };
+  }
 }

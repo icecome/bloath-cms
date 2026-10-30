@@ -8,8 +8,9 @@
 //     并让重命名模板的效果在提交前可见。
 //   · 只接受图片：当前阶段不开放视频上传（见设计方案需求 1）。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Upload, X, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import { Loader2, Upload, X, AlertCircle, Image as ImageIcon, Package } from 'lucide-react';
 import type { UploadMode } from '../../../../shared/types';
+import type { MediaBackend } from '../../../../shared/types';
 import Modal from '../ui/Modal';
 import { formatSize } from '../../lib/mediaUtils';
 import { fillTemplate, migrateLegacyTemplate } from '../../lib/template';
@@ -39,10 +40,17 @@ interface MediaUploadDialogProps {
   defaultMode: UploadMode;
   defaultQuality: number;
   defaultRenameTemplate: string;
+  /**
+   * 并行媒体仓库：可上传的目标后端列表（enabled 项）。
+   * 空数组表示旧配置（未迁移）——此时不渲染目标选择，走调用方的默认后端。
+   */
+  backendOptions: MediaBackend[];
+  /** 默认后端 id：未指定目标时的回退（对应设置页「默认后端媒体仓库」） */
+  defaultBackendId: string;
   /** 执行上传；返回成功上传的文件集合（用于按差集裁剪重试队列） */
   onUpload: (
     files: File[],
-    options: { mode: UploadMode; quality: number; renameTemplate: string }
+    options: { mode: UploadMode; quality: number; renameTemplate: string; targetBackendId?: string }
   ) => Promise<Set<File>>;
   uploading: boolean;
   /** 上传失败信息（多行分条），由管线提供 */
@@ -56,6 +64,8 @@ export function MediaUploadDialog({
   defaultMode,
   defaultQuality,
   defaultRenameTemplate,
+  backendOptions,
+  defaultBackendId,
   onUpload,
   uploading,
   error,
@@ -70,6 +80,8 @@ export function MediaUploadDialog({
   const [mode, setMode] = useState<UploadMode>(defaultMode);
   const [quality, setQuality] = useState(defaultQuality);
   const [renameTemplate, setRenameTemplate] = useState(defaultRenameTemplate);
+  /** 目标后端：空串 = 跟随默认仓库（上传管线按 defaultBackendId 回退） */
+  const [targetBackendId, setTargetBackendId] = useState('');
 
   // 每次打开重置为设置页默认值 —— 上一次的临时修改不残留
   useEffect(() => {
@@ -79,6 +91,7 @@ export function MediaUploadDialog({
     setMode(defaultMode);
     setQuality(defaultQuality);
     setRenameTemplate(defaultRenameTemplate);
+    setTargetBackendId('');
   }, [open, defaultMode, defaultQuality, defaultRenameTemplate]);
 
   const migratedTemplate = useMemo(
@@ -153,7 +166,12 @@ export function MediaUploadDialog({
   const handleSubmit = async () => {
     if (queue.length === 0 || uploading) return;
     onClearError();
-    const succeeded = await onUpload(queue, { mode, quality, renameTemplate: migratedTemplate });
+    const succeeded = await onUpload(queue, {
+      mode,
+      quality,
+      renameTemplate: migratedTemplate,
+      targetBackendId: targetBackendId || undefined,
+    });
     // 按成功集合裁剪：管线对图片/视频分组并发执行，成功顺序 ≠ 队列顺序，
     // 按计数裁剪会留下已成功的、移除已失败的（审查 m-01）
     const remaining = queue.filter((f) => !succeeded.has(f));
@@ -163,6 +181,10 @@ export function MediaUploadDialog({
       setQueue(remaining);
     }
   };
+
+  /** 目标仓库下拉的当前值：空串回落到默认仓库（界面显示默认仓库名而非「未选」） */
+  const effectiveBackendId = targetBackendId || defaultBackendId;
+  const effectiveBackend = backendOptions.find((b) => b.id === effectiveBackendId);
 
   if (!open) return null;
 
@@ -206,7 +228,7 @@ export function MediaUploadDialog({
             const files = Array.from(e.dataTransfer.files).filter((f) => f.type !== '' || f.size > 0);
             addFiles(files);
           }}
-          className={`border border-dashed border-border rounded-sm px-4 py-6 text-center cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`border border-dashed border-border rounded-sm px-4 py-6 text-center cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             dragOver ? 'bg-primary/5' : 'hover:bg-accent'
           } ${uploading ? 'pointer-events-none opacity-60' : ''}`}
         >
@@ -277,6 +299,54 @@ export function MediaUploadDialog({
             <span className="text-xs text-muted-foreground">仅在本次生效，不覆盖设置页默认值</span>
           </div>
 
+          {/* 目标仓库：并行媒体仓库下可切换上传后端；单仓库（旧配置）不显示。
+              下方落点说明是「上传到哪」的视觉锚点：用户切换仓库后立即看到目标定位。 */}
+          {backendOptions.length > 1 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-3">
+                <label
+                  htmlFor="upload-backend"
+                  className="text-xs text-muted-foreground w-16 flex-shrink-0"
+                >
+                  目标仓库
+                </label>
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Package className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                  <select
+                    id="upload-backend"
+                    value={effectiveBackendId}
+                    disabled={uploading}
+                    onChange={(e) => setTargetBackendId(e.target.value)}
+                    className="flex-1 min-w-0 px-2 py-1.5 text-xs bg-card text-foreground border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors disabled:opacity-50"
+                  >
+                    {backendOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.label || b.id}{b.id === defaultBackendId ? '（默认）' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {effectiveBackend && (
+                <div className="ml-20 flex items-center gap-1.5 px-2 py-1 bg-muted rounded-sm">
+                  <span className="text-[11px] text-muted-foreground">上传到</span>
+                  <span className="text-[11px] text-foreground font-medium truncate">
+                    {effectiveBackend.label || effectiveBackend.id}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground truncate">
+                    {effectiveBackend.kind === 's3'
+                      ? `· S3 图床${effectiveBackend.s3PublicBaseUrl ? '' : '（外链基址未配置，仅上传）'}`
+                      : effectiveBackend.kind === 'repo-dir'
+                        ? `· ${effectiveBackend.pathPrefix || 'assets'}/`
+                        : effectiveBackend.kind === 'image-branch'
+                          ? `· 分支 ${effectiveBackend.branch || 'assets'}`
+                          : `· ${effectiveBackend.owner || '?'}/${effectiveBackend.repo || '?'}`}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 上传方式 */}
           <div className="flex items-center gap-3">
             <span className="text-xs text-muted-foreground w-16 flex-shrink-0" id="upload-mode-label">
@@ -346,7 +416,7 @@ export function MediaUploadDialog({
               disabled={uploading}
               onChange={(e) => setRenameTemplate(e.target.value)}
               placeholder="{{filename}}"
-              className="flex-1 min-w-0 px-2 py-1.5 text-xs font-mono bg-card text-foreground border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors disabled:opacity-50"
+              className="flex-1 min-w-0 px-2 py-1.5 text-xs font-mono bg-card text-foreground border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors disabled:opacity-50"
               aria-describedby="upload-template-hint"
             />
           </div>

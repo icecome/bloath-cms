@@ -127,6 +127,54 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
+  /*
+   * 焦点可见性统一策略（消除「鼠标点击后残留焦点环/光标」的根因）。
+   *
+   * 此前各组件用 `focus:outline-none` 重置 outline，但键盘用户又靠
+   * `focus-visible:ring-*` 获得焦点指示——两者前缀不同（focus vs focus-visible），
+   * 导致鼠标点击时 ring 不出现、outline 已移除，视觉上「点击后无反馈」；
+   * 而完全没有 focus 类的按钮点击后反而残留浏览器默认 focus 环，形成不一致。
+   *
+   * 统一规则：
+   *   · 任何可聚焦元素在鼠标/触摸聚焦（:focus 非 :focus-visible）时不显示 outline；
+   *   · 键盘聚焦（:focus-visible）统一给 2px ring，颜色走 --ring；
+   *   · 组件内显式写 focus-visible:ring-* 的仍优先生效（utility 层更高）。
+   */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus:not(:focus-visible) {
+    outline: none;
+  }
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* 原生 checkbox / radio / range：统一用品牌蓝着色，避免浏览器默认蓝与
+     accent-foreground（近黑）混用造成同一页两种强调色 */
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    accent-color: hsl(var(--primary));
+  }
+
+  /* 文字类输入框统一背景：此前 bg-muted 与 bg-card 混用，同一表单内底色跳变。
+     以 card 为基准，仅只读/禁用态才用 muted。 */
+  input[type="text"],
+  input[type="password"],
+  input[type="search"],
+  input[type="url"],
+  input[type="email"],
+  input[type="number"],
+  textarea,
+  select {
+    background-color: hsl(var(--card));
+    caret-color: hsl(var(--primary));
+  }
+  input:disabled,
+  textarea:disabled,
+  select:disabled {
+    background-color: hsl(var(--muted));
+  }
 }
 
 /* 尊重系统级减弱动效：关闭旋转、位移、过渡等装饰性动画。

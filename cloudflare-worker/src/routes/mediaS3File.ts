@@ -1,9 +1,13 @@
-// 公开只读文件代理：GET /media-file/<key>
+// 公开只读文件代理：GET /media-file/<key>[?backendId=xxx]
 //
 // 作用：让「公网访问基址」指向本 Worker（如 https://<worker域名>/media-file/{path}）
 // 时，浏览器无需任何凭据即可读到桶内对象。典型场景：S3 服务商不提供匿名公网
 // 外链/自定义域名（如学术云 CSTCloud），或希望桶保持私有——读取全部经 Worker
 // 以服务端凭据 SigV4 签名完成，桶无需开放公有读。
+//
+// 多桶支持：?backendId= 指定目标后端（缺省 = default），与 /api/media/s3/*
+// 保持一致的白名单校验。用 query 而非路径段是刻意设计：key 含多段时，
+// /media-file/<backendId>/<key> 无法区分 backendId 与 key 首段。
 //
 // 设计要点：
 // · 公开无鉴权（博客媒体本就公网可读），但仅 GET/HEAD + key 白名单校验 + 按 IP 限流；
@@ -16,13 +20,12 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { HonoEnv } from '../env';
 import { rateLimit } from '../middleware/rateLimit';
-import { isSafePathParam } from '../middleware/pathGuard';
 import { getMediaS3Config } from '../services/mediaS3Config.service';
+import { parseMediaFileRequest, ROUTE_PREFIX } from '../services/mediaFileRequest';
 import { fetchObjectResponse } from '../services/s3.client';
 
 const mediaS3FileApp = new Hono<HonoEnv>();
 
-const ROUTE_PREFIX = '/media-file/';
 /** 每分钟每 IP 的读取上限：正常博客页几十张图 + 边缘命中都在此之下，仅作滥用护栏 */
 const RATE_LIMIT = { limit: 600, windowMs: 60_000 };
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
@@ -32,24 +35,18 @@ function edgeCache(): Cache | null {
   return typeof caches !== 'undefined' ? caches.default : null;
 }
 
-/** 从请求路径解出对象 key：百分号解码 + 白名单校验（拒绝 ..、\0 与非法字符） */
-function keyFromRequest(c: Context<HonoEnv>): string | null {
-  let raw: string;
-  try {
-    raw = decodeURIComponent(new URL(c.req.url).pathname.slice(ROUTE_PREFIX.length));
-  } catch {
-    return null;
-  }
-  const key = raw.replace(/^\/+/, '');
-  if (!key || !isSafePathParam(key, true)) return null;
-  return key;
-}
-
 async function handle(c: Context<HonoEnv>): Promise<Response> {
-  const key = keyFromRequest(c);
-  if (!key) return c.text('invalid key', 400);
+  // 多桶定位 + key 校验：解析逻辑抽至 services/mediaFileRequest.ts（零依赖可单测）。
+  // 用 query ?backendId= 而非路径段是刻意设计：key 含多段时路径方案有歧义
+  // （见 mediaFileRequest.ts 头注释）。frontend s3PublicUrl 会在基址指向本
+  // Worker 时自动追加该参数（见 s3MediaClient.ts）。
+  const parsed = parseMediaFileRequest(new URL(c.req.url).pathname, c.req.query('backendId'));
+  if (!parsed.ok) {
+    return c.text(parsed.reason === 'invalid-backend-id' ? 'invalid backendId' : 'invalid key', 400);
+  }
+  const { backendId: bid, key } = parsed;
 
-  const cfg = await getMediaS3Config(c.env);
+  const cfg = await getMediaS3Config(c.env, bid);
   if (!cfg) return c.text('object storage not configured', 404);
   // prefix 是媒体库的上传根目录：限定只服务前缀内对象，其余桶内容不经此暴露
   if (cfg.prefix && !key.startsWith(`${cfg.prefix}/`)) return c.text('not found', 404);

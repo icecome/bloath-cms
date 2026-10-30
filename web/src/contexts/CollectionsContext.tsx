@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import type { MediaConfig } from '../../../shared/types';
-import { parseStoredMediaConfig } from '../lib/configSchema';
+import { parseStoredMediaConfig, DEFAULT_BACKEND_ID, backendFromLegacy } from '../lib/configSchema';
 import { DEFAULT_MEDIA_PATH, DEFAULT_BRANCH_NAME } from '../lib/constants';
 
 interface CollectionConfig {
@@ -27,7 +27,19 @@ const DEFAULT_MEDIA_CONFIG: MediaConfig = {
   quality: 80,
   renameTemplate: '{Y}{m}{d}{h}{i}{s}-{filename}-{str-8}-{str-5}',
   duplicateStrategy: 'skip',
-  uploadMode: 'compress'
+  uploadMode: 'compress',
+  // 并行媒体仓库：默认含一个 standalone backend（与旧 sourceType 默认值对齐）。
+  // 新配置初始化 / 旧配置迁移失败回退时，backends 均可用。
+  backends: [{
+    id: DEFAULT_BACKEND_ID,
+    kind: 'standalone',
+    label: '独立图床仓库',
+    enabled: true,
+    owner: '',
+    repo: '',
+    branch: 'main',
+  }],
+  defaultBackendId: DEFAULT_BACKEND_ID,
 };
 
 const COLLECTION_STORAGE_KEY = 'bloath_collections_config';
@@ -39,7 +51,9 @@ const MEDIA_CONFIG_KEYS: ReadonlyArray<keyof MediaConfig> = [
   'quality', 'renameTemplate', 'duplicateStrategy', 'uploadMode',
   // s3 必须在此白名单内：loadMediaConfig 只保留白名单字段，
   // 漏项会导致 S3 凭据保存成功但刷新后被过滤掉（配置看起来「消失」）
-  's3'
+  's3',
+  // 并行媒体仓库（backends + defaultBackendId）：漏项会导致并行配置刷新后丢失
+  'backends', 'defaultBackendId',
 ];
 
 function loadCollectionConfig(): CollectionConfig {
@@ -74,6 +88,22 @@ function loadMediaConfig(): MediaConfig {
         if (key in parsed) {
           filtered[key] = parsed[key];
         }
+      }
+      // 旧配置迁移：存量 localStorage 无 backends 字段（并行媒体仓库上线前），
+      // 由 sourceType + 扁平字段构造单个 backend 写入 backends。
+      // 必须在与默认值合并**之前**判定，否则默认值里的 backends 会覆盖迁移结果。
+      const hasBackends = Array.isArray(filtered.backends) && filtered.backends.length > 0;
+      if (!hasBackends && typeof filtered.sourceType === 'string') {
+        filtered.backends = [backendFromLegacy({
+          sourceType: filtered.sourceType as MediaConfig['sourceType'],
+          imageOwner: String(filtered.imageOwner ?? ''),
+          imageRepo: String(filtered.imageRepo ?? ''),
+          imageBranch: String(filtered.imageBranch ?? 'main'),
+          mediaPath: String(filtered.mediaPath ?? DEFAULT_MEDIA_PATH),
+          imageBranchName: String(filtered.imageBranchName ?? DEFAULT_BRANCH_NAME),
+          s3: filtered.s3 as MediaConfig['s3'],
+        })];
+        filtered.defaultBackendId = DEFAULT_BACKEND_ID;
       }
       const candidate = { ...DEFAULT_MEDIA_CONFIG, ...filtered } as MediaConfig;
       // Zod 结构校验（P3-5）：类型漂移（如 quality 存成字符串）时拒绝并回退默认值，

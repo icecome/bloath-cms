@@ -820,7 +820,7 @@ export default function DraftsPage() {
               aria-label="按文件名或路径筛选草稿"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
             />
           </div>
         </div>
@@ -879,7 +879,7 @@ export default function DraftsPage() {
                     value={moveTarget}
                     onChange={(e) => setMoveTarget(e.target.value)}
                     placeholder="输入目标路径，如 content/.draft/sub"
-                    className="w-full px-2.5 py-1.5 text-sm border border-border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring mb-2 transition-colors"
+                    className="w-full px-2.5 py-1.5 text-sm border border-border bg-card text-foreground placeholder-muted-foreground rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring mb-2 transition-colors"
                   />
                   <button
                     onClick={handleMove}

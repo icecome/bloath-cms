@@ -5,7 +5,8 @@ import { useAuth } from '../hooks/useAuth';
 import type { UploadMode } from '../../../shared/types';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { getTree, deleteFile, readFile } from '../lib/api';
-import { resolveMediaSource, mediaCdnUrl } from '../lib/resolveMediaSource';
+import { resolveMediaBackend, mediaCdnUrl, enabledBackends } from '../lib/resolveMediaSource';
+import { listBackendFiles } from '../lib/listBackendFiles';
 import { sortByLastModified } from '../lib/sortFiles';
 import { s3ListObjects, s3DeleteObject, s3PublicUrl } from '../lib/s3MediaClient';
 import { getMediaS3Config } from '../lib/mediaS3Api';
@@ -42,7 +43,8 @@ import {
   Play,
   SlidersHorizontal,
   Search,
-  Upload
+  Upload,
+  Package
 } from 'lucide-react';
 
 /** 单张媒体卡片（memo）：千级网格下，复制闪烁/横幅/上传态等父级 state 变化
@@ -136,7 +138,18 @@ export default function MediaPage() {
   const { user } = useAuth();
   const { mediaConfig, config: collectionsConfig } = useCollections();
   const { selectedRepo } = useRepo();
-  const source = useMemo(() => resolveMediaSource(mediaConfig, selectedRepo), [mediaConfig, selectedRepo]);
+  /** 并行媒体仓库：活跃查看的后端 id，缺省 = 默认仓库 */
+  const [activeBackendId, setActiveBackendId] = useState<string>('');
+  const effectiveBackendId = activeBackendId || mediaConfig.defaultBackendId;
+  const backendOptions = useMemo(() => enabledBackends(mediaConfig), [mediaConfig]);
+  const activeBackend = useMemo(
+    () => (mediaConfig.backends || []).find((b) => b.id === effectiveBackendId),
+    [mediaConfig.backends, effectiveBackendId]
+  );
+  const source = useMemo(
+    () => resolveMediaBackend(mediaConfig, effectiveBackendId, selectedRepo),
+    [mediaConfig, selectedRepo, effectiveBackendId]
+  );
   // 命名模板：旧 {Y}{m} 语法在加载时一次性迁移为新 {{tag}} 语法（幂等）
   // 模板迁移已移入 useMediaUpload（弹窗内可临时改模板）
   const [files, setFiles] = useState<MediaFile[]>([]);
@@ -241,16 +254,20 @@ export default function MediaPage() {
 
   /** S3 源判定（审查报告 M-A1）：分流上传/列表/删除/复制四个通道。
    *  P1-001：凭据已迁 Worker 侧，本地仅持 publicBaseUrl 外链视图；
-   *  服务端前缀与配置状态异步探测。 */
-  const isS3Source = mediaConfig.sourceType === 's3';
-  const s3View = mediaConfig.s3;
+   *  服务端前缀与配置状态异步探测。
+   *  并行多桶：S3 判定按活跃后端 kind；s3View 携带 backendId 定位目标桶。 */
+  const isS3Source = activeBackend?.kind === 's3';
+  const s3View = useMemo(
+    () => ({ publicBaseUrl: activeBackend?.s3PublicBaseUrl || '', backendId: effectiveBackendId }),
+    [activeBackend?.s3PublicBaseUrl, effectiveBackendId]
+  );
   const [s3Prefix, setS3Prefix] = useState('');
   const [s3Configured, setS3Configured] = useState(false);
 
   useEffect(() => {
     if (!isS3Source) return;
     let cancelled = false;
-    getMediaS3Config()
+    getMediaS3Config(effectiveBackendId)
       .then((cfg) => {
         if (cancelled) return;
         if (cfg) {
@@ -263,7 +280,7 @@ export default function MediaPage() {
       })
       .catch(() => { if (!cancelled) setLoadError('S3 图床配置读取失败，请稍后重试'); });
     return () => { cancelled = true; };
-  }, [isS3Source]);
+  }, [isS3Source, effectiveBackendId]);
 
   const loadFiles = useCallback(async (silent = false): Promise<MediaFile[] | null> => {
     // S3 经 Worker 代理（服务端持凭据），GitHub 通道才需要登录态
@@ -352,8 +369,19 @@ export default function MediaPage() {
   }, [isConfigured, loadFiles]);
 
   /**
+   * 列出指定后端的文件（上传管线的重名判定用）。
+   * 并行仓库下目标后端 ≠ 当前浏览的仓库，必须按目标 id 单独拉取，
+   * 否则会把当前仓库的同名文件误判为「已存在」而跳过上传。
+   * 逻辑抽至 lib/listBackendFiles.ts 供 MediaPage 与 EditorPage 共用。
+   */
+  const listFilesForBackend = useCallback(
+    (backendId: string) => listBackendFiles(mediaConfig, backendId, selectedRepo),
+    [mediaConfig, selectedRepo]
+  );
+
+  /**
    * 上传管线：从页面内联逻辑抽到 hooks/useMediaUpload，供本页的上传弹窗复用。
-   * 弹窗内的「本次上传配置」（模式/质量/重命名模板）在提交时通过 options 传入，
+   * 弹窗内的「本次上传配置」（模式/质量/重命名模板/目标仓库）在提交时通过 options 传入，
    * 不写回设置页 —— 设置页仍是默认值的唯一权威（D2）。
    */
   const {
@@ -366,12 +394,10 @@ export default function MediaPage() {
     clearSuccess,
   } = useMediaUpload({
     mediaConfig,
-    source,
+    selectedRepo,
     login: user?.login ?? null,
-    isS3Source,
-    s3View,
     loadFiles,
-    getCdnUrl,
+    listFilesForBackend,
   });
 
   /** 错误槽位：列表加载与上传共用一个展示区，删除/加载失败也写这里 */
@@ -390,7 +416,7 @@ export default function MediaPage() {
   const handleUploadDialog = useCallback(
     async (
       files: File[],
-      options: { mode: UploadMode; quality: number; renameTemplate: string }
+      options: { mode: UploadMode; quality: number; renameTemplate: string; targetBackendId?: string }
     ) => runUpload(files, options),
     [runUpload]
   );
@@ -468,8 +494,8 @@ export default function MediaPage() {
       const thumbPath = thumbnailPathFor(file.path);
       if (isS3Source) {
         // S3 图床：经代理直删对象（含同名缩略图/封面），无 commit
-        await s3DeleteObject(s3View ?? { publicBaseUrl: '' }, file.path);
-        await s3DeleteObject(s3View ?? { publicBaseUrl: '' }, thumbPath).catch(() => undefined);
+        await s3DeleteObject(s3View, file.path);
+        await s3DeleteObject(s3View, thumbPath).catch(() => undefined);
       } else {
         await deleteFile({
           owner: source.owner,
@@ -560,7 +586,7 @@ export default function MediaPage() {
               aria-label="按文件名筛选媒体库文件"
               value={nameQuery}
               onChange={(e) => setNameQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
+              className="w-full pl-9 pr-3 py-2 text-sm bg-card text-foreground placeholder-muted-foreground border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
             />
           </div>
           <button
@@ -576,12 +602,33 @@ export default function MediaPage() {
       </header>
 
       {/* 排序行：类型/目录分类已移除（GitHub 源内容平铺，tab 无实际筛选价值），
-          仅保留「最近更新」排序与网格列数控制 */}
+          仅保留「最近更新」排序与网格列数控制；并行多仓库时加活跃仓库切换器 */}
       <div className="px-4 md:px-8 py-3 flex-shrink-0 flex items-center gap-3 border-b border-border-subtle">
         <span className="text-xs text-muted-foreground whitespace-nowrap">最近更新</span>
-        <span className="text-xs text-muted-foreground whitespace-nowrap">
-          {isS3Source ? 'S3 图床' : `${source.owner}/${source.repo}`} · {filteredFiles.length} 个文件
-        </span>
+        {backendOptions.length > 1 ? (
+          <div className="flex items-center gap-1.5">
+            <Package className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+            <select
+              aria-label="切换媒体仓库"
+              value={effectiveBackendId}
+              onChange={(e) => setActiveBackendId(e.target.value)}
+              className="px-2 py-1 text-xs bg-card text-foreground border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors hover:border-foreground/25"
+            >
+              {backendOptions.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label || b.id}{b.id === mediaConfig.defaultBackendId ? '（默认）' : ''}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
+              {filteredFiles.length} 个文件
+            </span>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {isS3Source ? 'S3 图床' : `${source.owner}/${source.repo}`} · {filteredFiles.length} 个文件
+          </span>
+        )}
         <div className="ml-auto relative flex items-center gap-3">
           <SlidersHorizontal className="w-4 h-4 text-muted-foreground hidden sm:block" />
           <span className="text-xs text-muted-foreground w-16 hidden sm:inline">每行 {gridCols} 个</span>
@@ -724,6 +771,8 @@ export default function MediaPage() {
         defaultMode={mediaConfig.uploadMode}
         defaultQuality={mediaConfig.quality}
         defaultRenameTemplate={mediaConfig.renameTemplate}
+        backendOptions={backendOptions}
+        defaultBackendId={mediaConfig.defaultBackendId}
         onUpload={handleUploadDialog}
         uploading={uploading}
         error={uploadError}

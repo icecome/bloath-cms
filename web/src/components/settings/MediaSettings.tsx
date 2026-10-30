@@ -1,3 +1,15 @@
+// 媒体库设置页：并行媒体仓库管理 + 上传/重命名/同名策略/压缩配置。
+//
+// 与旧版（单选 sourceType）的核心差异：
+//   · 「媒体源类型」单选 → 「并行媒体仓库」列表：可添加多个不同/相同类型的后端，
+//     每个后端独立配置定位参数（GitHub 三件套 / S3 外链基址）。
+//   · 新增「默认后端媒体仓库」单选标记：上传未指定目标时回退到此；媒体库页初始也指向它。
+//   · 旧 sourceType + 扁平字段（imageOwner/imageRepo/...）在加载时自动迁移为单个 backend
+//     （见 configSchema 的 backendFromLegacy）；本组件**只读写 backends/defaultBackendId**，
+//     不再写 sourceType 等迁移源字段——它们仅作为迁移兼容保留。
+//
+// S3 多桶：每个 S3 后端的凭据（endpoint/bucket/AK/SK）独立经 /api/media/s3/config?backendId=
+// 加密保存于 Worker（分键 media_s3_config:<id>），浏览器仅持 publicBaseUrl。
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useCollections } from '../../contexts/CollectionsContext';
 import { useRepo } from '../../contexts/RepoContext';
@@ -5,21 +17,23 @@ import { createBranch } from '../../lib/api';
 import { DEFAULT_MEDIA_PATH, DEFAULT_BRANCH_NAME } from '../../lib/constants';
 import { useToast } from '../../contexts/ToastContext';
 import {
-  getMediaS3Config, saveMediaS3Config, testMediaS3Config,
+  getMediaS3Config, saveMediaS3Config, testMediaS3Config, deleteMediaS3Config,
   type MediaS3ConfigPublic,
 } from '../../lib/mediaS3Api';
 import {
-  Image, Globe, Sliders, FileSignature,
+  Image, Globe, Sliders, FileSignature, Plus, Trash2, Star,
   AlertTriangle, GitBranch, FolderOpen, Loader2, Cloud
 } from 'lucide-react';
-import type { CdnProvider, DuplicateStrategy, MediaSourceType, UploadMode } from '../../../../shared/types';
+import type {
+  CdnProvider, DuplicateStrategy, MediaBackend, MediaBackendKind, UploadMode,
+} from '../../../../shared/types';
 
-// 静态配置数组（模块级，避免每次渲染重建）
-const MEDIA_SOURCE_TYPES: { value: MediaSourceType; label: string; desc: string; icon: typeof Image }[] = [
+/** 后端类型元信息（模块级，避免每次渲染重建） */
+const BACKEND_KINDS: { value: MediaBackendKind; label: string; desc: string; icon: typeof Image }[] = [
   { value: 'standalone', label: '独立图床仓库', desc: '图片上传到单独的 GitHub 仓库，与博客内容完全隔离', icon: Image },
   { value: 'repo-dir', label: '博客仓库子目录', desc: '图片存入当前博客仓库的指定目录，无需额外建仓', icon: FolderOpen },
   { value: 'image-branch', label: '博客仓库独立分支', desc: '在博客仓库创建独立分支存放图片，分支级隔离', icon: GitBranch },
-  { value: 's3', label: 'S3 兼容图床', desc: '直接上传到 S3/R2/OSS 等对象存储，不经 GitHub（凭据加密存于服务端）', icon: Cloud }
+  { value: 's3', label: 'S3 兼容图床', desc: '直接上传到 S3/R2/OSS 等对象存储，不经 GitHub（凭据加密存于服务端）', icon: Cloud },
 ];
 
 const CDN_PROVIDERS: { value: CdnProvider; label: string; template: string }[] = [
@@ -39,27 +53,262 @@ const UPLOAD_MODES: { value: UploadMode; label: string; desc: string }[] = [
 ];
 
 /** S3 配置区输入框统一样式（模块级，避免 JSX 内联重复） */
-const s3InputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground';
+const s3InputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground';
+
+/** 生成新 backend id：短前缀 + 随机后缀，保证在白名单 [a-zA-Z0-9_-] 内且不与既有 id 碰撞 */
+function newBackendId(kind: MediaBackendKind): string {
+  return `${kind}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 /**
- * S3 兼容图床配置区（P1-001 重写）：连接凭据经 /api/media/s3/config 保存到
- * Worker 侧加密存储，secret 留空沿用、AK 打码回显；publicBaseUrl 是唯一
- * 仍存 localStorage 的字段（外链模板，非敏感），走 mediaConfig.s3。
+ * 单个后端媒体仓库的编辑面板（可折叠/展开，每个后端独立配置）。
+ *
+ * S3 后端额外提供「凭据保存/测试」交互（MediaS3CredentialForm）：
+ * 凭据经 backendId 分键加密存于 Worker，publicBaseUrl 仍存本地 mediaConfig。
  */
-function MediaS3Settings() {
-  const { mediaConfig, updateMediaConfig } = useCollections();
+function BackendItem({
+  backend,
+  isDefault,
+  onChange,
+  onRemove,
+  onSetDefault,
+  disabled,
+}: {
+  backend: MediaBackend;
+  isDefault: boolean;
+  onChange: (patch: Partial<MediaBackend>) => void;
+  onRemove: () => void;
+  onSetDefault: () => void;
+  disabled: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const kindMeta = BACKEND_KINDS.find((k) => k.value === backend.kind);
+  const Icon = kindMeta?.icon ?? Image;
+
+  return (
+    <div className={`border rounded-sm ${isDefault ? 'border-primary/40 bg-primary/5' : 'border-border'}`}>
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <Icon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+        <input
+          type="text"
+          value={backend.label}
+          onChange={(e) => onChange({ label: e.target.value })}
+          className="flex-1 min-w-0 px-2 py-1 text-xs border border-border rounded-sm bg-card text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          placeholder="显示名"
+          aria-label="后端显示名"
+        />
+        {isDefault && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-primary/10 text-primary-text font-medium whitespace-nowrap">
+            默认
+          </span>
+        )}
+        <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-accent text-muted-foreground whitespace-nowrap">
+          {kindMeta?.label ?? backend.kind}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-3 px-3 py-1.5 border-t border-border-subtle">
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+          <input
+            type="checkbox"
+            checked={backend.enabled}
+            onChange={(e) => onChange({ enabled: e.target.checked })}
+            className="accent-primary"
+            aria-label="启用此后端"
+          />
+          启用
+        </label>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="text-xs text-muted-foreground hover:text-foreground px-1.5 py-1 transition-colors"
+          aria-expanded={expanded}
+        >
+          {expanded ? '收起' : '配置'}
+        </button>
+        {!isDefault && (
+          <button
+            type="button"
+            onClick={onSetDefault}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary-text px-1.5 py-1 transition-colors"
+          >
+            <Star className="w-3 h-3" />
+            设默认
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={disabled}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive px-1.5 py-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-label="删除此后端"
+        >
+          <Trash2 className="w-3 h-3" />
+          删除
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="px-3 py-3 border-t border-border space-y-3">
+          {backend.kind === 's3' ? (
+            <S3BackendForm backend={backend} onChange={onChange} />
+          ) : backend.kind === 'repo-dir' ? (
+            <RepoDirForm backend={backend} onChange={onChange} />
+          ) : backend.kind === 'image-branch' ? (
+            <ImageBranchForm backend={backend} onChange={onChange} />
+          ) : (
+            <StandaloneForm backend={backend} onChange={onChange} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** standalone 后端：owner/repo/branch 三件套 */
+function StandaloneForm({ backend, onChange }: { backend: MediaBackend; onChange: (p: Partial<MediaBackend>) => void }) {
+  return (
+    <>
+      <p className="text-xs text-muted-foreground">图片将上传到此 GitHub 仓库，请确保 Token 拥有该仓库的写入权限</p>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={backend.owner || ''}
+          onChange={(e) => onChange({ owner: e.target.value.trim() })}
+          className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder-muted-foreground"
+          placeholder="仓库所有者"
+        />
+        <span className="flex items-center text-muted-foreground">/</span>
+        <input
+          type="text"
+          value={backend.repo || ''}
+          onChange={(e) => onChange({ repo: e.target.value.trim() })}
+          className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder-muted-foreground"
+          placeholder="仓库名，如 blog-images"
+        />
+        <span className="flex items-center text-muted-foreground">@</span>
+        <input
+          type="text"
+          value={backend.branch || 'main'}
+          onChange={(e) => onChange({ branch: e.target.value.trim() || 'main' })}
+          className="w-24 px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder-muted-foreground"
+          placeholder="分支"
+        />
+      </div>
+    </>
+  );
+}
+
+/** repo-dir 后端：当前博客仓库子目录 */
+function RepoDirForm({ backend, onChange }: { backend: MediaBackend; onChange: (p: Partial<MediaBackend>) => void }) {
+  const { selectedRepo } = useRepo();
+  return (
+    <>
+      <p className="text-xs text-muted-foreground">图片将存入当前选中博客仓库的指定子目录</p>
+      {selectedRepo ? (
+        <p className="text-xs text-muted-foreground">
+          当前仓库：<code className="text-foreground font-mono">{selectedRepo.owner}/{selectedRepo.repo}</code>
+        </p>
+      ) : (
+        <p className="text-xs text-warning">请先在侧边栏选择博客仓库</p>
+      )}
+      <input
+        type="text"
+        value={backend.pathPrefix || DEFAULT_MEDIA_PATH}
+        onChange={(e) => onChange({ pathPrefix: e.target.value.trim() || DEFAULT_MEDIA_PATH })}
+        className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
+        placeholder={DEFAULT_MEDIA_PATH}
+      />
+      <p className="text-xs text-muted-foreground">默认为 {DEFAULT_MEDIA_PATH}；若为 Hugo 博客，可填 static/images</p>
+    </>
+  );
+}
+
+/** image-branch 后端：博客仓库独立分支 */
+function ImageBranchForm({ backend, onChange }: { backend: MediaBackend; onChange: (p: Partial<MediaBackend>) => void }) {
+  const { selectedRepo } = useRepo();
+  const { addToast } = useToast();
+  const [initializing, setInitializing] = useState(false);
+  const branchName = backend.branch || DEFAULT_BRANCH_NAME;
+
+  const handleInitBranch = async () => {
+    if (!selectedRepo) {
+      addToast({ message: '请先在侧边栏选择博客仓库', type: 'warning' });
+      return;
+    }
+    setInitializing(true);
+    try {
+      await createBranch({
+        owner: selectedRepo.owner,
+        repo: selectedRepo.repo,
+        branchName,
+        sourceBranch: selectedRepo.branch || 'main',
+      });
+      addToast({ message: `分支 ${branchName} 已就绪`, type: 'success' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('已存在')) {
+        addToast({ message: `分支 ${branchName} 已存在，可直接使用`, type: 'success' });
+      } else {
+        addToast({ message: msg || `分支 ${branchName} 初始化失败`, type: 'error' });
+      }
+    } finally {
+      setInitializing(false);
+    }
+  };
+
+  return (
+    <>
+      <p className="text-xs text-muted-foreground">在博客仓库创建独立分支存放图片，与内容分支隔离</p>
+      {selectedRepo ? (
+        <p className="text-xs text-muted-foreground">
+          当前仓库：<code className="text-foreground font-mono">{selectedRepo.owner}/{selectedRepo.repo}</code>
+        </p>
+      ) : (
+        <p className="text-xs text-warning">请先在侧边栏选择博客仓库</p>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={branchName}
+          onChange={(e) => onChange({ branch: e.target.value.trim() || DEFAULT_BRANCH_NAME })}
+          className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
+          placeholder={DEFAULT_BRANCH_NAME}
+        />
+        <button
+          type="button"
+          onClick={handleInitBranch}
+          disabled={initializing || !selectedRepo}
+          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-foreground text-white rounded-sm hover:bg-foreground/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+        >
+          {initializing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitBranch className="w-3.5 h-3.5" />}
+          {initializing ? '初始化中……' : '初始化分支'}
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">默认分支名 {DEFAULT_BRANCH_NAME}，可自定义</p>
+    </>
+  );
+}
+
+/**
+ * S3 后端配置：连接凭据经 /api/media/s3/config?backendId= 保存到 Worker 侧加密存储，
+ * secret 留空沿用、AK 打码回显；publicBaseUrl 是唯一仍存 localStorage 的字段（外链模板，
+ * 非敏感），走 mediaConfig.backends 的 s3PublicBaseUrl。
+ */
+function S3BackendForm({ backend, onChange }: { backend: MediaBackend; onChange: (p: Partial<MediaBackend>) => void }) {
   const { addToast } = useToast();
   const [remote, setRemote] = useState<MediaS3ConfigPublic | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [form, setForm] = useState({ endpoint: '', region: 'auto', bucket: '', accessKeyId: '', secretAccessKey: '', prefix: '' });
-  const [publicBaseUrl, setPublicBaseUrl] = useState(mediaConfig.s3?.publicBaseUrl ?? '');
+  const [publicBaseUrl, setPublicBaseUrl] = useState(backend.s3PublicBaseUrl ?? '');
   const dirtyRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    getMediaS3Config()
+    getMediaS3Config(backend.id)
       .then((cfg) => {
         if (cancelled) return;
         setRemote(cfg);
@@ -70,7 +319,13 @@ function MediaS3Settings() {
       })
       .catch(() => { if (!cancelled) setLoaded(true); });
     return () => { cancelled = true; };
-  }, []);
+    // backend.id 变化时重新加载该后端的凭据
+  }, [backend.id]);
+
+  // 同步外部传入的 publicBaseUrl（后端对象变化时）
+  useEffect(() => {
+    setPublicBaseUrl(backend.s3PublicBaseUrl ?? '');
+  }, [backend.s3PublicBaseUrl]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -80,13 +335,12 @@ function MediaS3Settings() {
         region: form.region.trim() || 'auto',
         bucket: form.bucket.trim(),
         accessKeyId: form.accessKeyId.trim(),
-        // secret 留空 = 沿用已存密钥（与缓冲层同语义）
         secretAccessKey: form.secretAccessKey,
         prefix: form.prefix.trim(),
-      });
+      }, backend.id);
       setRemote(saved);
       setForm((f) => ({ ...f, accessKeyId: '', secretAccessKey: '' }));
-      addToast({ message: '媒体图床配置已保存（凭据加密存于服务端）', type: 'success' });
+      addToast({ message: `「${backend.label || backend.id}」S3 凭据已保存（加密存于服务端）`, type: 'success' });
     } catch (err) {
       addToast({ message: `保存失败：${(err as Error).message}`, type: 'error' });
     } finally {
@@ -104,7 +358,7 @@ function MediaS3Settings() {
         accessKeyId: form.accessKeyId.trim(),
         secretAccessKey: form.secretAccessKey,
         prefix: form.prefix.trim(),
-      });
+      }, backend.id);
       addToast({ message: 'S3 连接成功', type: 'success' });
     } catch (err) {
       addToast({ message: `连接失败：${(err as Error).message}`, type: 'error' });
@@ -114,12 +368,8 @@ function MediaS3Settings() {
   };
 
   return (
-    <section>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
-        <Cloud className="w-3 h-3" />
-        S3 兼容图床
-      </div>
-      <p className="text-xs text-muted-foreground mb-3">
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
         支持 AWS S3 / Cloudflare R2 / 阿里 OSS / MinIO 等兼容存储。
         凭据经 HTTPS 提交后加密保存在服务端，浏览器不再明文持有；上传与删除经服务端代理执行。
       </p>
@@ -128,16 +378,15 @@ function MediaS3Settings() {
           <Loader2 className="w-3 h-3 animate-spin" /> 读取图床配置……
         </p>
       ) : (
-        <div className="space-y-2">
+        <>
           {remote && (
             <p className="text-[11px] text-muted-foreground">
               已配置：{remote.endpoint} / {remote.bucket}（AK {remote.accessKeyIdMasked}）。留空 Secret 表示沿用已存密钥。
             </p>
           )}
           <div>
-            <label htmlFor="s3-endpoint" className="block text-[11px] text-muted-foreground mb-1">端点 Endpoint</label>
+            <label className="block text-[11px] text-muted-foreground mb-1">端点 Endpoint</label>
             <input
-              id="s3-endpoint"
               type="text"
               value={form.endpoint}
               onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, endpoint: e.target.value })); }}
@@ -147,9 +396,8 @@ function MediaS3Settings() {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label htmlFor="s3-bucket" className="block text-[11px] text-muted-foreground mb-1">桶名 Bucket</label>
+              <label className="block text-[11px] text-muted-foreground mb-1">桶名 Bucket</label>
               <input
-                id="s3-bucket"
                 type="text"
                 value={form.bucket}
                 onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, bucket: e.target.value })); }}
@@ -157,9 +405,8 @@ function MediaS3Settings() {
               />
             </div>
             <div>
-              <label htmlFor="s3-region" className="block text-[11px] text-muted-foreground mb-1">区域 Region（可空 = auto）</label>
+              <label className="block text-[11px] text-muted-foreground mb-1">区域 Region（可空 = auto）</label>
               <input
-                id="s3-region"
                 type="text"
                 value={form.region}
                 onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, region: e.target.value })); }}
@@ -170,9 +417,8 @@ function MediaS3Settings() {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label htmlFor="s3-ak" className="block text-[11px] text-muted-foreground mb-1">AccessKeyId{remote ? '（留空沿用）' : ''}</label>
+              <label className="block text-[11px] text-muted-foreground mb-1">AccessKeyId{remote ? '（留空沿用）' : ''}</label>
               <input
-                id="s3-ak"
                 type="text"
                 value={form.accessKeyId}
                 onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, accessKeyId: e.target.value })); }}
@@ -181,9 +427,8 @@ function MediaS3Settings() {
               />
             </div>
             <div>
-              <label htmlFor="s3-sk" className="block text-[11px] text-muted-foreground mb-1">SecretAccessKey{remote ? '（留空沿用）' : ''}</label>
+              <label className="block text-[11px] text-muted-foreground mb-1">SecretAccessKey{remote ? '（留空沿用）' : ''}</label>
               <input
-                id="s3-sk"
                 type="password"
                 value={form.secretAccessKey}
                 onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, secretAccessKey: e.target.value })); }}
@@ -193,9 +438,8 @@ function MediaS3Settings() {
             </div>
           </div>
           <div>
-            <label htmlFor="s3-prefix" className="block text-[11px] text-muted-foreground mb-1">目录前缀（可空 = 桶根）</label>
+            <label className="block text-[11px] text-muted-foreground mb-1">目录前缀（可空 = 桶根）</label>
             <input
-              id="s3-prefix"
               type="text"
               value={form.prefix}
               onChange={(e) => { dirtyRef.current = true; setForm((f) => ({ ...f, prefix: e.target.value })); }}
@@ -204,21 +448,20 @@ function MediaS3Settings() {
             />
           </div>
           <div>
-            <label htmlFor="s3-cdn" className="block text-[11px] text-muted-foreground mb-1">公网访问基址（含 {'{path}'}；用于复制外链）</label>
+            <label className="block text-[11px] text-muted-foreground mb-1">公网访问基址（含 {'{path}'}；用于复制外链）</label>
             <input
-              id="s3-cdn"
               type="text"
               value={publicBaseUrl}
               onChange={(e) => {
                 dirtyRef.current = true;
-                setPublicBaseUrl(e.target.value.trim());
-                // 外链模板非敏感，仍存 mediaConfig（随配置同步；repoConfigSync 已剥离凭据）
-                updateMediaConfig({ s3: { publicBaseUrl: e.target.value.trim() } });
+                const v = e.target.value.trim();
+                setPublicBaseUrl(v);
+                // 外链模板非敏感，存入 backend 对象（随配置同步）
+                onChange({ s3PublicBaseUrl: v });
               }}
               placeholder="https://bucket.cos.ap-beijing.myqcloud.com/{path}"
               className={s3InputClass}
             />
-            {/* 常见误填即时提示：基址是桶的公网域名模板，不是仓库/站点地址；{bucket} 会被替换为空 */}
             {publicBaseUrl && !publicBaseUrl.includes('{path}') && !publicBaseUrl.includes('{key}') && (
               <p className="mt-1 text-[11px] text-destructive" role="alert">
                 基址缺少 {'{path}'} 占位符：所有外链都会指向基址本身而非图片文件，请写成 桶的公网域名/{'{path}'}
@@ -249,15 +492,15 @@ function MediaS3Settings() {
               type="button"
               onClick={handleSave}
               disabled={saving || !form.endpoint || !form.bucket}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-foreground text-white rounded-sm hover:bg-foreground/90 disabled:opacity-40 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-sm hover:bg-primary/90 disabled:opacity-40 transition-colors"
             >
               {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-              保存配置
+              保存凭据
             </button>
           </div>
-        </div>
+        </>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -274,194 +517,123 @@ const PLACEHOLDER_DOCS = [
 
 export function MediaSettings() {
   const { mediaConfig, updateMediaConfig } = useCollections();
-  const { selectedRepo } = useRepo();
   const { addToast } = useToast();
-  const [initializing, setInitializing] = useState(false);
+  const [newBackendKind, setNewBackendKind] = useState<MediaBackendKind>('standalone');
 
-  const handleInitBranch = async () => {
-    if (!selectedRepo) {
-      addToast({ message: '请先在侧边栏选择博客仓库', type: 'warning' });
+  const backends = mediaConfig.backends || [];
+  const defaultBackendId = mediaConfig.defaultBackendId;
+
+  /** 更新单个 backend 对象（不可变更新，保持引用稳定便于 memo） */
+  const updateBackend = useCallback((id: string, patch: Partial<MediaBackend>) => {
+    const next = (mediaConfig.backends || []).map((b) => (b.id === id ? { ...b, ...patch } : b));
+    updateMediaConfig({ backends: next });
+  }, [mediaConfig.backends, updateMediaConfig]);
+
+  const removeBackend = useCallback((id: string) => {
+    const list = mediaConfig.backends || [];
+    if (list.length <= 1) {
+      addToast({ message: '至少保留一个媒体仓库', type: 'warning' });
       return;
     }
-    const branchName = mediaConfig.imageBranchName || DEFAULT_BRANCH_NAME;
-    setInitializing(true);
-    try {
-      await createBranch({
-        owner: selectedRepo.owner,
-        repo: selectedRepo.repo,
-        branchName,
-        sourceBranch: selectedRepo.branch || 'main'
+    const target = list.find((b) => b.id === id);
+    const next = list.filter((b) => b.id !== id);
+    const nextDefault = next.find((b) => b.id === defaultBackendId) ? defaultBackendId : next[0]?.id;
+    updateMediaConfig({ backends: next, defaultBackendId: nextDefault || '' });
+    // S3 后端的凭据存于 Worker 侧分键：删除后端时一并清除，避免凭据孤儿留存
+    if (target?.kind === 's3') {
+      void deleteMediaS3Config(id).catch(() => {
+        addToast({ message: '已删除本地仓库，但服务端凭据清除失败（可稍后在 Worker 侧清理）', type: 'warning' });
       });
-      addToast({ message: `分支 ${branchName} 已就绪`, type: 'success' });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
-      if (msg.includes('已存在')) {
-        addToast({ message: `分支 ${branchName} 已存在，可直接使用`, type: 'success' });
-      } else {
-        addToast({ message: msg || `分支 ${branchName} 初始化失败`, type: 'error' });
-      }
-    } finally {
-      setInitializing(false);
     }
-  };
+    addToast({ message: '已删除媒体仓库', type: 'success' });
+  }, [mediaConfig.backends, defaultBackendId, updateMediaConfig, addToast]);
 
-  const resolveCdnPreview = useCallback(() => {
-    const { cdnProvider, customCdnTemplate, imageOwner, imageRepo, imageBranch } = mediaConfig;
-    if (cdnProvider === 'custom') {
-      return customCdnTemplate || '请配置自定义 CDN 模板';
-    }
-    const provider = CDN_PROVIDERS.find(p => p.value === cdnProvider);
-    if (!provider || !imageOwner || !imageRepo) return '请先配置图床仓库';
-    return provider.template
-      .replace('{owner}', imageOwner)
-      .replace('{repo}', imageRepo)
-      .replace('{branch}', imageBranch || 'main')
-      .replace('{path}', 'example.webp');
-  }, [mediaConfig]);
+  const setDefaultBackend = useCallback((id: string) => {
+    updateMediaConfig({ defaultBackendId: id });
+    addToast({ message: '已设为默认后端媒体仓库', type: 'success' });
+  }, [updateMediaConfig, addToast]);
+
+  const addBackend = useCallback(() => {
+    const id = newBackendId(newBackendKind);
+    const meta = BACKEND_KINDS.find((k) => k.value === newBackendKind);
+    const newBackend: MediaBackend = {
+      id,
+      kind: newBackendKind,
+      label: `${meta?.label ?? newBackendKind}（新）`,
+      enabled: true,
+      ...(newBackendKind === 'standalone'
+        ? { owner: '', repo: '', branch: 'main' }
+        : newBackendKind === 'repo-dir'
+          ? { pathPrefix: DEFAULT_MEDIA_PATH }
+          : newBackendKind === 'image-branch'
+            ? { branch: DEFAULT_BRANCH_NAME }
+            : { s3PublicBaseUrl: '' }),
+    };
+    updateMediaConfig({ backends: [...(mediaConfig.backends || []), newBackend] });
+    addToast({ message: `已添加「${meta?.label ?? newBackendKind}」，请配置后启用`, type: 'success' });
+  }, [newBackendKind, mediaConfig.backends, updateMediaConfig, addToast]);
 
   return (
     <div className="space-y-6 max-w-xl">
+      {/* —— 并行媒体仓库管理 —— */}
       <section>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
           <Image className="w-3 h-3" />
-          媒体源类型
+          媒体仓库（并行）
         </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          可同时启用多个不同类型的媒体仓库。上传时选择目标仓库，未指定则落「默认后端」；
+          媒体库页初始展示默认仓库的内容。
+        </p>
+
         <div className="space-y-2">
-          {MEDIA_SOURCE_TYPES.map((src) => {
-            const Icon = src.icon;
-            return (
-              <label key={src.value} htmlFor={`src-${src.value}`} className="flex items-start gap-2 cursor-pointer group">
-                <input
-                  id={`src-${src.value}`}
-                  type="radio"
-                  name="mediaSourceType"
-                  value={src.value}
-                  checked={mediaConfig.sourceType === src.value}
-                  onChange={() => updateMediaConfig({ sourceType: src.value })}
-                  className="mt-0.5 accent-foreground"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <Icon className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-xs text-foreground font-medium">{src.label}</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">{src.desc}</div>
-                </div>
-              </label>
-            );
-          })}
+          {backends.map((b) => (
+            <BackendItem
+              key={b.id}
+              backend={b}
+              isDefault={b.id === defaultBackendId}
+              onChange={(patch) => updateBackend(b.id, patch)}
+              onRemove={() => removeBackend(b.id)}
+              onSetDefault={() => setDefaultBackend(b.id)}
+              disabled={backends.length <= 1}
+            />
+          ))}
         </div>
+
+        <div className="flex gap-2 mt-3 pt-3 border-t border-border-subtle">
+          <select
+            value={newBackendKind}
+            onChange={(e) => setNewBackendKind(e.target.value as MediaBackendKind)}
+            className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground"
+            aria-label="新仓库类型"
+          >
+            {BACKEND_KINDS.map((k) => (
+              <option key={k.value} value={k.value}>{k.label}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={addBackend}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs border border-border rounded-sm text-foreground hover:bg-accent hover:border-foreground/25 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            添加仓库
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          标「<span className="text-primary-text font-medium">默认</span>」的是默认后端；上传未指定仓库时落默认后端。
+        </p>
       </section>
 
-      {mediaConfig.sourceType === 'standalone' && (
-        <section>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
-            <Image className="w-3 h-3" />
-            图床仓库
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">图片将上传到此 GitHub 仓库，请确保 Token 拥有该仓库的写入权限</p>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={mediaConfig.imageOwner}
-              onChange={(e) => updateMediaConfig({ imageOwner: e.target.value.trim() })}
-              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-muted text-foreground placeholder-muted-foreground"
-              placeholder="仓库所有者"
-            />
-            <span className="flex items-center text-muted-foreground">/</span>
-            <input
-              type="text"
-              value={mediaConfig.imageRepo}
-              onChange={(e) => updateMediaConfig({ imageRepo: e.target.value.trim() })}
-              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-muted text-foreground placeholder-muted-foreground"
-              placeholder="仓库名，如 blog-images"
-            />
-            <span className="flex items-center text-muted-foreground">@</span>
-            <input
-              type="text"
-              value={mediaConfig.imageBranch}
-              onChange={(e) => updateMediaConfig({ imageBranch: e.target.value.trim() || 'main' })}
-              className="w-24 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-muted text-foreground placeholder-muted-foreground"
-              placeholder="分支"
-            />
-          </div>
-        </section>
-      )}
-
-      {mediaConfig.sourceType === 'repo-dir' && (
-        <section>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
-            <FolderOpen className="w-3 h-3" />
-            图片存放目录
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">
-            图片将存入当前选中博客仓库的指定子目录
-          </p>
-          {selectedRepo ? (
-            <p className="text-xs text-muted-foreground mb-3">
-              当前仓库：<code className="text-foreground font-mono">{selectedRepo.owner}/{selectedRepo.repo}</code>
-            </p>
-          ) : (
-            <p className="text-xs text-warning mb-3">请先在侧边栏选择博客仓库</p>
-          )}
-          <input
-            type="text"
-            value={mediaConfig.mediaPath}
-            onChange={(e) => updateMediaConfig({ mediaPath: e.target.value.trim() || DEFAULT_MEDIA_PATH })}
-            className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
-            placeholder={DEFAULT_MEDIA_PATH}
-          />
-          <p className="text-xs text-muted-foreground mt-1">默认为 {DEFAULT_MEDIA_PATH}；若为 Hugo 博客，可填 static/images</p>
-        </section>
-      )}
-
-      {mediaConfig.sourceType === 'image-branch' && (
-        <section>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
-            <GitBranch className="w-3 h-3" />
-            独立分支
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">
-            在博客仓库创建独立分支存放图片，与内容分支隔离
-          </p>
-          {selectedRepo ? (
-            <p className="text-xs text-muted-foreground mb-3">
-              当前仓库：<code className="text-foreground font-mono">{selectedRepo.owner}/{selectedRepo.repo}</code>
-            </p>
-          ) : (
-            <p className="text-xs text-warning mb-3">请先在侧边栏选择博客仓库</p>
-          )}
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={mediaConfig.imageBranchName}
-              onChange={(e) => updateMediaConfig({ imageBranchName: e.target.value.trim() || DEFAULT_BRANCH_NAME })}
-              className="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
-              placeholder={DEFAULT_BRANCH_NAME}
-            />
-            <button
-              type="button"
-              onClick={handleInitBranch}
-              disabled={initializing || !selectedRepo}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-foreground text-white rounded-sm hover:bg-foreground/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-            >
-              {initializing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitBranch className="w-3.5 h-3.5" />}
-              {initializing ? '初始化中……' : '初始化分支'}
-            </button>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">默认分支名 {DEFAULT_BRANCH_NAME}，可自定义</p>
-        </section>
-      )}
-
-      {mediaConfig.sourceType === 's3' && (
-        <MediaS3Settings />
-      )}
-
+      {/* —— CDN 域名（与 GitHub 类后端共用，S3 后端用各自 publicBaseUrl） —— */}
       <section>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium mb-2">
           <Globe className="w-3 h-3" />
           CDN 域名
         </div>
+        <p className="text-xs text-muted-foreground mb-2">
+          适用于 GitHub 类后端（独立图床仓库 / 子目录 / 独立分支）。S3 后端请在各后端配置里设置「公网访问基址」。
+        </p>
         <div className="space-y-2">
           {CDN_PROVIDERS.map((provider) => (
             <label key={provider.value} htmlFor={`cdn-${provider.value}`} className="flex items-start gap-2 cursor-pointer group">
@@ -472,7 +644,7 @@ export function MediaSettings() {
                 value={provider.value}
                 checked={mediaConfig.cdnProvider === provider.value}
                 onChange={() => updateMediaConfig({ cdnProvider: provider.value })}
-                className="mt-0.5 accent-foreground"
+                className="mt-0.5 accent-primary"
               />
               <div className="flex-1 min-w-0">
                 <div className="text-xs text-foreground font-medium">{provider.label}</div>
@@ -487,14 +659,10 @@ export function MediaSettings() {
               type="text"
               value={mediaConfig.customCdnTemplate}
               onChange={(e) => updateMediaConfig({ customCdnTemplate: e.target.value })}
-              className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-muted text-foreground placeholder-muted-foreground mt-1"
+              className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder-muted-foreground mt-1"
               placeholder="模板变量：{owner} {repo} {branch} {path}"
             />
           )}
-        </div>
-        <div className="mt-2 px-2.5 py-1.5 bg-accent rounded-sm">
-          <span className="text-xs text-muted-foreground">预览：</span>
-          <code className="text-xs text-foreground font-mono break-all">{resolveCdnPreview()}</code>
         </div>
       </section>
 
@@ -513,7 +681,7 @@ export function MediaSettings() {
                 value={item.value}
                 checked={mediaConfig.uploadMode === item.value}
                 onChange={() => updateMediaConfig({ uploadMode: item.value })}
-                className="mt-0.5 accent-foreground"
+                className="mt-0.5 accent-primary"
               />
               <div>
                 <div className="text-xs text-foreground font-medium">{item.label}</div>
@@ -539,7 +707,7 @@ export function MediaSettings() {
             max={100}
             value={mediaConfig.quality}
             onChange={(e) => updateMediaConfig({ quality: Math.min(100, Math.max(10, parseInt(e.target.value, 10))) })}
-            className="flex-1 accent-foreground"
+            className="flex-1 accent-primary"
           />
           <span className="text-xs text-foreground font-mono w-8 text-right">{mediaConfig.quality}%</span>
         </div>
@@ -555,7 +723,7 @@ export function MediaSettings() {
           type="text"
           value={mediaConfig.renameTemplate}
           onChange={(e) => updateMediaConfig({ renameTemplate: e.target.value })}
-          className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
+          className="w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground font-mono placeholder-muted-foreground"
           placeholder="{{date:YYYY}}{{date:MM}}{{date:DD}}-{{filename}}-{{random:8}}"
         />
         <div className="mt-2 grid grid-cols-2 gap-1">
@@ -583,7 +751,7 @@ export function MediaSettings() {
                 value={strategy.value}
                 checked={mediaConfig.duplicateStrategy === strategy.value}
                 onChange={() => updateMediaConfig({ duplicateStrategy: strategy.value })}
-                className="mt-0.5 accent-foreground"
+                className="mt-0.5 accent-primary"
               />
               <div>
                 <div className="text-xs text-foreground font-medium">{strategy.label}</div>

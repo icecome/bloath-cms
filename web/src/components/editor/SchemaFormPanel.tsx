@@ -339,7 +339,7 @@ function SchemaField({
   }
 }
 
-const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder:text-muted-foreground';
+const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder:text-muted-foreground';
 
 /**
  * 字段外壳：label + 控件。
@@ -410,7 +410,7 @@ function TagListField({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder:text-muted-foreground"
+          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder:text-muted-foreground"
           placeholder={placeholder}
         />
         <button onClick={add} className="px-2 py-1 text-xs bg-foreground text-background rounded-sm hover:bg-foreground/90 transition-colors">添加</button>
@@ -511,7 +511,7 @@ function ImageListField({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
-          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder:text-muted-foreground"
+          className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors bg-card text-foreground placeholder:text-muted-foreground"
           placeholder={field.placeholder}
         />
         <button onClick={add} className="px-2 py-1 text-xs bg-foreground text-background rounded-sm hover:bg-foreground/90 transition-colors">添加</button>
@@ -656,12 +656,12 @@ function CustomFieldsField({ frontmatter, setFm }: {
                 value={row.key}
                 onChange={(e) => update(index, { key: e.target.value })}
                 placeholder="键名"
-                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground placeholder:text-muted-foreground"
+                className="flex-1 px-2 py-1 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground placeholder:text-muted-foreground"
               />
               <select
                 value={row.type}
                 onChange={(e) => update(index, { type: e.target.value as CustomFieldRow['type'] })}
-                className="w-[72px] px-1.5 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground"
+                className="w-[72px] px-1.5 py-1 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground"
               >
                 <option value="string">文本</option>
                 <option value="number">数字</option>
@@ -680,7 +680,7 @@ function CustomFieldsField({ frontmatter, setFm }: {
               <select
                 value={row.value}
                 onChange={(e) => update(index, { value: e.target.value })}
-                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground"
+                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground"
               >
                 <option value="true">true</option>
                 <option value="false">false</option>
@@ -691,7 +691,7 @@ function CustomFieldsField({ frontmatter, setFm }: {
                 value={row.value}
                 onChange={(e) => update(index, { value: e.target.value })}
                 placeholder="值"
-                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground placeholder:text-muted-foreground"
+                className="w-full px-2 py-1 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground placeholder:text-muted-foreground"
               />
             )}
           </div>

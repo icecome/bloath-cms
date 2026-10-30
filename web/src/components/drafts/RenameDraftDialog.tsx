@@ -36,7 +36,7 @@ export function RenameDraftDialog({ value, loading, onChange, onConfirm, onClose
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={`w-full px-3 py-2 text-sm border bg-muted text-foreground placeholder-muted-foreground rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors ${
+          className={`w-full px-3 py-2 text-sm border bg-card text-foreground placeholder-muted-foreground rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors ${
             invalid ? 'border-destructive' : 'border-border'
           }`}
           autoFocus

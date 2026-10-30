@@ -6,12 +6,23 @@
 // 迁移后凭据仅存 Worker 侧（加密），上传/列表/删除经 /api/media/s3/* 代理执行，
 // secret 永不回传浏览器。
 //
+// 多桶分键（并行媒体仓库）：同一 app_settings 表按 backend id 分键存储，
+// 键名 `media_s3_config:<id>`。前端传来的 backendId 经白名单校验（字母数字与
+// 连字符/下划线，≤64 字符），防止任意键注入共享表。单桶历史键 `media_s3_config`
+// 在读取缺省 id 时自动迁移（读侧一次性拷贝到 `media_s3_config:<DEFAULT_ID>`，
+// 原键保留不删——迁移不可逆约定下不做破坏性清理，重复读取幂等）。
+//
 // 与 bufferConfig.service 同构：sealWithSecret/openWithSecret + 领域标签分离 +
 // 读侧 zod 结构校验（共享表防御脏数据，AGENTS.md 约定）。
 import { z } from 'zod';
 import type { Env } from '../env';
 import { openWithSecret, sealWithSecret } from './crypto.service';
 import { getSettingRaw, saveSettingRaw } from './settings.service';
+import { DEFAULT_BACKEND_ID, normalizeBackendId } from './mediaBackendId';
+import { storageKey, getStoredS3Config } from './s3ConfigStore';
+
+// re-export：路由层从本服务统一 import（保持单一入口）
+export { DEFAULT_BACKEND_ID, normalizeBackendId } from './mediaBackendId';
 
 export interface MediaS3Config {
   endpoint: string;   // https://s3.xxx.com（路径风格）
@@ -31,8 +42,17 @@ export interface MediaS3ConfigPublic {
   configured: boolean;
 }
 
-const CONFIG_KEY = 'media_s3_config';
+/** 缺省 backend id：与前端 configSchema 的 DEFAULT_BACKEND_ID 保持一致（定义见 mediaBackendId.ts） */
+
 const CRYPTO_DOMAIN = 'media-s3-config:';
+
+/** D1 存储端口适配器：注入 s3ConfigStore 的纯函数（迁移逻辑与存储解耦，便于单测） */
+function d1Store(env: Env) {
+  return {
+    get: (key: string) => getSettingRaw(env.DB, key),
+    set: (key: string, value: string) => saveSettingRaw(env.DB, key, value),
+  };
+}
 
 function maskSecret(s: string): string {
   if (!s) return '';
@@ -62,10 +82,18 @@ function parseStored(raw: string): (z.infer<typeof storedSchema>) | null {
   }
 }
 
+/**
+ * 读取指定 backend 的存储值（含历史单桶迁移）；委托给 s3ConfigStore 的纯函数。
+ * 迁移是幂等的：原键保留，分键存在后不再读历史键。
+ */
+async function getStoredValue(env: Env, backendId: string): Promise<string | null> {
+  return getStoredS3Config(d1Store(env), backendId);
+}
+
 /** 读取完整配置（含解密后的 secret）；未配置/解密失败返回 null */
-export async function getMediaS3Config(env: Env): Promise<MediaS3Config | null> {
+export async function getMediaS3Config(env: Env, backendId: string = DEFAULT_BACKEND_ID): Promise<MediaS3Config | null> {
   try {
-    const value = await getSettingRaw(env.DB, CONFIG_KEY);
+    const value = await getStoredValue(env, backendId);
     if (!value) return null;
     const parsed = parseStored(value);
     if (!parsed) return null;
@@ -91,9 +119,9 @@ export async function getMediaS3Config(env: Env): Promise<MediaS3Config | null> 
 }
 
 /** 读取脱敏配置（前端展示用）：secret 只回尾 4 位 */
-export async function getMediaS3ConfigPublic(env: Env): Promise<MediaS3ConfigPublic | null> {
+export async function getMediaS3ConfigPublic(env: Env, backendId: string = DEFAULT_BACKEND_ID): Promise<MediaS3ConfigPublic | null> {
   try {
-    const value = await getSettingRaw(env.DB, CONFIG_KEY);
+    const value = await getStoredValue(env, backendId);
     if (!value) return null;
     const parsed = parseStored(value);
     if (!parsed) return null;
@@ -134,12 +162,20 @@ export class MissingSecretError extends Error {
   }
 }
 
-export async function saveMediaS3Config(env: Env, input: MediaS3ConfigInput): Promise<void> {
-  const existingValue = await getSettingRaw(env.DB, CONFIG_KEY);
-  let prev: z.infer<typeof storedSchema> | null = null;
-  if (existingValue) {
-    prev = parseStored(existingValue);
-  }
+/**
+ * 读取存量配置用于「secret 留空沿用」。
+ *
+ * 必须走 getStoredValue 而非直接读分键：存量用户升级后分键尚未建立（仅在读路径
+ * 触发迁移），若 save 只读分键会得到 null → 抛 MissingSecretError，用户的密钥被迫
+ * 重填（等于凭据丢失）。getStoredValue 内含历史单桶键回退 + 迁移。
+ */
+async function readExistingStored(env: Env, backendId: string): Promise<z.infer<typeof storedSchema> | null> {
+  const value = await getStoredValue(env, backendId);
+  return value ? parseStored(value) : null;
+}
+
+export async function saveMediaS3Config(env: Env, input: MediaS3ConfigInput, backendId: string = DEFAULT_BACKEND_ID): Promise<void> {
+  const prev = await readExistingStored(env, backendId);
   const secretAccessKeyEnc = input.secretAccessKey
     ? await sealWithSecret(env.SESSION_SECRET, input.secretAccessKey, CRYPTO_DOMAIN)
     : (prev?.secretAccessKeyEnc || '');
@@ -152,9 +188,9 @@ export async function saveMediaS3Config(env: Env, input: MediaS3ConfigInput): Pr
     secretAccessKeyEnc,
     prefix: input.prefix || '',
   };
-  await saveSettingRaw(env.DB, CONFIG_KEY, JSON.stringify(stored));
+  await saveSettingRaw(env.DB, storageKey(backendId), JSON.stringify(stored));
 }
 
-export async function deleteMediaS3Config(env: Env): Promise<void> {
-  await saveSettingRaw(env.DB, CONFIG_KEY, '');
+export async function deleteMediaS3Config(env: Env, backendId: string = DEFAULT_BACKEND_ID): Promise<void> {
+  await saveSettingRaw(env.DB, storageKey(backendId), '');
 }

@@ -236,7 +236,7 @@ function SidebarContent({
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="搜索仓库……"
                     aria-label="搜索仓库"
-                    className="w-full pl-7 pr-2 py-1 text-xs border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground placeholder:text-muted-foreground"
+                    className="w-full pl-7 pr-2 py-1 text-xs border border-border rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-card text-foreground placeholder:text-muted-foreground"
                     autoFocus
                   />
                 </div>
