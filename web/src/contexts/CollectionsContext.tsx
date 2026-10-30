@@ -22,7 +22,7 @@ const DEFAULT_MEDIA_CONFIG: MediaConfig = {
   imageBranch: 'main',
   mediaPath: DEFAULT_MEDIA_PATH,
   imageBranchName: DEFAULT_BRANCH_NAME,
-  cdnProvider: 'jsdmirror',
+  cdnProvider: 'jsdelivr',
   customCdnTemplate: '',
   quality: 80,
   renameTemplate: '{Y}{m}{d}{h}{i}{s}-{filename}-{str-8}-{str-5}',

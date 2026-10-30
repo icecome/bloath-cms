@@ -12,6 +12,8 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "js-yaml": "^4.3.0",
     "lucide-react": "^1.21.0",
     "react": "^19.3.0",

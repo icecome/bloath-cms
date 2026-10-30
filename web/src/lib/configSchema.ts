@@ -14,7 +14,7 @@ export const mediaConfigSchema = z.object({
   imageBranch: z.string(),
   mediaPath: z.string(),
   imageBranchName: z.string(),
-  cdnProvider: z.enum(['jsdmirror', 'github_raw', 'custom']),
+  cdnProvider: z.enum(['jsdelivr', 'github_raw', 'custom']),
   customCdnTemplate: z.string(),
   quality: z.number().int().min(10).max(100),
   renameTemplate: z.string(),

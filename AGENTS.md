@@ -218,6 +218,7 @@ const loadEditorPage = () => import('./pages/EditorPage'); // 模块级常量，
 - 分层：`src/routes` 端点、`src/services` 业务、`src/middleware` 中间件、`src/lib` 基础设施。
 - **可测性**：需要单测的业务逻辑抽成**零依赖模块**（§4 铁律 3），用 `node --experimental-strip-types --test` 直接测试。
 - 限流与防护：KV 固定窗口按账号限流（`middleware/rateLimit.ts`）；写操作另有 `writeLimit`；路径防护在 `pathGuard`。
+- 限流命中的响应默认是 JSON 错误信封（API 路由）。`/media-file/*` 这类「响应体被浏览器当资源解码」的直链路由必须给 `rateLimit` 传 `onLimit` 返回纯文本 429，否则图片/视频加载失败时拿到的是 `application/json`（2026-10-30 修复）。`Retry-After` 两种格式下都由中间件写入；`onLimit` 内必须用 `c.text()`/`c.json()` 产出响应，裸 `new Response()` 会丢掉该头。
 - 树缓存：`CACHE_KV` 可选，按 head-sha 作为键；未配置时跳过缓存，不影响功能。
 
 ## 8. 禁止事项
@@ -239,7 +240,7 @@ const loadEditorPage = () => import('./pages/EditorPage'); // 模块级常量，
 | CI 只跑 `src/services/*.test.ts`，本地 `npm test` 跑全量 | 新测试一律放 `src/services/`；`lib/`、`middleware/` 下的测试 CI 不执行 |
 | `wrangler.deploy.jsonc` 找不到 | 它是 CI 生成物（不入 Git）；本地 dev/部署用 `wrangler.jsonc`，别手动创建 deploy 变体 |
 | 旧版曾把 S3 凭据写进 `.bloath/config.json` 推送到仓库 | 推送前必须移除 `media.s3` 整对象（R2）；仓库历史污染状态见 KI-06，待用户判断公开性后处置 |
-| Vditor 从 jsdmirror CDN 加载，镜像不可用时编辑器挂 | 已知长期风险（KI-03），raw 是回退；排查编辑器白屏先查 CDN 可达性 |
+| Vditor 从 jsDelivr CDN 加载，镜像不可用时编辑器挂 | 已知长期风险（KI-03），raw 是回退；排查编辑器白屏先查 CDN 可达性 |
 | `wrangler dev` 连的 KV/D1 与生产不同 | 本地用 `--local`（miniflare 模拟）；`db:migrate:local` 只动本地库，remote 才是生产 |
 | clone 后没有 `docs/` | `.gitignore` 排除；文档只在本地工作站，链接失效时回到本机 `apps/Bloath/docs/` 找 |
 | 生产站开着 Cloudflare Rocket Loader，把 `type="module"` 改写成 `<hash>-module` 后异步注入 | 入口脚本靠 `vite.config.ts` 的 `rocketLoaderOptOut` 插件补 `data-cfasync="false"`（Vite 构建会丢弃该属性，改完必须看 `dist/index.html`）；根治要关 zone 级开关（KI-08） |

@@ -23,8 +23,8 @@ export function mediaCdnUrl(source: ResolvedMediaSource, config: MediaConfig, pa
       .split('{branch}').join(branch)
       .split('{path}').join(encodedPath);
   }
-  if (cdnProvider === 'jsdmirror') {
-    return `https://cdn.jsdmirror.cn/gh/${owner}/${repo}@${branch}/${encodedPath}`;
+  if (cdnProvider === 'jsdelivr') {
+    return `https://testingcf.jsdelivr.net/gh/${owner}/${repo}@${branch}/${encodedPath}`;
   }
   return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodedPath}`;
 }

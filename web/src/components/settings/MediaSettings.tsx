@@ -23,7 +23,7 @@ const MEDIA_SOURCE_TYPES: { value: MediaSourceType; label: string; desc: string;
 ];
 
 const CDN_PROVIDERS: { value: CdnProvider; label: string; template: string }[] = [
-  { value: 'jsdmirror', label: 'jsMirror', template: 'https://cdn.jsdmirror.cn/gh/{owner}/{repo}@{branch}/{path}' },
+  { value: 'jsdelivr', label: 'jsDelivr', template: 'https://testingcf.jsdelivr.net/gh/{owner}/{repo}@{branch}/{path}' },
   { value: 'github_raw', label: 'GitHub Raw', template: 'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}' },
   { value: 'custom', label: '自定义', template: '' },
 ];

@@ -80,7 +80,7 @@ export interface FileInfo {
 }
 
 // CDN 提供商
-export type CdnProvider = 'jsdmirror' | 'github_raw' | 'custom';
+export type CdnProvider = 'jsdelivr' | 'github_raw' | 'custom';
 
 export type DuplicateStrategy = 'skip' | 'overwrite';
 

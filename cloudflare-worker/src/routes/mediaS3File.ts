@@ -103,9 +103,14 @@ async function handle(c: Context<HonoEnv>): Promise<Response> {
   return res;
 }
 
+// 本路由的响应体是给浏览器当图片/视频解码的直链资源：429 必须用纯文本，
+// 返回 JSON 信封（application/json）会让 <img>/<video> 的失败形态更难排查，
+// 也不符合「媒体端点只产出媒体或 HTTP 错误」的直链语义。Retry-After 由
+// rateLimit 中间件统一写入，正文只留状态行级别的 ASCII 提示。
 mediaS3FileApp.use(`${ROUTE_PREFIX}*`, rateLimit({
   key: (c) => `r:${c.req.header('cf-connecting-ip') || ''}`,
   ...RATE_LIMIT,
+  onLimit: (c, info) => c.text(`429 Too Many Requests (retry after ${info.retryAfterSec}s)`, 429),
 }));
 
 mediaS3FileApp.get(`${ROUTE_PREFIX}*`, handle);

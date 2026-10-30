@@ -10,7 +10,7 @@ const validConfig = {
   imageBranch: 'main',
   mediaPath: 'assets',
   imageBranchName: 'assets',
-  cdnProvider: 'jsdmirror',
+  cdnProvider: 'jsdelivr',
   customCdnTemplate: '',
   quality: 80,
   renameTemplate: '{{date:YYYY}}{{date:MM}}{{date:DD}}-{{filename}}',

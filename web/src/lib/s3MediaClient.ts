@@ -34,6 +34,7 @@ export function contentTypeForKey(key: string): string {
   const map: Record<string, string> = {
     jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
     webp: 'image/webp', avif: 'image/avif', bmp: 'image/bmp', svg: 'image/svg+xml',
+    heic: 'image/heic', heif: 'image/heif',
     mp4: 'video/mp4', m4v: 'video/x-m4v', webm: 'video/webm',
     ogv: 'video/ogg', ogg: 'video/ogg', mov: 'video/quicktime',
   };

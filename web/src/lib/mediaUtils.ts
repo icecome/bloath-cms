@@ -25,7 +25,7 @@ export type MediaKind = 'image' | 'video';
  * 与原先散落在 MediaPage 与 MediaPickerDialog 的两份字面量正则保持一致，
  * 集中到此处后新增格式只改一行。
  */
-export const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
+export const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif|heic|heif)$/i;
 
 /**
  * 视频扩展名。
@@ -52,6 +52,7 @@ export function isVideoName(name: string): boolean {
  */
 const EXT_BY_FORMAT: Record<string, string> = {
   jpeg: 'jpg', png: 'png', gif: 'gif', webp: 'webp', bmp: 'bmp', avif: 'avif', svg: 'svg',
+  heic: 'heic',
   mp4: 'mp4', m4v: 'm4v', webm: 'webm', ogv: 'ogv', ogg: 'ogg', mov: 'mov',
 };
 

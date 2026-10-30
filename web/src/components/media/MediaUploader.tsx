@@ -18,7 +18,7 @@ interface MediaUploaderProps {
 
 /** 可接受的扩展名：不用 image/*,video/*，因为要排除 mkv/avi 这类「选进来必然被拒」的格式 */
 const ACCEPT = [
-  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.avif',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.avif', '.heic', '.heif',
   '.mp4', '.m4v', '.webm', '.ogv', '.mov',
 ].join(',');
 
@@ -88,8 +88,9 @@ export function MediaUploader({
           {uploading ? '上传中……' : '拖拽图片或视频到此处，或点击选择文件'}
         </p>
         <p className="text-xs text-muted-foreground mt-1">
-          图片 JPG / PNG / GIF / WebP / SVG / AVIF
+          图片 JPG / PNG / GIF / WebP / SVG / AVIF / HEIC
           {videoLimitHint ? ` · 视频 MP4 / WebM / OGV（${videoLimitHint}）` : ''}
+          ；动态照片自动拆分转码为静态图 + H.264
         </p>
       </div>
 
@@ -118,7 +119,7 @@ export function MediaUploader({
         </div>
         <span className="text-xs text-muted-foreground">
           {mode === 'compress'
-            ? `图片转 WebP，质量 ${quality}%，最长边 4096px；视频不压缩`
+            ? `图片转 WebP，质量 ${quality}%，最长边 4096px；视频不压缩；动态照片自动转 H.264`
             : '保留原始格式与画质，体积更大、页面加载更慢；GIF / SVG 恒按原图'}
         </span>
       </div>

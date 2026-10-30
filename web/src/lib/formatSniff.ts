@@ -20,6 +20,20 @@ const DANGEROUS_SIGNATURES: Array<{ label: string; bytes: number[] }> = [
   { label: 'PDF', bytes: [0x25, 0x50, 0x44, 0x46] },                      // %PDF
 ];
 
+/** ISO BMFF 的 major brand → 具体容器（HEIC 与视频容器共用 ftyp 头，此处一并解析） */
+function brandToFormat(brand: string): { kind: MediaSniffKind; format: string } {
+  const b = brand.trim();
+  // HEIC/HEIF 主图（iPhone Live Photo 主图）：heic/heix 为 HEVC 静态图，
+  // mif1/mif2 为 HEIF 通用容器（可能是 HEVC 或 AV1 内编码图）
+  if (b === 'heic' || b === 'heix' || b === 'hevc' || b === 'hevx' || b === 'mif1' || b === 'mif2') {
+    return { kind: 'image', format: 'heic' };
+  }
+  if (b === 'qt') return { kind: 'video', format: 'mov' };
+  if (b === 'M4V' || b === 'M4VH' || b === 'M4VP') return { kind: 'video', format: 'm4v' };
+  // isom / iso2 / iso4 / mp41 / mp42 / avc1 / dash / MSNV 等一律按 mp4 处理
+  return { kind: 'video', format: 'mp4' };
+}
+
 /**
  * 读取文件头部魔数，返回嗅探出的格式标识。
  * @returns 命中的图片格式（jpeg/png/gif/webp/bmp/avif）；
@@ -64,15 +78,6 @@ export interface MediaSniffResult {
 /** 需要读取的头部字节数：要覆盖 ftyp 的 major brand（offset 4..12）与 EBML 头 */
 const SNIFF_BYTES = 64;
 
-/** ISO BMFF 的 major brand → 具体容器 */
-function brandToFormat(brand: string): string {
-  const b = brand.trim();
-  if (b === 'qt') return 'mov';
-  if (b === 'M4V' || b === 'M4VH' || b === 'M4VP') return 'm4v';
-  // isom / iso2 / iso4 / mp41 / mp42 / avc1 / dash / MSNV 等一律按 mp4 处理
-  return 'mp4';
-}
-
 /** SVG 是文本格式，无二进制魔数：读头部按文本判定 */
 async function isSvgText(file: File): Promise<boolean> {
   const head = new TextDecoder().decode(await file.slice(0, 512).arrayBuffer());
@@ -107,9 +112,10 @@ export async function sniffMedia(file: File): Promise<MediaSniffResult> {
   }
 
   // 3. ISO BMFF：offset 4 处 'ftyp'，offset 8..12 是 major brand
+  //    视频容器（mp4/mov/m4v）与 HEIC/HEIF 主图共用 ftyp 头，统一走 brandToFormat 解析
   if (matchesAt(header, [0x66, 0x74, 0x79, 0x70], 4)) {
     const brand = String.fromCharCode(...header.slice(8, 12));
-    return { kind: 'video', format: brandToFormat(brand) };
+    return brandToFormat(brand);
   }
 
   // 4. Matroska / WebM：同为 EBML 头，靠 DocType 区分
