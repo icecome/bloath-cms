@@ -2,6 +2,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams, useMatch } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useCollections } from '../contexts/CollectionsContext';
+import { useRepo } from '../contexts/RepoContext';
+import { useMediaLibrary } from '../hooks/useMediaLibrary';
+import { resolveMediaSource, mediaCdnUrl } from '../lib/resolveMediaSource';
+import { useMediaUpload } from '../hooks/useMediaUpload';
+import { MediaUploadDialog } from '../components/media/MediaUploadDialog';
 import { readFile, writeFile, commitBatch, formatTimestamp } from '../lib/api';
 import { buildCommitMessage } from '../lib/deploySettings';
 import { sanitizeSlug, filterValidDirs, fileStemFromPath } from '../lib/path';
@@ -9,6 +14,7 @@ import { resolvePathAndSlug } from '../lib/articleSlug';
 import VditorEditor from '../components/editor/VditorEditor';
 import SchemaFormPanel, { validateFrontmatter } from '../components/editor/SchemaFormPanel';
 import { HistoryPanel } from '../components/editor/HistoryPanel';
+import MediaPickerDialog from '../components/editor/MediaPickerDialog';
 import Modal from '../components/ui/Modal';
 import { ArrowLeft, Save, Trash2, Settings2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import Vditor from 'vditor';
@@ -34,7 +40,8 @@ export default function EditorPage() {
   const slug = match?.params['*'] || '';
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const { config } = useCollections();
+  const { config, mediaConfig } = useCollections();
+  const { selectedRepo } = useRepo();
   const { addToast } = useToast();
   const { config: bufferConfig, refreshChanges, configLoading: bufferConfigLoading } = useBuffer();
   const bufferEnabled = bufferConfig?.enabled === true;
@@ -159,6 +166,55 @@ export default function EditorPage() {
 
   const handleVditorReady = useCallback((instance: Vditor) => {
     vditorInstanceRef.current = instance;
+  }, []);
+
+  /** 正文编辑器「插入图片」选择器开关 */
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  /** 选择器内「上传新图片」的上传弹窗开关 */
+  const [mediaUploadOpen, setMediaUploadOpen] = useState(false);
+  /** 媒体库刷新信号：上传完成后递增，让选择器重新拉取列表 */
+  const [mediaReloadSignal, setMediaReloadSignal] = useState(0);
+
+  /** 媒体库列表（与选择器共用同一 hook 实例的数据源，便于上传后统一刷新） */
+  const mediaSource = useMemo(
+    () => resolveMediaSource(mediaConfig, selectedRepo),
+    [mediaConfig, selectedRepo]
+  );
+  const isS3MediaSource = mediaConfig.sourceType === 's3';
+  /** S3 图床外链视图（仅 publicBaseUrl）；凭据已迁 Worker 侧 */
+  const s3MediaConfig = mediaConfig.s3;
+
+  /** 媒体库列表数据源：供上传管线的重名判定与上传后刷新使用 */
+  const { reload: reloadMediaLibrary } = useMediaLibrary('image', true, mediaReloadSignal);
+
+  /** 媒体库上传管线：编辑器内上传与媒体库页共用同一实现 */
+  const {
+    upload: runMediaUpload,
+    uploading: mediaUploading,
+    error: mediaUploadError,
+    clearError: clearMediaUploadError,
+  } = useMediaUpload({
+    mediaConfig,
+    source: mediaSource,
+    login: user?.login ?? null,
+    isS3Source: isS3MediaSource,
+    s3View: s3MediaConfig,
+    // 重名判定与上传后刷新复用媒体库 hook 的 reload
+    loadFiles: reloadMediaLibrary,
+    getCdnUrl: (path: string) => mediaCdnUrl(mediaSource, mediaConfig, path),
+  });
+
+  /** 媒体库选择回填：把选中的 URL 逐个写回 Vditor 正文（图片 Markdown 语法） */
+  const handleMediaPick = useCallback((urls: string[]) => {
+    const vditor = vditorInstanceRef.current;
+    if (!vditor) return;
+    // alt 用文件名（去扩展名）：固定「图片」信息量为零，对屏幕阅读器与 SEO 都无用
+    const snippet = urls.map((url) => {
+      const name = url.split('/').pop() || '';
+      const alt = name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').trim() || '图片';
+      return `![${alt}](${url})`;
+    }).join('\n');
+    vditor.insertValue(snippet);
   }, []);
 
   const setFm = (key: keyof Frontmatter, value: unknown) => {
@@ -702,6 +758,7 @@ export default function EditorPage() {
               initialContent={bodyContent}
               onInput={setBodyContent}
               onReady={handleVditorReady}
+              onPickImages={() => setMediaPickerOpen(true)}
             />
           </div>
         </div>
@@ -744,6 +801,35 @@ export default function EditorPage() {
           </div>
         </>
       )}
+
+      {/* 正文「插入图片」：从媒体库选图后写回 Markdown */}
+      <MediaPickerDialog
+        open={mediaPickerOpen}
+        onClose={() => setMediaPickerOpen(false)}
+        multiple
+        accept="image"
+        onPick={handleMediaPick}
+        onUploadNew={() => setMediaUploadOpen(true)}
+        reloadSignal={mediaReloadSignal}
+      />
+
+      {/* 选择器内的「上传新图片」：上传完成后刷新选择器列表 */}
+      <MediaUploadDialog
+        open={mediaUploadOpen}
+        onClose={() => setMediaUploadOpen(false)}
+        defaultMode={mediaConfig.uploadMode}
+        defaultQuality={mediaConfig.quality}
+        defaultRenameTemplate={mediaConfig.renameTemplate}
+        onUpload={async (files, options) => {
+          const succeeded = await runMediaUpload(files, options);
+          // 上传成功后让选择器重新拉取；上传失败时保留弹窗给用户看到错误
+          if (succeeded.size > 0) setMediaReloadSignal((n) => n + 1);
+          return succeeded;
+        }}
+        uploading={mediaUploading}
+        error={mediaUploadError}
+        onClearError={clearMediaUploadError}
+      />
     </div>
   );
 }

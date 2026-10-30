@@ -66,10 +66,12 @@ function kindOf(name: string): MediaKind | null {
  * 加载媒体库列表。
  * @param kind 只返回该类型（'all' 返回图片 + 视频）
  * @param enabled false 时不自动加载（对话框未打开时省一次请求）
+ * @param reloadSignal 外部刷新信号：值变化即重新拉取（上传完成后调用方递增）
  */
 export function useMediaLibrary(
   kind: MediaKindFilter = 'all',
-  enabled = true
+  enabled = true,
+  reloadSignal = 0
 ): UseMediaLibraryResult {
   const { user } = useAuth();
   const { mediaConfig } = useCollections();
@@ -207,6 +209,18 @@ export function useMediaLibrary(
     void load();
     return invalidate;
   }, [enabled, load, invalidate]);
+
+  // 外部刷新信号：上传弹窗完成上传后递增，触发重新拉取。
+  // 用 ref 跳过首次挂载（首次已由上面的 effect 加载），只在值变化时 reload。
+  const lastSignalRef = useRef(reloadSignal);
+  useEffect(() => {
+    if (lastSignalRef.current === reloadSignal) return;
+    lastSignalRef.current = reloadSignal;
+    if (!enabled) return;
+    void load();
+    // load 已包含 enabled/配置等全部依赖；此处只在信号变化时补一次拉取
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadSignal]);
 
   return { items, repoFilePaths, loading, error, isConfigured: source.configured, isS3Source, reload: load };
 }

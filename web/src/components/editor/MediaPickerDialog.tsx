@@ -6,12 +6,13 @@
 //   · 多选：点选切换、Shift 区间选择、底部「插入所选」一次性回传，顺序 = 点击顺序。
 //
 // 回传契约是 (urls: string[])：单选可视为 N=1 的多选，避免维护两套回调。
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMediaLibrary, type MediaKindFilter } from '../../hooks/useMediaLibrary';
 import { listImageUrlFor, isVideoName } from '../../lib/mediaUtils';
+import { computeShiftRange } from '../../lib/selectionRange';
 import type { MediaLibraryItem } from '../../hooks/useMediaLibrary';
 import Modal from '../ui/Modal';
-import { X, Loader2, AlertCircle, Play, Check } from 'lucide-react';
+import { X, Loader2, AlertCircle, Play, Check, Search, Upload } from 'lucide-react';
 
 /** 类型过滤：image=只列图片（默认）；video=只列视频；all=混排 */
 export type MediaPickerAccept = MediaKindFilter;
@@ -25,6 +26,14 @@ interface MediaPickerDialogProps {
   multiple?: boolean;
   /** 类型过滤，默认 'image'（保持既有调用点的语义） */
   accept?: MediaPickerAccept;
+  /**
+   * 「上传新图片」入口回调。
+   * 不传则隐藏该按钮（元数据侧的 image / image-list 字段暂不提供上传，
+   * 避免在表单里再叠一层上传弹窗）。正文编辑器传入。
+   */
+  onUploadNew?: () => void;
+  /** 外部刷新信号：上传完成后调用方递增，触发媒体库重新拉取 */
+  reloadSignal?: number;
 }
 
 /** 单页渲染条数：媒体库可达数百项，一次性铺满 DOM 在移动端会明显卡顿 */
@@ -36,23 +45,37 @@ export default function MediaPickerDialog({
   onPick,
   multiple = false,
   accept = 'image',
+  onUploadNew,
+  reloadSignal = 0,
 }: MediaPickerDialogProps) {
-  const { items, repoFilePaths, loading, error, isConfigured } = useMediaLibrary(accept, open);
+  const { items, repoFilePaths, loading, error, isConfigured } = useMediaLibrary(accept, open, reloadSignal);
 
   /** 已选路径（数组保序：角标序号 = 点击顺序） */
   const [selected, setSelected] = useState<string[]>([]);
   /** 离屏可见条数（「加载更多」） */
   const [visibleCount, setVisibleCount] = useState(PICKER_PAGE_SIZE);
-  /** 上一次点击的索引：Shift 区间选择的锚点 */
-  const lastIndexRef = useRef<number | null>(null);
+  /** 上一次点击条目的路径：Shift 区间选择的锚点。
+   *  必须存 path 而非数组索引：筛选（nameQuery）变化后索引会指向不同条目，
+   *  path 是条目的唯一标识，Shift 时在当前筛选列表中重新定位即可。 */
+  const lastPathRef = useRef<string | null>(null);
+  /** 文件名筛选（前端过滤，不引入新接口） */
+  const [nameQuery, setNameQuery] = useState('');
 
-  // 每次打开重置选择与分页，避免上一次的残留状态进入本次编辑
+  // 每次打开重置选择、分页与筛选，避免上一次的残留状态进入本次编辑
   useEffect(() => {
     if (!open) return;
     setSelected([]);
     setVisibleCount(PICKER_PAGE_SIZE);
-    lastIndexRef.current = null;
+    lastPathRef.current = null;
+    setNameQuery('');
   }, [open]);
+
+  /** 筛选后的列表：文件名 includes 匹配（大小写不敏感），同媒体库页口径 */
+  const filteredItems = useMemo(() => {
+    const q = nameQuery.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((item) => item.name.toLowerCase().includes(q));
+  }, [items, nameQuery]);
 
   const confirm = useCallback(
     (urls: string[]) => {
@@ -70,21 +93,21 @@ export default function MediaPickerDialog({
   }, []);
 
   const handleClick = useCallback(
-    (item: MediaLibraryItem, index: number, shiftKey: boolean) => {
+    (item: MediaLibraryItem, shiftKey: boolean) => {
       if (!multiple) {
         confirm([item.url]);
         return;
       }
 
-      const anchor = lastIndexRef.current;
-      if (shiftKey && anchor !== null && anchor !== index) {
-        // 区间选择：把 [anchor, index] 内的条目并入选择（保序、去重）
-        const [from, to] = anchor < index ? [anchor, index] : [index, anchor];
-        const range = items.slice(from, to + 1);
+      const anchorPath = lastPathRef.current;
+      const range = shiftKey ? computeShiftRange(filteredItems, anchorPath, item.path) : null;
+      if (range) {
+        // 区间选择：按「当前筛选列表」中的位置把 [anchor, 点击项] 并入选择（保序、去重）。
+        // 锚点以 path 记录、点击时重新定位：筛选变化后索引失效也不会选错条目。
         setSelected((prev) => {
           const next = [...prev];
-          for (const entry of range) {
-            if (!next.includes(entry.path)) next.push(entry.path);
+          for (const path of range) {
+            if (!next.includes(path)) next.push(path);
           }
           return next;
         });
@@ -92,10 +115,10 @@ export default function MediaPickerDialog({
         return;
       }
 
-      lastIndexRef.current = index;
+      lastPathRef.current = item.path;
       toggleAt(item);
     },
-    [multiple, confirm, items, toggleAt]
+    [multiple, confirm, filteredItems, toggleAt]
   );
 
   /** 确认：按选择顺序把 path 映射回 url */
@@ -112,7 +135,7 @@ export default function MediaPickerDialog({
 
   if (!open) return null;
 
-  const visible = items.slice(0, visibleCount);
+  const visible = filteredItems.slice(0, visibleCount);
   const title = multiple ? '从媒体库选择（可多选）' : '从媒体库选择';
 
   return (
@@ -133,6 +156,31 @@ export default function MediaPickerDialog({
         </button>
       </div>
 
+      {/* 筛选行：文件名搜索 + 上传入口（上传入口按调用点决定是否显示） */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border-subtle flex-shrink-0">
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="按文件名筛选……"
+            aria-label="按文件名筛选媒体库"
+            value={nameQuery}
+            onChange={(e) => setNameQuery(e.target.value)}
+            className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
+          />
+        </div>
+        {onUploadNew && (
+          <button
+            type="button"
+            onClick={onUploadNew}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-background bg-foreground rounded-sm hover:bg-foreground/90 transition-colors flex-shrink-0"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            上传新图片
+          </button>
+        )}
+      </div>
+
       <div className="flex-1 overflow-auto p-4">
         {!isConfigured ? (
           <p className="text-xs text-muted-foreground flex items-center gap-1.5">
@@ -148,20 +196,22 @@ export default function MediaPickerDialog({
             <AlertCircle className="w-3.5 h-3.5" />
             {error}
           </p>
-        ) : items.length === 0 ? (
+        ) : filteredItems.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-8">
-            {accept === 'video' ? '媒体库中暂无视频' : accept === 'image' ? '媒体库中暂无图片' : '媒体库中暂无文件'}
+            {nameQuery.trim()
+              ? `没有文件名包含「${nameQuery.trim()}」的${accept === 'video' ? '视频' : accept === 'image' ? '图片' : '文件'}`
+              : accept === 'video' ? '媒体库中暂无视频' : accept === 'image' ? '媒体库中暂无图片' : '媒体库中暂无文件'}
           </p>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-            {visible.map((item, index) => {
+            {visible.map((item) => {
               const order = selected.indexOf(item.path);
               const isSelected = order >= 0;
               return (
                 <button
                   key={item.path}
                   type="button"
-                  onClick={(e) => handleClick(item, index, e.shiftKey)}
+                  onClick={(e) => handleClick(item, e.shiftKey)}
                   onDoubleClick={() => confirm([item.url])}
                   aria-pressed={multiple ? isSelected : undefined}
                   aria-label={`${item.name}${isSelected ? `，已选，第 ${order + 1} 个` : ''}`}
@@ -197,14 +247,14 @@ export default function MediaPickerDialog({
           </div>
         )}
 
-        {!loading && !error && items.length > visibleCount && (
+        {!loading && !error && filteredItems.length > visibleCount && (
           <div className="flex justify-center pt-3">
             <button
               type="button"
               onClick={() => setVisibleCount((n) => n + PICKER_PAGE_SIZE)}
               className="px-4 py-1.5 text-xs border border-border rounded-sm text-muted-foreground hover:bg-accent transition-colors"
             >
-              加载更多（剩余 {items.length - visibleCount}）
+              加载更多（剩余 {filteredItems.length - visibleCount}）
             </button>
           </div>
         )}

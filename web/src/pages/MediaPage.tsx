@@ -4,46 +4,32 @@ import { useRepo } from '../contexts/RepoContext';
 import { useAuth } from '../hooks/useAuth';
 import type { UploadMode } from '../../../shared/types';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
-import { getTree, uploadImage, uploadMediaBinary, deleteFile, readFile } from '../lib/api';
+import { getTree, deleteFile, readFile } from '../lib/api';
 import { resolveMediaSource, mediaCdnUrl } from '../lib/resolveMediaSource';
 import { sortByLastModified } from '../lib/sortFiles';
-import { fillTemplate, fillPathTemplate, migrateLegacyTemplate } from '../lib/template';
-import { s3ListObjects, s3PutObject, s3DeleteObject, s3PublicUrl } from '../lib/s3MediaClient';
+import { s3ListObjects, s3DeleteObject, s3PublicUrl } from '../lib/s3MediaClient';
 import { getMediaS3Config } from '../lib/mediaS3Api';
 import { scanAssetReferences, type AssetReference } from '../lib/assetReferences';
 import { readSnapshot } from '../lib/fileSnapshot';
 import { getCachedFiles } from '../lib/fileCache';
-import { planUpload, type UploadPlan } from '../lib/mediaUploadPlan';
 import {
-  detectEmbeddedVideoCodec,
-  isBrowserNativeCodec,
-} from '../lib/motionPhoto';
-import { transcodeMotionPhotoVideo, type TranscodeProgress } from '../lib/motionPhotoTranscode';
-import { videoMaxBytes, formatMegabytes } from '../lib/mediaLimits';
-import { mapLimit } from '../lib/concurrency';
-import {
-  compressImage,
-  blobToBase64,
   formatDate,
   formatSize,
-  createThumbnail,
-  createVideoPoster,
   thumbnailPathFor,
   listImageUrlFor,
   registerCdnUrlBuilder,
-  sanitizeMediaFileName,
   isVideoName,
   isDerivedAsset,
   videoEmbedSnippet,
-  extForFormat,
   IMAGE_EXT_RE,
   VIDEO_EXT_RE,
   MEDIA_PAGE_SIZE,
   type MediaFile
 } from '../lib/mediaUtils';
-import { MediaUploader } from '../components/media/MediaUploader';
+import { MediaUploadDialog } from '../components/media/MediaUploadDialog';
 import { MediaPreviewDialog } from '../components/media/MediaPreviewDialog';
 import { DeleteConfirmDialog } from '../components/media/DeleteConfirmDialog';
+import { useMediaUpload } from '../hooks/useMediaUpload';
 import {
   Image as ImageIcon,
   Trash2,
@@ -54,7 +40,9 @@ import {
   Loader2,
   FileImage,
   Play,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Search,
+  Upload
 } from 'lucide-react';
 
 /** 单张媒体卡片（memo）：千级网格下，复制闪烁/横幅/上传态等父级 state 变化
@@ -150,12 +138,9 @@ export default function MediaPage() {
   const { selectedRepo } = useRepo();
   const source = useMemo(() => resolveMediaSource(mediaConfig, selectedRepo), [mediaConfig, selectedRepo]);
   // 命名模板：旧 {Y}{m} 语法在加载时一次性迁移为新 {{tag}} 语法（幂等）
-  const migratedRenameTemplateRef = useRef(migrateLegacyTemplate(mediaConfig.renameTemplate));
+  // 模板迁移已移入 useMediaUpload（弹窗内可临时改模板）
   const [files, setFiles] = useState<MediaFile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedType, setCopiedType] = useState<'url' | 'markdown' | null>(null);
   const [previewFile, setPreviewFile] = useState<MediaFile | null>(null);
@@ -169,18 +154,33 @@ export default function MediaPage() {
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  /**
-   * 上传方式：默认取设置页配置；本次会话内切换不写回配置（避免一次误操作改变长期行为）。
-   * 用户改设置页后 mediaConfig.uploadMode 变化，此处通过 key 重置（见下方 useEffect）。
-   */
-  const [uploadMode, setUploadMode] = useState<UploadMode>(mediaConfig.uploadMode);
+  /** 上传弹窗开关；配置在弹窗内临时持有，关闭后回落到设置页默认值（D2） */
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  /** 文件名筛选（前端过滤，与草稿箱 searchQuery 同形态，不引入新接口） */
+  const [nameQuery, setNameQuery] = useState('');
+
+  // 列表加载 / S3 配置探测 / 删除 / 复制等非上传类错误：独立于上传管线的错误槽位
+  const [loadError, setLoadError] = useState('');
+  /** 删除成功提示（与上传管线的 success 分开，避免两种语义挤在同一横幅里） */
+  const [deleteNotice, setDeleteNotice] = useState('');
+  /** 删除/上传提示的清除定时器：卸载时需清理，避免在已卸载组件上 setState */
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setUploadMode(mediaConfig.uploadMode);
-  }, [mediaConfig.uploadMode]);
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
 
-  /** 转码组件加载提示（独立于 success/error 槽位，避免语义打架） */
-  const [transcodeNotice, setTranscodeNotice] = useState<string | null>(null);
+  /** 显示 2 秒后自动清除（重复调用会重置计时） */
+  const flashNotice = useCallback((setter: (v: string) => void, text: string) => {
+    setter(text);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => {
+      setter('');
+      noticeTimerRef.current = null;
+    }, 2000);
+  }, []);
 
   const [deleteConfirm, setDeleteConfirm] = useState<MediaFile | null>(null);
   /** 仓库内全部文件路径（缩略图存在性判定用） */
@@ -211,6 +211,18 @@ export default function MediaPage() {
   }, []);
 
   const isConfigured = source.configured;
+
+  /** 文件名筛选后的列表：前端 includes 匹配，大小写不敏感 */
+  const filteredFiles = useMemo(() => {
+    const q = nameQuery.trim().toLowerCase();
+    if (!q) return files;
+    return files.filter((f) => f.name.toLowerCase().includes(q));
+  }, [files, nameQuery]);
+
+  // 筛选条件变化时回到第一页，避免停留在不存在的页码上
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [nameQuery]);
 
   const handleGridColsChange = (value: number) => {
     setGridCols(value);
@@ -246,10 +258,10 @@ export default function MediaPage() {
           setS3Configured(true);
         } else {
           setS3Configured(false);
-          setError('请在设置页完成 S3 图床配置（凭据现保存于服务端）');
+          setLoadError('请在设置页完成 S3 图床配置（凭据现保存于服务端）');
         }
       })
-      .catch(() => { if (!cancelled) setError('S3 图床配置读取失败，请稍后重试'); });
+      .catch(() => { if (!cancelled) setLoadError('S3 图床配置读取失败，请稍后重试'); });
     return () => { cancelled = true; };
   }, [isS3Source]);
 
@@ -260,7 +272,7 @@ export default function MediaPage() {
     if (isS3Source && !s3Configured) return null;
     if (!silent) {
       setLoading(true);
-      setError('');
+      setLoadError('');
     }
     try {
       let mediaFiles: MediaFile[];
@@ -326,7 +338,7 @@ export default function MediaPage() {
       if (silent) {
         return null;
       }
-      setError(err instanceof Error ? err.message : '媒体列表加载失败，请稍后重试');
+      setLoadError(err instanceof Error ? err.message : '媒体列表加载失败，请稍后重试');
       return null;
     } finally {
       if (!silent) {
@@ -340,374 +352,48 @@ export default function MediaPage() {
   }, [isConfigured, loadFiles]);
 
   /**
-   * 上传主流程：先为每个文件生成「计划」（格式/类型/模式/扩展名/上限），
-   * 再按类型分组并发执行。决策与执行分离的原因见 lib/mediaUploadPlan.ts 顶部注释。
+   * 上传管线：从页面内联逻辑抽到 hooks/useMediaUpload，供本页的上传弹窗复用。
+   * 弹窗内的「本次上传配置」（模式/质量/重命名模板）在提交时通过 options 传入，
+   * 不写回设置页 —— 设置页仍是默认值的唯一权威（D2）。
    */
-  const handleUpload = async (fileList: FileList | File[]) => {
-    if (!isConfigured) return;
-    if (!isS3Source && !user) return;
+  const {
+    upload: runUpload,
+    uploading,
+    error: uploadError,
+    success,
+    transcodeNotice,
+    clearError: clearUploadError,
+    clearSuccess,
+  } = useMediaUpload({
+    mediaConfig,
+    source,
+    login: user?.login ?? null,
+    isS3Source,
+    s3View,
+    loadFiles,
+    getCdnUrl,
+  });
 
-    const filesArray = Array.from(fileList);
-    if (filesArray.length === 0) {
-      setError('未选择任何文件');
-      return;
-    }
+  /** 错误槽位：列表加载与上传共用一个展示区，删除/加载失败也写这里 */
+  const error = uploadError || loadError;
 
-    setUploading(true);
-    setError('');
-    setSuccess('');
+  /**
+   * 关闭错误提示：清掉当前实际展示的那一个错误源。
+   * error 是 uploadError || loadError 的合并槽位，只清其中一个时
+   * 另一个源的错误将无法被用户关闭（关闭按钮点了没反应）。
+   */
+  const dismissError = useCallback(() => {
+    if (uploadError) clearUploadError();
+    else setLoadError('');
+  }, [uploadError, clearUploadError]);
 
-    const errors: string[] = [];
-    const notes: string[] = [];
-
-    // 1. 计划阶段：所有拒绝都发生在这里，执行阶段不再做策略判断
-    const plans: UploadPlan[] = [];
-    for (const file of filesArray) {
-      try {
-        plans.push(await planUpload(file, uploadMode, { isS3: isS3Source }));
-      } catch (err) {
-        errors.push(err instanceof Error ? err.message : `${file.name}：无法处理`);
-      }
-    }
-
-    if (plans.length === 0) {
-      setError(errors.join('\n'));
-      setUploading(false);
-      return;
-    }
-
-    // 2. 执行阶段：图片并发 3、视频并发 1。
-    //    视频独占带宽且 GitHub 端点对同文件并发写会 409；分组而非混排，
-    //    避免大批图片把视频排到最后才动。
-    let currentFiles = await loadFiles(true);
-    const renameTemplate = migratedRenameTemplateRef.current;
-    const dirPart = fillPathTemplate(source.pathPrefix);
-    const login = user?.login ?? '';
-
-    const uploadOne = async (plan: UploadPlan): Promise<boolean> => {
-      const { file, kind, mode } = plan;
-
-      // 命名：模板 → 清洗（worker 路径白名单不允许空格）→ 拼扩展名
-      const baseName = sanitizeMediaFileName(
-        fillTemplate(renameTemplate, { filename: file.name })
-      );
-      // ext 可能被「压缩无收益回退原图」改写（.webp → 原格式），因此这里先算待上传字节，
-      // 再用最终字节决定落盘扩展名——避免「.webp 路径里躺着 JPEG 字节」的错配。
-      let finalExt = plan.ext;
-      const fileName = () => `${baseName}.${finalExt}`;
-      const filePath = () => (dirPart ? `${dirPart}/${fileName()}` : fileName());
-
-      // 重名判定必须比对完整路径：按月归档目录下 2026/09/a.webp 与 2026/10/a.webp 不是同一个文件
-      const existing = currentFiles?.find((f) => f.path === filePath());
-      if (existing && mediaConfig.duplicateStrategy === 'skip') {
-        return false; // 由调用方计为 skipped
-      }
-
-      // ---- Motion Photo（安卓动态照片）特殊路径 ----
-      // 单文件内含「主图 + MP4」，需拆分：主图走图片路径，视频独立上传。
-      // 视频编码为 H.264 → 直接切片（零 ffmpeg、零下载）；HEVC/AV1 → 转码 H.264。
-      // 任何环节失败都降级为「仅上传静态图」，不阻断用户。
-      if (plan.motionPhoto && plan.motionPhotoInfo) {
-        const info = plan.motionPhotoInfo;
-        const videoOffset = info.videoOffset ?? 0;
-        const videoLength = info.videoLength ?? 0;
-
-        // 1. 主图：Blob.slice 是视图，不复制字节（避免整文件进 JS 堆）
-        const stillBlob = file.slice(0, videoOffset);
-        let stillPayload: Blob = stillBlob;
-        let stillExt = plan.ext;
-        if (plan.mode === 'compress') {
-          const compressed = await compressImage(
-            new File([stillBlob], `${baseName}.jpg`, { type: 'image/jpeg' }),
-            mediaConfig.quality
-          );
-          // 压缩无收益时回退原图——此时扩展名必须跟着改，
-          // 否则会出现「.webp 路径里躺着 JPEG 字节」的错配
-          if (compressed.size < stillBlob.size) {
-            stillPayload = compressed;
-          } else {
-            stillExt = plan.format === 'heic' ? 'heic' : extForFormat(plan.format);
-            notes.push(`${baseName}.${stillExt}：压缩无收益，已保留原图`);
-          }
-        }
-
-        const stillFileName = `${baseName}.${stillExt}`;
-        const stillPath = dirPart ? `${dirPart}/${stillFileName}` : stillFileName;
-        const stillExisting = currentFiles?.find((f) => f.path === stillPath);
-
-        // 2. 视频：剥离 → 判编码 → 切片直传或转码
-        const videoBytes = new Uint8Array(
-          await file.slice(videoOffset, videoOffset + videoLength).arrayBuffer()
-        );
-        let videoBlob: Blob | null = null;
-        let videoNote = '';
-        const codec = detectEmbeddedVideoCodec(videoBytes);
-        if (isBrowserNativeCodec(codec)) {
-          // H.264 内嵌：浏览器原生可播，零转码直接切片
-          videoBlob = new Blob([videoBytes as BlobPart], { type: 'video/mp4' });
-          videoNote = `动态视频已是 H.264，直接上传（${formatSize(videoBlob.size)}）`;
-        } else {
-          try {
-            const result = await transcodeMotionPhotoVideo(videoBytes, {
-              onProgress: (p: TranscodeProgress) => {
-                if (p.stage === 'loading') {
-                  setTranscodeNotice('正在加载转码组件（首次约 31 MB，后续复用）……');
-                }
-              },
-            });
-            videoBlob = result.blob;
-            videoNote = `动态视频已转 H.264（${formatSize(videoBlob.size)}）`;
-          } catch (err) {
-            // 转码失败不阻断主图上传：博客里至少还有静态图
-            console.warn('[MediaPage] Motion Photo 视频转码失败：', err);
-            errors.push(`${file.name}：动态视频转码失败，已仅上传静态图`);
-          }
-        }
-
-        // 3. 上传主图（与普通图片同路径）
-        if (isS3Source) {
-          await s3PutObject(s3View ?? { publicBaseUrl: '' }, stillPath, stillPayload);
-        } else {
-          await uploadImage({
-            owner: source.owner,
-            repo: source.repo,
-            path: stillPath,
-            base64Content: await blobToBase64(stillPayload),
-            message: `[skip ci] 上传：${stillFileName}`,
-            branch: source.branch,
-            userName: login,
-            sha: stillExisting?.sha,
-          });
-        }
-
-        // 3.1 主图缩略图：动态照片的主图同样需要列表缩略图
-        try {
-          const thumb = await createThumbnail(
-            new File([stillPayload], stillFileName, { type: stillPayload.type || 'image/jpeg' })
-          );
-          if (thumb) {
-            const thumbPath = thumbnailPathFor(stillPath);
-            if (isS3Source) {
-              await s3PutObject(s3View ?? { publicBaseUrl: '' }, thumbPath, thumb);
-            } else {
-              await uploadImage({
-                owner: source.owner,
-                repo: source.repo,
-                path: thumbPath,
-                base64Content: await blobToBase64(thumb),
-                message: `[skip ci] 缩略图：${thumbPath.split('/').pop()}`,
-                branch: source.branch,
-                userName: login,
-              });
-            }
-          }
-        } catch {
-          console.warn('[MediaPage] 动态照片主图缩略图上传失败（不影响主文件）');
-        }
-
-        // 4. 上传视频（同名 .mp4，与主图同目录）
-        if (videoBlob) {
-          const videoFileName = `${baseName}.mp4`;
-          const videoPath = dirPart ? `${dirPart}/${videoFileName}` : videoFileName;
-          const videoExisting = currentFiles?.find((f) => f.path === videoPath);
-          // 重名策略同样作用于视频：skip 时不覆盖已有视频
-          if (videoExisting && mediaConfig.duplicateStrategy === 'skip') {
-            notes.push(`${videoFileName}：已存在同名视频，按「跳过」策略未覆盖`);
-          } else {
-            if (isS3Source) {
-              await s3PutObject(s3View ?? { publicBaseUrl: '' }, videoPath, videoBlob);
-            } else {
-              await uploadMediaBinary({
-                owner: source.owner,
-                repo: source.repo,
-                path: videoPath,
-                blob: videoBlob,
-                message: `[skip ci] 上传动态视频：${videoFileName}`,
-                branch: source.branch,
-                userName: login,
-                sha: videoExisting?.sha,
-              });
-            }
-            notes.push(`${videoFileName}：${videoNote}`);
-          }
-
-          // 视频封面：取视频首帧
-          try {
-            const poster = await createVideoPoster(
-              new File([videoBlob], videoFileName, { type: 'video/mp4' })
-            );
-            if (poster) {
-              const posterPath = thumbnailPathFor(videoPath);
-              if (isS3Source) {
-                await s3PutObject(s3View ?? { publicBaseUrl: '' }, posterPath, poster);
-              } else {
-                await uploadImage({
-                  owner: source.owner,
-                  repo: source.repo,
-                  path: posterPath,
-                  base64Content: await blobToBase64(poster),
-                  message: `[skip ci] 封面：${posterPath.split('/').pop()}`,
-                  branch: source.branch,
-                  userName: login,
-                });
-              }
-            }
-          } catch {
-            console.warn('[MediaPage] 动态视频封面上传失败（不影响主文件）');
-          }
-        }
-
-        // 5. 更新本地列表缓存
-        if (currentFiles) {
-          const stillUrl = isS3Source
-            ? (s3PublicUrl(s3View ?? { publicBaseUrl: '' }, stillPath) || '')
-            : getCdnUrl(stillPath);
-          currentFiles = [{
-            name: stillFileName,
-            path: stillPath,
-            sha: stillExisting?.sha || '',
-            size: stillPayload.size,
-            lastModified: Date.now(),
-            url: stillUrl,
-          }, ...currentFiles];
-          if (videoBlob) {
-            const videoPath = dirPart ? `${dirPart}/${baseName}.mp4` : `${baseName}.mp4`;
-            currentFiles = [{
-              name: `${baseName}.mp4`,
-              path: videoPath,
-              sha: '',
-              size: videoBlob.size,
-              lastModified: Date.now(),
-              url: isS3Source
-                ? (s3PublicUrl(s3View ?? { publicBaseUrl: '' }, videoPath) || '')
-                : getCdnUrl(videoPath),
-            }, ...currentFiles];
-          }
-        }
-        setTranscodeNotice(null);
-        return true;
-      }
-
-      // 待上传字节：压缩模式做重编码，原图/视频直接用原始文件
-      let payload: Blob = file;
-      if (kind === 'image' && mode === 'compress') {
-        const compressed = await compressImage(file, mediaConfig.quality);
-        // 压缩无收益时回退原图：已优化的 AVIF / 小尺寸 PNG 转 WebP 常常更大，
-        // 硬压会让「默认压缩」偶尔产生负效果
-        if (compressed.size >= file.size * 0.98) {
-          payload = file;
-          finalExt = extForFormat(plan.format);
-          notes.push(`${fileName()}：压缩无收益，已保留原图`);
-        } else {
-          payload = compressed;
-        }
-      }
-
-      const resolvedFileName = fileName();
-      const resolvedFilePath = filePath();
-
-      if (isS3Source) {
-        // S3：经 Worker 代理上传（SigV4），大视频不经 Worker
-        await s3PutObject(s3View ?? { publicBaseUrl: '' }, resolvedFilePath, payload);
-      } else if (kind === 'video') {
-        // 视频：走二进制端点，避免 base64 的 33% 膨胀与双份内存
-        await uploadMediaBinary({
-          owner: source.owner,
-          repo: source.repo,
-          path: resolvedFilePath,
-          blob: payload,
-          message: `[skip ci] 上传：${resolvedFileName}`,
-          branch: source.branch,
-          userName: login,
-          sha: existing?.sha
-        });
-      } else {
-        // 图片：沿用 base64 端点（体积小，且该路径已有校验与回归覆盖）
-        await uploadImage({
-          owner: source.owner,
-          repo: source.repo,
-          path: resolvedFilePath,
-          base64Content: await blobToBase64(payload),
-          message: `[skip ci] 上传：${resolvedFileName}`,
-          branch: source.branch,
-          userName: login,
-          sha: existing?.sha
-        });
-      }
-
-      // 派生资产（列表缩略图 / 视频封面）：失败不阻断主流程
-      const derived = kind === 'video' ? await createVideoPoster(file) : await createThumbnail(file);
-      if (derived) {
-        try {
-          const thumbPath = thumbnailPathFor(resolvedFilePath);
-          if (isS3Source) {
-            await s3PutObject(s3View ?? { publicBaseUrl: '' }, thumbPath, derived);
-          } else {
-            await uploadImage({
-              owner: source.owner,
-              repo: source.repo,
-              path: thumbPath,
-              base64Content: await blobToBase64(derived),
-              message: `[skip ci] 缩略图：${thumbPath.split('/').pop()}`,
-              branch: source.branch,
-              userName: login
-            });
-          }
-        } catch {
-          console.warn('[MediaPage] 缩略图/封面上传失败（不影响主文件）');
-        }
-      }
-
-      if (currentFiles) {
-        currentFiles = [{
-          name: resolvedFileName,
-          path: resolvedFilePath,
-          sha: existing?.sha || '',
-          size: payload.size,
-          lastModified: Date.now(),
-          url: isS3Source ? (s3PublicUrl(s3View ?? { publicBaseUrl: '' }, resolvedFilePath) || '') : getCdnUrl(resolvedFilePath)
-        }, ...currentFiles];
-      }
-      return true;
-    };
-
-    const runGroup = async (group: UploadPlan[], limit: number) => {
-      let done = 0;
-      await mapLimit(group, limit, async (plan) => {
-        try {
-          const ok = await uploadOne(plan);
-          if (ok) done++;
-        } catch (err) {
-          errors.push(`${plan.file.name}：${err instanceof Error ? err.message : '上传失败，请稍后重试'}`);
-        }
-        return null;
-      });
-      return done;
-    };
-
-    const imagePlans = plans.filter((p) => p.kind === 'image');
-    const videoPlans = plans.filter((p) => p.kind === 'video');
-    const [imageDone, videoDone] = await Promise.all([
-      runGroup(imagePlans, 3),
-      runGroup(videoPlans, 1),
-    ]);
-    const uploaded = imageDone + videoDone;
-    const skipped = plans.length - uploaded - errors.length;
-
-    if (uploaded > 0) {
-      setSuccess(`成功上传 ${uploaded} 个文件${skipped > 0 ? `，跳过 ${skipped} 个重名文件` : ''}`);
-      await loadFiles();
-    }
-    if (notes.length > 0) {
-      setSuccess((prev) => (prev ? `${prev}\n${notes.join('\n')}` : notes.join('\n')));
-    }
-    if (errors.length > 0) {
-      // 多类型混合上传时拼接成一行不可读，改为换行分条
-      setError(errors.join('\n'));
-    }
-
-    setUploading(false);
-  };
+  const handleUploadDialog = useCallback(
+    async (
+      files: File[],
+      options: { mode: UploadMode; quality: number; renameTemplate: string }
+    ) => runUpload(files, options),
+    [runUpload]
+  );
 
   const handleDelete = useCallback((file: MediaFile) => {
     if (!user) return;
@@ -816,9 +502,9 @@ export default function MediaPage() {
         }
       }
       setFiles((prev) => prev.filter((f) => f.sha !== file.sha));
-      setSuccess(`已删除 ${file.name}`);
+      flashNotice(setDeleteNotice, `已删除 ${file.name}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除失败，请稍后重试');
+      setLoadError(err instanceof Error ? err.message : '删除失败，请稍后重试');
     }
   };
 
@@ -827,7 +513,7 @@ export default function MediaPage() {
       await navigator.clipboard.writeText(file.url);
       flashCopied(file.sha, 'url');
     } catch {
-      setError('复制失败，请手动选中内容复制');
+      setLoadError('复制失败，请手动选中内容复制');
     }
   }, [flashCopied]);
 
@@ -840,7 +526,7 @@ export default function MediaPage() {
       await navigator.clipboard.writeText(text);
       flashCopied(file.sha, 'markdown');
     } catch {
-      setError('复制失败，请手动选中内容复制');
+      setLoadError('复制失败，请手动选中内容复制');
     }
   }, [flashCopied]);
   if (!isConfigured) {
@@ -863,61 +549,85 @@ export default function MediaPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="px-4 md:px-8 py-5 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-base font-medium text-foreground">媒体库</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {source.owner}/{source.repo} · {files.length} 个文件
-            </p>
-          </div>
-          <div className="relative flex items-center gap-3">
-            <SlidersHorizontal className="w-4 h-4 text-muted-foreground hidden sm:block" />
-            <span className="text-xs text-muted-foreground w-16 hidden sm:inline">每行 {gridCols} 个</span>
+      <header className="px-4 md:px-8 py-4 flex-shrink-0 border-b border-border-subtle">
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-medium text-foreground whitespace-nowrap">媒体库</h1>
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
-              type="range"
-              min={5}
-              max={10}
-              value={gridCols}
-              onChange={(e) => handleGridColsChange(parseInt(e.target.value, 10))}
-              className="w-24 h-1 accent-primary cursor-pointer hidden sm:block"
+              type="text"
+              placeholder="按文件名筛选……"
+              aria-label="按文件名筛选媒体库文件"
+              value={nameQuery}
+              onChange={(e) => setNameQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm bg-muted text-foreground placeholder-muted-foreground border border-border rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
             />
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen((o) => !o)}
-              className="sm:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-border rounded-sm text-muted-foreground hover:bg-accent transition-colors"
-              aria-expanded={mobileMenuOpen}
-              aria-label="设置每行列数"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>每行 {mobileCols} 个</span>
-            </button>
-            {mobileMenuOpen && (
-              <div className="absolute top-full right-0 mt-1 bg-card border border-border z-50 min-w-[120px] p-1.5 shadow-lg">
-                <p className="text-xs text-muted-foreground mb-1.5 px-1.5">每行列数</p>
-                {[2, 3, 4].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => handleMobileColsChange(n)}
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-sm hover:bg-accent rounded-sm transition-colors"
-                  >
-                    <Check className={`w-3.5 h-3.5 ${mobileCols === n ? 'text-foreground' : 'opacity-0'}`} />
-                    <span>{n} 列</span>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
+          <button
+            type="button"
+            onClick={() => setUploadDialogOpen(true)}
+            disabled={!isConfigured}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-background bg-foreground rounded-sm hover:bg-foreground/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+          >
+            <Upload className="w-4 h-4" />
+            上传图片
+          </button>
         </div>
       </header>
+
+      {/* 排序行：类型/目录分类已移除（GitHub 源内容平铺，tab 无实际筛选价值），
+          仅保留「最近更新」排序与网格列数控制 */}
+      <div className="px-4 md:px-8 py-3 flex-shrink-0 flex items-center gap-3 border-b border-border-subtle">
+        <span className="text-xs text-muted-foreground whitespace-nowrap">最近更新</span>
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {isS3Source ? 'S3 图床' : `${source.owner}/${source.repo}`} · {filteredFiles.length} 个文件
+        </span>
+        <div className="ml-auto relative flex items-center gap-3">
+          <SlidersHorizontal className="w-4 h-4 text-muted-foreground hidden sm:block" />
+          <span className="text-xs text-muted-foreground w-16 hidden sm:inline">每行 {gridCols} 个</span>
+          <input
+            type="range"
+            min={5}
+            max={10}
+            value={gridCols}
+            onChange={(e) => handleGridColsChange(parseInt(e.target.value, 10))}
+            className="w-24 h-1 accent-primary cursor-pointer hidden sm:block"
+          />
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((o) => !o)}
+            className="sm:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-border rounded-sm text-muted-foreground hover:bg-accent transition-colors"
+            aria-expanded={mobileMenuOpen}
+            aria-label="设置每行列数"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>每行 {mobileCols} 个</span>
+          </button>
+          {mobileMenuOpen && (
+            <div className="absolute top-full right-0 mt-1 bg-card border border-border z-50 min-w-[120px] p-1.5 shadow-lg">
+              <p className="text-xs text-muted-foreground mb-1.5 px-1.5">每行列数</p>
+              {[2, 3, 4].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => handleMobileColsChange(n)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-sm hover:bg-accent rounded-sm transition-colors"
+                >
+                  <Check className={`w-3.5 h-3.5 ${mobileCols === n ? 'text-foreground' : 'opacity-0'}`} />
+                  <span>{n} 列</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="flex-1 overflow-auto px-4 md:px-8 space-y-4">
         {error && (
           <div className="flex items-start gap-2 px-3 py-2 bg-destructive/10 border border-destructive/25 rounded-sm text-xs text-destructive">
             <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
             <span className="whitespace-pre-line flex-1">{error}</span>
-            <button type="button" onClick={() => setError('')} className="ml-auto flex-shrink-0" aria-label="关闭错误提示"><X className="w-3 h-3" /></button>
+            <button type="button" onClick={dismissError} className="ml-auto flex-shrink-0" aria-label="关闭错误提示"><X className="w-3 h-3" /></button>
           </div>
         )}
         {transcodeNotice && (
@@ -930,19 +640,17 @@ export default function MediaPage() {
           <div className="flex items-start gap-2 px-3 py-2 bg-success/10 border border-success/25 rounded-sm text-xs text-success">
             <Check className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
             <span className="whitespace-pre-line flex-1">{success}</span>
-            <button type="button" onClick={() => setSuccess('')} className="ml-auto flex-shrink-0" aria-label="关闭成功提示"><X className="w-3 h-3" /></button>
+            <button type="button" onClick={() => clearSuccess()} className="ml-auto flex-shrink-0" aria-label="关闭成功提示"><X className="w-3 h-3" /></button>
           </div>
         )}
 
-        <MediaUploader
-          uploading={uploading}
-          quality={mediaConfig.quality}
-          mode={uploadMode}
-          onModeChange={setUploadMode}
-          onUpload={handleUpload}
-          onDropRejected={() => setError('未识别到可上传的文件：请拖入图片（JPG/PNG/GIF/WebP/SVG/AVIF）或视频（MP4/WebM/OGV）')}
-          videoLimitHint={isS3Source ? `≤ ${formatMegabytes(videoMaxBytes(true))}` : `GitHub 源 ≤ ${formatMegabytes(videoMaxBytes(false))}`}
-        />
+        {deleteNotice && (
+          <div className="flex items-start gap-2 px-3 py-2 bg-success/10 border border-success/25 rounded-sm text-xs text-success">
+            <Check className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <span className="whitespace-pre-line flex-1">{deleteNotice}</span>
+            <button type="button" onClick={() => setDeleteNotice('')} className="ml-auto flex-shrink-0" aria-label="关闭成功提示"><X className="w-3 h-3" /></button>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
@@ -950,7 +658,7 @@ export default function MediaPage() {
           </div>
         ) : files.length === 0 ? (
           <div className="text-center py-12 text-sm text-muted-foreground">
-            暂无文件。上传第一张图片或第一个视频即可开始使用
+            暂无文件。点击右上「上传图片」开始使用
           </div>
         ) : (
           <>
@@ -958,7 +666,7 @@ export default function MediaPage() {
               className="media-grid"
               style={{ '--pgrid': String(gridCols), '--mgrid': String(mobileCols) } as CSSProperties}
             >
-            {files.slice(0, currentPage * MEDIA_PAGE_SIZE).map((file) => (
+            {filteredFiles.slice(0, currentPage * MEDIA_PAGE_SIZE).map((file) => (
               <MediaCard
                 key={file.path}
                 file={file}
@@ -973,14 +681,14 @@ export default function MediaPage() {
               />
             ))}
           </div>
-            {files.length > currentPage * MEDIA_PAGE_SIZE && (
+            {filteredFiles.length > currentPage * MEDIA_PAGE_SIZE && (
               <div className="flex justify-center py-4">
                 <button
                   type="button"
                   onClick={() => setCurrentPage((p) => p + 1)}
                   className="px-6 py-2 text-sm bg-foreground text-white rounded-sm hover:bg-foreground/90 transition-colors"
                 >
-                  加载更多，剩余 {files.length - currentPage * MEDIA_PAGE_SIZE} 个
+                  加载更多，剩余 {filteredFiles.length - currentPage * MEDIA_PAGE_SIZE} 个
                 </button>
               </div>
             )}
@@ -1008,6 +716,18 @@ export default function MediaPage() {
         onCopyUrl={handleCopy}
         onCopyMarkdown={handleCopyMarkdown}
         onDelete={handleDelete}
+      />
+
+      <MediaUploadDialog
+        open={uploadDialogOpen}
+        onClose={() => setUploadDialogOpen(false)}
+        defaultMode={mediaConfig.uploadMode}
+        defaultQuality={mediaConfig.quality}
+        defaultRenameTemplate={mediaConfig.renameTemplate}
+        onUpload={handleUploadDialog}
+        uploading={uploading}
+        error={uploadError}
+        onClearError={clearUploadError}
       />
     </div>
   );

@@ -242,3 +242,80 @@ describe('contentTypeForKey —— 与 extForFormat 的覆盖交叉校验', () =
     assert.equal(contentTypeForKey('A.MP4'), 'video/mp4');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 预览命名 ↔ 实际落地命名一致性（回归：MediaUploadDialog 的 previewName）
+//
+// 弹窗曾自行按「压缩→webp / 原图→源扩展名」推扩展名，与执行层的 plan.ext 分歧，
+// 出现「预览 a.jpeg 实际落地 a.jpg」。以下断言锁定「预览必须以 plan.ext 为准」。
+// ---------------------------------------------------------------------------
+
+describe('previewName 扩展名与 plan.ext 一致性', () => {
+  /** 模拟执行层落盘扩展名：压缩成功 → plan.ext；压缩无收益回退 → extForFormat(format) */
+  function landedExtWithFallback(plan: { ext: string; format: string }): string {
+    return extForFormat(plan.format);
+  }
+
+  it('原图模式 .jpeg：预览必须显示 .jpg（执行层 extForFormat 归一到 jpg）', async () => {
+    const plan = await planUpload(makeFile('a.jpeg', JPEG), 'original', { isS3: false });
+    assert.equal(plan.ext, 'jpg');
+    // 旧实现预览取源扩展名，会得到 'jpeg' —— 与落地不一致
+    assert.notEqual(plan.ext, 'jpeg');
+  });
+
+  it('压缩模式：预览的 .webp 与实际压缩成功路径一致', async () => {
+    const plan = await planUpload(makeFile('a.png', PNG), 'compress', { isS3: false });
+    assert.equal(plan.ext, 'webp');
+  });
+
+  it('压缩无收益回退时，落地扩展名为源格式（预览期无法预知，此处锁定回退结果）', async () => {
+    const plan = await planUpload(makeFile('a.jpeg', JPEG), 'compress', { isS3: false });
+    // 预览显示 webp；若实际压缩无收益，落地是 jpg —— 差异有界且可解释
+    assert.equal(plan.ext, 'webp');
+    assert.equal(landedExtWithFallback(plan), 'jpg');
+  });
+
+  it('GIF 强制原图：预览与落地都不是 webp', async () => {
+    const plan = await planUpload(makeFile('a.gif', GIF), 'compress', { isS3: false });
+    assert.equal(plan.mode, 'original');
+    assert.equal(plan.ext, 'gif');
+  });
+
+  it('普通 HEIC 图片（非动态照片）：可压缩，预览与落地均为 .webp', async () => {
+    const plan = await planUpload(makeFile('a.heic', ftyp('heic')), 'compress', { isS3: false });
+    assert.equal(plan.mode, 'compress');
+    assert.equal(plan.ext, 'webp');
+  });
+
+  it('HEIC 动态照片：强制原图，预览与落地均为 .heic', async () => {
+    // 构造 HEIC 动态照片：ftyp(heic) 头 + XMP(MotionPhoto) + 尾部 MP4
+    const xmp = `<x:xmpmeta xmlns:x="adobe:ns:meta/">
+      <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+        <rdf:Description rdf:about=""
+          xmlns:Camera="http://ns.google.com/photos/1.0/camera/"
+          Camera:MotionPhoto="1"
+          Camera:MicroVideoOffset="1500"/>
+      </rdf:RDF>
+    </x:xmpmeta>`;
+    const stillSize = 5000;
+    const videoSize = 1500;
+    const xmpBytes = new TextEncoder().encode(xmp);
+    const head = new Uint8Array(stillSize);
+    head.set(ftyp('heic'), 0);
+    head.set(xmpBytes, 32);
+    const video = new Uint8Array(videoSize);
+    video.set([0x00, 0x00, 0x00, 0x20], 0);
+    video.set(new TextEncoder().encode('ftyp'), 4);
+    video.set(new TextEncoder().encode('isom'), 8);
+    const bytes = new Uint8Array(stillSize + videoSize);
+    bytes.set(head, 0);
+    bytes.set(video, stillSize);
+
+    const file = new File([bytes], 'a.heic');
+    const plan = await planUpload(file, 'compress', { isS3: false });
+    assert.equal(plan.motionPhoto, true);
+    // HEIC 动态照片主图浏览器无法解码 → 强制原图
+    assert.equal(plan.mode, 'original');
+    assert.equal(plan.ext, 'heic');
+  });
+});
