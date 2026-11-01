@@ -22,6 +22,7 @@ import { resolveMediaBackend, mediaCdnUrl } from '../lib/resolveMediaSource';
 import { s3ListObjects, s3PublicUrl } from '../lib/s3MediaClient';
 import { getMediaS3Config } from '../lib/mediaS3Api';
 import { sortByLastModified } from '../lib/sortFiles';
+import { isServerTranscodeSource } from '../lib/motionPhotoServerTranscode';
 import {
   IMAGE_EXT_RE,
   THUMBNAIL_PREFIX,
@@ -55,9 +56,11 @@ export interface UseMediaLibraryResult {
   reload: (silent?: boolean) => Promise<MediaLibraryItem[] | null>;
 }
 
-/** 扩展名 → kind；非媒体返回 null */
+/** 扩展名 → kind；非媒体返回 null。*.src.mp4（等待服务端转码）同样不算媒体条目 */
 function kindOf(name: string): MediaKind | null {
-  if (/\.(mp4|m4v|webm|ogv|ogg|mov)$/i.test(name)) return 'video';
+  if (/\.(mp4|m4v|webm|ogv|ogg|mov)$/i.test(name)) {
+    return isServerTranscodeSource(name) ? null : 'video';
+  }
   if (IMAGE_EXT_RE.test(name)) return 'image';
   return null;
 }

@@ -47,10 +47,13 @@ export function RepoProvider({ children }: { children: ReactNode }) {
     setLoadingBranches(true);
     try {
       const branchList = await getBranches(owner, repo);
+      // m-03：worker 侧 getRepoBranches 不再静默降级为 ['main']；404 返回空数组，
+      // 其他错误会 reject。空列表保持为空（不伪造 main），让 UI 明确显示「无分支」
+      // 而非误导用户。错误保留日志，由分支选择器自身的下拉态呈现。
       setBranches(branchList);
     } catch (err) {
       console.error('加载分支失败：', err);
-      setBranches(['main']);
+      setBranches([]);
     } finally {
       setLoadingBranches(false);
     }

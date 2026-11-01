@@ -1,0 +1,109 @@
+# 动态照片（Motion Photo）内嵌视频自动转码 — 部署到「图床仓库」
+#
+# ── 部署方法 ─────────────────────────────────────────────────────────────
+# 把本文件复制到图床仓库（如 icecome/img）的 .github/workflows/motion-photo-transcode.yml
+# 并 push 即可。无需任何 Secrets：workflow 使用仓库自带的 GITHUB_TOKEN，
+# 但需要在图床仓库 Settings → Actions → General → Workflow permissions
+# 设为「Read and write permissions」（一次性设置，否则产出 commit 会被 403 拒绝）。
+#
+# ── 与 CMS 的契约（改任一侧必须同步另一侧）──────────────────────────────
+#   · CMS 上传侧把 HEVC/AV1 动态视频原样上传为 `<名字>.src.mp4`
+#     （提交信息含 [server-transcode] 标记，见 web/src/lib/motionPhotoServerTranscode.ts）
+#   · 本 workflow 把 `*.src.mp4` 转码为 H.264 + AAC → 同名 `.mp4`（剥 GPS 元数据），
+#     生成视频封面 `thumb-<名字>.webp`（与 CMS 缩略图约定一致：400px webp），
+#     然后删除 `.src.mp4` 源文件，单个 commit 完成
+#   · 产出提交信息带 [skip ci]：删除 .src.mp4 的提交会命中 paths 过滤，
+#     该标记让 GitHub 跳过由此触发的空转 run
+#
+# ── 设计要点 ────────────────────────────────────────────────────────────
+#   · 全仓扫描而非 diff 匹配：天然覆盖重试（上次失败残留）、并发竞态、
+#     手动直传等所有来源；「产物已存在则跳过」保证幂等，扫描成本可忽略
+#   · 单文件失败不中断整批：失败文件保留原地等下一轮重试，成功文件照常提交
+#   · cron 每 30 分钟兜底：上传瞬间 Actions 排队/抖动导致的漏转，最迟半小时补上
+#   · 文件名不含空格（CMS 的 sanitizeMediaFileName 保证）；直传仓库的文件请遵守
+#   · 转码参数与 CMS 浏览器转码规格对齐：短边 clamp 720、crf 23、veryfast、
+#     faststart、-map_metadata -1（剥 GPS）、-t 15
+
+name: Motion photo transcode
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - '**/*.src.mp4'
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: motion-photo-transcode
+  cancel-in-progress: false
+
+jobs:
+  transcode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Transcode pending sources
+        run: |
+          set -uo pipefail
+          # 全仓扫描待转码源；产物已存在 → 跳过（幂等）
+          PENDING=0
+          FAILED=0
+          for f in $(find . -type f -name '*.src.mp4' -not -path './.git/*' | sed 's|^\./||'); do
+            out="${f%.src.mp4}.mp4"
+            if [ -f "${out}" ]; then
+              echo "skip (output exists): ${f}"
+              continue
+            fi
+            PENDING=$((PENDING+1))
+            echo "::group::ffmpeg ${f}"
+            # -movflags +faststart：moov 前置（流式播放必备）
+            # -map_metadata -1：剥 GPS 等敏感元数据
+            # -t 15：动态照片视频通常 1-3s，异常长视频截断（与 CMS 原规格一致）
+            if ffmpeg -y -hide_banner -loglevel error \
+                 -i "${f}" \
+                 -c:v libx264 -preset veryfast -crf 23 -profile:v high -level 4.0 \
+                 -vf "scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)',format=yuv420p" \
+                 -c:a aac -b:a 128k \
+                 -movflags +faststart -map_metadata -1 -t 15 \
+                 "${out}"; then
+              # 封面：与 CMS thumb- 约定一致（400px webp）；视频 <0.5s 时抽帧
+              # 可能失败——封面属增强能力，仅告警不回滚
+              ffmpeg -y -hide_banner -loglevel error \
+                -ss 0.5 -i "${out}" -frames:v 1 \
+                -vf "scale='min(400,iw)':-2" \
+                "$(dirname "${f}")/thumb-$(basename "${f}" .src.mp4).webp" || \
+                echo "::warning::poster failed for ${f} (不影响视频)"
+              rm -f "${f}"
+            else
+              echo "::error::transcode failed: ${f} (保留源文件待重试)"
+              rm -f "${out}"   # 清理半成品
+              FAILED=$((FAILED+1))
+            fi
+            echo "::endgroup::"
+          done
+          echo "pending=${PENDING} failed=${FAILED}" >> "$GITHUB_STEP_SUMMARY"
+          # 不因个别失败而 fail：失败源文件保留，cron 下一轮自动重试
+
+      - name: Commit outputs
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+          else
+            # [skip ci] 必须保留：本提交删除 .src.mp4，会再次命中 paths 过滤
+            git commit -m "[skip ci] chore: motion photo transcode output"
+            git push
+          fi

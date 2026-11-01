@@ -24,9 +24,11 @@ import { s3PutObject, s3PublicUrl } from '../lib/s3MediaClient';
 import { planUpload, type UploadPlan } from '../lib/mediaUploadPlan';
 import {
   detectEmbeddedVideoCodec,
-  isBrowserNativeCodec,
 } from '../lib/motionPhoto';
 import { transcodeMotionPhotoVideo, type TranscodeProgress } from '../lib/motionPhotoTranscode';
+import {
+  embeddedVideoStrategy,
+} from '../lib/motionPhotoServerTranscode';
 import { mapLimit } from '../lib/concurrency';
 import { mediaCdnUrl } from '../lib/resolveMediaSource';
 import { resolveBackendSource } from '../lib/mediaBackendResolve';
@@ -222,18 +224,32 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
           const stillPath = dirPart ? `${dirPart}/${stillFileName}` : stillFileName;
           const stillExisting = currentFiles?.find((f) => f.path === stillPath);
 
-          // 2. 视频：剥离 → 判编码 → 切片直传或转码
+          // 2. 视频：剥离 → 按策略分流（决策见 motionPhotoServerTranscode.ts 头注释）
           const videoBytes = new Uint8Array(
             await file.slice(videoOffset, videoOffset + videoLength).arrayBuffer()
           );
-          let videoBlob: Blob | null = null;
-          let videoNote = '';
+          let videoBlob: Blob | null;
+          let videoPathOverride: string | null = null; // 非 null 时视频落盘名由它决定
+          let videoFileName = '';
+          let videoPath = '';
+          let videoNote: string;
           const codec = detectEmbeddedVideoCodec(videoBytes);
-          if (isBrowserNativeCodec(codec)) {
+          const strategy = embeddedVideoStrategy(codec, { isS3: isS3Source });
+
+          if (strategy === 'native') {
             // H.264 内嵌：浏览器原生可播，零转码直接切片
             videoBlob = new Blob([videoBytes as BlobPart], { type: 'video/mp4' });
             videoNote = `动态视频已是 H.264，直接上传（${formatSize(videoBlob.size)}）`;
+          } else if (strategy === 'server') {
+            // GitHub 通道 + HEVC/AV1：原样上传为 *.src.mp4，由图床仓库的
+            // GitHub Actions 用原生 ffmpeg 转码（零下载、保证成功）。
+            // 提交信息【必须】保留 server-transcode 标记——这是 workflow
+            // 的触发信号，换成 [skip ci] 会静默杀死整条转码链路。
+            videoBlob = new Blob([videoBytes as BlobPart], { type: 'video/mp4' });
+            videoPathOverride = `${baseName}.src.mp4`;
+            videoNote = `动态视频为 ${codec ?? '未知编码'}，已提交图床转码队列（*.src.mp4，约 1-2 分钟后可用）`;
           } else {
+            // S3 通道 + HEVC/AV1：无 Actions 可借，浏览器 wasm 转码（尽力而为）
             try {
               const result = await transcodeMotionPhotoVideo(videoBytes, {
                 onProgress: (p: TranscodeProgress) => {
@@ -245,9 +261,11 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
               videoBlob = result.blob;
               videoNote = `动态视频已转 H.264（${formatSize(videoBlob.size)}）`;
             } catch (err) {
-              // 转码失败不阻断主图上传：博客里至少还有静态图
+              // 转码失败不阻断主图上传：原样上传 HEVC 源（现代浏览器多可播），
+              // 不可播的访客端仍能看到静态主图——动态部分不再因失败而丢弃
               console.warn('[useMediaUpload] Motion Photo 视频转码失败：', err);
-              errors.push(`${file.name}：动态视频转码失败，已仅上传静态图`);
+              videoBlob = new Blob([videoBytes as BlobPart], { type: 'video/mp4' });
+              videoNote = `浏览器转码失败，已上传原始视频（部分浏览器可播）`;
             }
           }
 
@@ -292,10 +310,10 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
             console.warn('[useMediaUpload] 动态照片主图缩略图上传失败（不影响主文件）');
           }
 
-          // 4. 上传视频（同名 .mp4，与主图同目录）
+          // 4. 上传视频（与主图同目录；server 策略落盘为 *.src.mp4，其余 .mp4）
           if (videoBlob) {
-            const videoFileName = `${baseName}.mp4`;
-            const videoPath = dirPart ? `${dirPart}/${videoFileName}` : videoFileName;
+            videoFileName = videoPathOverride ?? `${baseName}.mp4`;
+            videoPath = dirPart ? `${dirPart}/${videoFileName}` : videoFileName;
             const videoExisting = currentFiles?.find((f) => f.path === videoPath);
             if (videoExisting && mediaConfig.duplicateStrategy === 'skip') {
               notes.push(`${videoFileName}：已存在同名视频，按「跳过」策略未覆盖`);
@@ -308,7 +326,11 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
                   repo: source.repo,
                   path: videoPath,
                   blob: videoBlob,
-                  message: `[skip ci] 上传动态视频：${videoFileName}`,
+                  // server 策略：提交信息是 workflow 的触发信号（见上方注释）；
+                  // 其余路径（native/browser 产物、S3）保持 [skip ci] 惯例
+                  message: strategy === 'server'
+                    ? `[server-transcode] 上传动态视频：${videoFileName}`
+                    : `[skip ci] 上传动态视频：${videoFileName}`,
                   branch: source.branch,
                   userName,
                   sha: videoExisting?.sha,
@@ -317,7 +339,9 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
               notes.push(`${videoFileName}：${videoNote}`);
             }
 
-            // 视频封面：取视频首帧
+            // 视频封面：取视频首帧（server 策略的 .src.mp4 在浏览器里多不可播，
+            // createVideoPoster 探测失败会返回 null——封面留给转码完成后
+            // 的下一次列表刷新，或直接回退静态主图，不阻断上传）
             try {
               const poster = await createVideoPoster(
                 new File([videoBlob], videoFileName, { type: 'video/mp4' })
@@ -354,9 +378,8 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
               url: urlFor(stillPath),
             }, ...currentFiles];
             if (videoBlob) {
-              const videoPath = dirPart ? `${dirPart}/${baseName}.mp4` : `${baseName}.mp4`;
               currentFiles = [{
-                name: `${baseName}.mp4`,
+                name: videoFileName,
                 path: videoPath,
                 sha: '',
                 size: videoBlob.size,

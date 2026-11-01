@@ -117,8 +117,13 @@ export default function SchemaFormPanel({ frontmatter, setFm, profile }: SchemaF
     const map = new Map<FieldGroup, FieldConfig[]>();
     for (const f of profile.fields) {
       const group = f.group ?? 'basic';
-      if (!map.has(group)) map.set(group, []);
-      map.get(group)!.push(f);
+      // n-03：map 在上一行已 ensure，此处用可选链收敛非空断言。
+      const list = map.get(group);
+      if (list) {
+        list.push(f);
+      } else {
+        map.set(group, [f]);
+      }
     }
     return map;
   }, [profile]);

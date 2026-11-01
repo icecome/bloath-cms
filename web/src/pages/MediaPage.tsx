@@ -27,6 +27,7 @@ import {
   MEDIA_PAGE_SIZE,
   type MediaFile
 } from '../lib/mediaUtils';
+import { isServerTranscodeSource } from '../lib/motionPhotoServerTranscode';
 import { cdnImageErrorHandler } from '../lib/cdnFallback';
 import { MediaUploadDialog } from '../components/media/MediaUploadDialog';
 import { MediaPreviewDialog } from '../components/media/MediaPreviewDialog';
@@ -345,9 +346,10 @@ export default function MediaPage() {
         isS3Source ? s3PublicUrl(s3View ?? { publicBaseUrl: '' }, path) : getCdnUrl(path)
       );
 
-      // 展示层剔除 thumb-*：它们是上传流程自动生成的派生文件，
+      // 展示层剔除 thumb-* 与 *.src.mp4：前者是上传流程自动生成的缩略图，
+      // 后者是等待图床 Actions 转码的动态视频源文件（转码产物 .mp4 会出现）。
       // 此前只按扩展名过滤导致每传一张图就多出一个缩略图卡片
-      const display = mediaFiles.filter((f) => !isDerivedAsset(f.name));
+      const display = mediaFiles.filter((f) => !isDerivedAsset(f.name) && !isServerTranscodeSource(f.name));
       const sorted = sortByLastModified(display);
 
       if (silent) {

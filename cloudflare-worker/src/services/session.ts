@@ -163,6 +163,12 @@ export async function validateSessionToken(
       ? sessionPayload.firstIssuedAt
       : issuedAt;
 
+    // 绝对寿命上限（Q-01 / R7）：首签时刻起 7 天后强制失效，无论滑动续期把
+    // expiresAt 推到多远。此前 ABSOLUTE_SESSION_MS 已定义但只被透传，没有任何
+    // 地方真正用它做「过期即拒」判断——被窃取的 cookie 只要持续被 ping 就永不
+    // 失效。在此处落地：firstIssuedAt + 7 天 < now 即判失效。
+    if (Date.now() - firstIssuedAt > ABSOLUTE_SESSION_MS) return null;
+
     return {
       githubToken: sessionPayload.githubToken,
       githubLogin: sessionPayload.githubLogin,

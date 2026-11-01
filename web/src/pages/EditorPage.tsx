@@ -107,9 +107,20 @@ export default function EditorPage() {
     let cancelled = false;
     getProfileForRepo(owner, repo, branch)
       .then((p) => { if (!cancelled) setProfile(p); })
-      .catch(() => { /* 识别失败保持 custom 默认 */ });
+      .catch((err: unknown) => {
+        // m-08：识别失败此前完全静默（空 catch），用户不知道 front-matter 已按
+        // custom 渲染。custom 是合理兜底不阻断编辑，但必须让失败可见（§6.5）——
+        // 用 warning toast 非阻塞提示，用户仍可编辑；同时保留 console.error 供排查。
+        console.error('[editor] 加载站点 Profile 失败，按自定义 Profile 处理：', err);
+        if (!cancelled) {
+          addToast({
+            message: '站点 Profile 识别失败，已按自定义配置渲染 front-matter',
+            type: 'warning',
+          });
+        }
+      });
     return () => { cancelled = true; };
-  }, [owner, repo, branch]);
+  }, [owner, repo, branch, addToast]);
 
   useEffect(() => {
     if (isNew || !user || !basePath || hasLoadedOnce) return;
@@ -127,10 +138,13 @@ export default function EditorPage() {
       ? readBufferFile({ owner, repo, branch, path: filePath }).then((r) => ({ content: r.content, sha: r.sha }))
       : readFile({ owner, repo, path: filePath, branch });
 
-    loadFile
-      .then(async ({ content: fileContent, sha }) => {
+    // m-11：文件内容与 profile 并行获取——此前在 then 内串行 await
+    // getProfileForRepo，等于「读文件 + 识别框架」两次往返叠加。
+    // getProfileForRepo 有 localStorage 缓存，命中时几乎瞬时；
+    // 未命中才真正发请求，此处并行化把它从关键路径上摘掉。
+    Promise.all([loadFile, getProfileForRepo(owner, repo, branch)])
+      .then(([{ content: fileContent, sha }, resolvedProfile]) => {
         const { fm, body } = parseFrontmatter(fileContent);
-        const resolvedProfile = await getProfileForRepo(owner, repo, branch);
         const normalized = normalizeFmForProfile(fm, resolvedProfile);
         setProfile(resolvedProfile);
         setFrontmatter(normalized);
@@ -531,6 +545,10 @@ export default function EditorPage() {
       addToast({ message: '缓冲配置加载中，请稍候再操作', type: 'warning' });
       return;
     }
+    // m-07：删除同样走写操作，双击窗口内第二次提交会因源文件已移走而失败，
+    // 但操作实际已生效（§6.3 记载的事故形态）。复用 saveLockRef 同步锁。
+    if (saveLockRef.current) return;
+    saveLockRef.current = true;
 
     const targetSlug = fileStemFromPath(currentFilePath);
     const trashFile = `${trashPath}/${targetSlug}.md`;
@@ -548,7 +566,11 @@ export default function EditorPage() {
           await writeBufferFile({ owner, repo, branch, path: trashFile, op: 'move', fromPath: currentFilePath });
           addToast({ message: '已存入缓冲，移至回收站', type: 'success' });
         }
-        await refreshChanges();
+        // refreshChanges rethrow 不影响删除结果（commit/缓冲已成功），
+        // 但 finally 的锁释放必须保证执行——包 catch 防止提前跳出 finally 逻辑
+        await refreshChanges().catch((e: unknown) => {
+          console.error('[editor] 删除后刷新变更清单失败：', e);
+        });
         handleBack();
         return;
       }
@@ -563,6 +585,7 @@ export default function EditorPage() {
     } catch (err) {
       addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
+      saveLockRef.current = false;
       setSaving(false);
       setShowDeleteConfirm(false);
     }
@@ -576,16 +599,21 @@ export default function EditorPage() {
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!wrapperRef.current) return;
-
+    // M-R4：监听挂 document 而非 wrapperRef.current。此前挂在 wrapper 上且依赖数组为空，
+    // 编辑既有文章时首帧 loading=false 挂载到 wrapper v1，随后 loading=true 早退卸载
+    // 该 DOM 节点，加载完成重挂载后监听不再恢复——Ctrl+S 在既有文章里静默失效。
+    // 挂 document + handler 内判「焦点是否在本页 wrapper 内」既避免早退丢监听，
+    // 也不影响其他页面（焦点不在本页时直接返回）。
     const handleKeyDown = (e: KeyboardEvent) => {
+      const wrapper = wrapperRef.current;
+      if (!wrapper) return;
       const activeEl = document.activeElement;
-      if (!activeEl || !wrapperRef.current?.contains(activeEl)) return;
+      if (!activeEl || !wrapper.contains(activeEl)) return;
 
       const vditorEditor = activeEl.closest('.vditor');
       const isFocusInEditor = !!vditorEditor;
       const isFocusInMetadataPanel = activeEl.matches('input, textarea, button, select') &&
-        wrapperRef.current.contains(activeEl) && !isFocusInEditor;
+        wrapper.contains(activeEl) && !isFocusInEditor;
 
       if (isFocusInMetadataPanel) return;
 
@@ -610,8 +638,8 @@ export default function EditorPage() {
       }
     };
 
-    wrapperRef.current.addEventListener('keydown', handleKeyDown);
-    return () => { wrapperRef.current?.removeEventListener('keydown', handleKeyDown); };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => { document.removeEventListener('keydown', handleKeyDown); };
   }, []);
 
   if (loading) {

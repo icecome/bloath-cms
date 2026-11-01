@@ -9,7 +9,7 @@ import { scanMdFiles } from '../lib/scanner';
 import { useFileListPage } from '../hooks/useFileListPage';
 import type { EnhancedFileItem } from '../lib/extractFrontMatter';
 import { clearCache } from '../lib/fileCache';
-import { sanitizePath, filterValidDirs, dedupeTargetPaths } from '../lib/path';
+import { sanitizePath, sanitizeSlug, filterValidDirs, dedupeTargetPaths } from '../lib/path';
 import { mapLimit } from '../lib/concurrency';
 import { readUndoRecord, writeUndoRecord, clearUndoRecord } from '../lib/undoStore';
 import EmptyState from '../components/ui/EmptyState';
@@ -302,6 +302,11 @@ export default function DraftsPage() {
   /**
    * 确认预发布（高级流，批量/单篇共用）：写入目标与当前 sha，供后续变更检测。
    * 与单键发布的区别：仅固化目标，不产生提交。
+   *
+   * 动作锁（m-06）：persistTargets 内含网络写（S3 setBufferPublishTarget），
+   * 双击窗口内重复提交虽然幂等，但会造成重复请求与进度串台，按 §6.3 补锁。
+   * finally 内不再裸 await persistTargets——rethrow 会吞掉对话框关闭与
+   * 成功提示（M-R3 同源问题）。
    */
   const handleConfirmPreview = useCallback(async () => {
     const entries = buildTargetEntries(previewDialogEntries
@@ -314,21 +319,27 @@ export default function DraftsPage() {
       setPreviewSinglePath(null);
       return;
     }
+    if (!acquireActionLock()) return;
     setActionLoading(true);
     try {
       await persistTargets(entries);
+      // n-04：entries.length 已判非空，非空断言改为显式取值
+      const firstTarget = entries[0]?.previewTarget ?? '';
+      addToast({
+        message: entries.length === 1
+          ? `已标记预发布目标：${firstTarget}`
+          : `已预发布 ${entries.length} 篇`,
+        type: 'success',
+      });
+    } catch (err) {
+      addToast({ message: `预发布目标保存失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      releaseActionLock();
       setShowPreviewDialog(false);
       setPreviewSinglePath(null);
     }
-    addToast({
-      message: entries.length === 1
-        ? `已标记预发布目标：${entries[0]!.previewTarget}`
-        : `已预发布 ${entries.length} 篇`,
-      type: 'success',
-    });
-  }, [previewDialogEntries, mergedFiles, previewTargets, persistTargets, addToast]);
+  }, [previewDialogEntries, mergedFiles, previewTargets, persistTargets, addToast, acquireActionLock, releaseActionLock]);
 
 
   /**
@@ -428,7 +439,12 @@ export default function DraftsPage() {
       // 无条件清态：列表与预发布记录以仓库实际状态为准（重扫纠偏，P0-007），
       // 已成功发布的条目即使本次整体失败也不会再进下一次 moveOps。
       clearCache(selectedRepo);
-      await refreshChanges();
+      // M-R3：refreshChanges / scanMdFiles 若 rethrow 会跳过 releaseActionLock，
+      // 此后本页所有写操作被永久锁死。补偿性刷新失败只影响列表新鲜度，
+      // 不能让它泄漏动作锁——各自包 try/catch 吞错并提示。
+      await refreshChanges().catch((e: unknown) => {
+        console.error('[drafts] 发布后刷新变更清单失败：', e);
+      });
       try {
         const updatedFiles = await scanMdFiles(selectedRepo, draftPath);
         setFiles(updatedFiles);
@@ -456,18 +472,22 @@ export default function DraftsPage() {
     setActionLoading(true);
     try {
       await persistTargets(entries);
+      // n-04：entries.length 已判非空（为 0 时上方早退），非空断言改为显式取值
+      const firstTarget = entries[0]?.previewTarget ?? '';
+      addToast({
+        message: entries.length === 1
+          ? `已标记预发布目标：${firstTarget}`
+          : `已预发布 ${entries.length} 篇`,
+        type: 'success',
+      });
+    } catch (err) {
+      addToast({ message: `预发布目标保存失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
       releaseActionLock();
       // 标记成功即回到列表，后续走工具栏「发布」或侧边栏「发布变更」
       setShowPublishDialog(false);
     }
-    addToast({
-      message: entries.length === 1
-        ? `已标记预发布目标：${entries[0]!.previewTarget}`
-        : `已预发布 ${entries.length} 篇`,
-      type: 'success',
-    });
   }, [mergedFiles, selectedFiles, acquireActionLock, releaseActionLock, persistTargets, addToast]);
 
   const handleMove = async () => {
@@ -730,9 +750,23 @@ export default function DraftsPage() {
     setActionLoading(true);
     try {
       const oldName = renameFile.name;
-      const newName = `${renameValue.trim().replace(/\s+/g, '-')}.md`;
+      // m-05：renameValue 来自自由输入框，必须过 sanitizeSlug——含 `/` 或 `..`
+      // 时可把文件写到任意子目录/父目录（commitBatch 的 write 会隐式建目录）。
+      // 与 handleMove 的 sanitizePath、EditorPage 保存的 sanitizeSlug 保持同一道防线。
+      let newStem: string;
+      try {
+        newStem = sanitizeSlug(renameValue.trim().replace(/\s+/g, '-'));
+      } catch (err) {
+        addToast({ message: `文件名无效：${(err as Error).message}`, type: 'error' });
+        return;
+      }
+      if (!newStem) {
+        addToast({ message: '文件名不能为空', type: 'error' });
+        return;
+      }
+      const newName = `${newStem}.md`;
       const newDir = renameFile.path.substring(0, renameFile.path.lastIndexOf('/'));
-      const newPath = `${newDir}/${newName}`;
+      const newPath = newDir ? `${newDir}/${newName}` : newName;
 
       if (bufferEnabled) {
         // 缓冲模式下重命名不进仓库：读缓冲内容（miss 自动回退仓库），

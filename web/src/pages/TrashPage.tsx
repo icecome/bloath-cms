@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useRepo } from '../contexts/RepoContext';
 import { useCollections } from '../contexts/CollectionsContext';
@@ -64,10 +64,40 @@ export default function TrashPage() {
   const [singleDeleteFile, setSingleDeleteFile] = useState<EnhancedFileItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // 同步动作锁（§6.3）：actionLoading 是 state，同一事件循环内的第二次点击读到的
+  // 仍是旧值，disabled 拦不住双击重复提交（第二次 commitBatch 因源文件已移走而 409，
+  // 用户看到「失败」但操作实际已生效）。ref 读写是同步的，可堵住该窗口。
+  // DashboardPage / DraftsPage 已修，本页此前遗漏（审查 M-R1，2026-11-01）。
+  const actionLockRef = useRef(false);
+  const acquireActionLock = useCallback((): boolean => {
+    if (actionLockRef.current) return false;
+    actionLockRef.current = true;
+    return true;
+  }, []);
+  const releaseActionLock = useCallback((): void => {
+    actionLockRef.current = false;
+  }, []);
+
+  /**
+   * 操作成功后的补偿性重扫（M-R2）：失败必须保留旧列表并提示，
+   * 不能用空数组覆盖——否则瞬时扫描失败会让回收站「看起来被清空」，
+   * 误导用户以为文件已丢失（违反 R4「失败保留旧数据」与 §6.5）。
+   */
+  const rescanAfterAction = useCallback(async (): Promise<void> => {
+    if (!selectedRepo) return;
+    try {
+      setFiles(await scanMdFiles(selectedRepo, trashPath));
+    } catch (err) {
+      console.error('[trash] 操作后重扫失败（列表保持旧数据）：', err);
+      addToast({ message: '刷新列表失败，当前显示可能滞后，请手动刷新页面', type: 'warning' });
+    }
+  }, [selectedRepo, trashPath, setFiles, addToast]);
+
   const availableDirs = filterValidDirs(config.paths || []);
 
   const handleRestore = async (file: EnhancedFileItem, targetDir: string) => {
     if (!selectedRepo || !user || !targetDir.trim()) return;
+    if (!acquireActionLock()) return;
     setActionLoading(true);
     try {
       const newPath = `${targetDir.trim()}/${file.name}`;
@@ -81,17 +111,18 @@ export default function TrashPage() {
       });
       addToast({ message: `已将 ${file.name} 恢复到 ${targetDir}`, type: 'success' });
       clearCache(selectedRepo);
-      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
-      setFiles(updatedFiles);
+      await rescanAfterAction();
     } catch (err) {
       addToast({ message: `恢复失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      releaseActionLock();
     }
   };
 
   const handlePermanentDelete = async (file: EnhancedFileItem) => {
     if (!selectedRepo || !user) return;
+    if (!acquireActionLock()) return;
     setActionLoading(true);
     try {
       await commitBatch({
@@ -105,17 +136,18 @@ export default function TrashPage() {
       addToast({ message: `已永久删除 ${file.name}`, type: 'success' });
       // 永久删除同样必须失效缓存（P2-14）：漏掉会让快照/内存缓存残留已删文件
       clearCache(selectedRepo);
-      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
-      setFiles(updatedFiles);
+      await rescanAfterAction();
     } catch (err) {
       addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      releaseActionLock();
     }
   };
 
   const handleBulkRestore = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0 || !restoreTarget.trim()) return;
+    if (!acquireActionLock()) return;
     setActionLoading(true);
     try {
       const filesToRestore = files.filter((f) => selectedFiles.has(f.path));
@@ -137,17 +169,18 @@ export default function TrashPage() {
       setSelectedFiles(new Set());
       setRestoreTarget(config.draftPath || '.draft');
       setShowRestoreDropdown(false);
-      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
-      setFiles(updatedFiles);
+      await rescanAfterAction();
     } catch (err) {
       addToast({ message: `恢复失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      releaseActionLock();
     }
   };
 
   const handleBulkPermanentDelete = async () => {
     if (!selectedRepo || !user || selectedFiles.size === 0) return;
+    if (!acquireActionLock()) return;
     setActionLoading(true);
     try {
       const filesToDelete = files.filter((f) => selectedFiles.has(f.path));
@@ -165,12 +198,12 @@ export default function TrashPage() {
       setPermanentDeleteConfirm(false);
       // 同单文件永久删除：批量删除也必须失效缓存（P2-14）
       clearCache(selectedRepo);
-      const updatedFiles = await scanMdFiles(selectedRepo, trashPath).catch(() => [] as EnhancedFileItem[]);
-      setFiles(updatedFiles);
+      await rescanAfterAction();
     } catch (err) {
       addToast({ message: `删除失败：${(err as Error).message}`, type: 'error' });
     } finally {
       setActionLoading(false);
+      releaseActionLock();
     }
   };
 

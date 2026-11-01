@@ -47,7 +47,7 @@ function getCurrentNavLabel(pathname: string): string {
 }
 
 function SidebarContent({
-  repos, selectedRepo, branches, user,
+  repos, selectedRepo, branches, loadingBranches, user,
   showRepoDropdown, showBranchDropdown, showAccountDropdown,
   setShowRepoDropdown, setShowBranchDropdown, setShowAccountDropdown,
   onRepoChange, onBranchChange, onSwitchAccount, onLogout, onNewArticle, onNavClick,
@@ -56,6 +56,8 @@ function SidebarContent({
   repos: DetectedRepo[];
   selectedRepo: { owner: string; repo: string; branch: string } | null;
   branches: string[];
+  /** 分支列表加载中（m-03：拉取失败不再伪造 ['main']，空列表与加载中需区分） */
+  loadingBranches: boolean;
   user: { login: string; name?: string; avatar_url: string } | null;
   showRepoDropdown: boolean;
   showBranchDropdown: boolean;
@@ -285,7 +287,7 @@ function SidebarContent({
           <div className="relative dropdown-root">
             <button
               onClick={() => { setShowBranchDropdown(!showBranchDropdown); setShowRepoDropdown(false); setShowAccountDropdown(false); }}
-              disabled={branches.length === 0}
+              disabled={loadingBranches}
               aria-expanded={showBranchDropdown}
               aria-haspopup="listbox"
               aria-label="选择分支"
@@ -297,8 +299,11 @@ function SidebarContent({
 
             {showBranchDropdown && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border z-50 max-h-40 overflow-auto">
-                {branches.length === 0 ? (
+                {loadingBranches ? (
                   <div className="px-3 py-2 text-sm text-muted-foreground">加载中……</div>
+                ) : branches.length === 0 ? (
+                  // m-03：拉取失败不再伪造 ['main']，空列表明确显示「无可用分支」
+                  <div className="px-3 py-2 text-sm text-muted-foreground">无可用分支（拉取失败或仓库无分支）</div>
                 ) : (
                   branches.map((branch: string) => (
                     <button
@@ -452,7 +457,7 @@ function SidebarContent({
 
 export default function MainLayout() {
   const { user, logout } = useAuth();
-  const { selectedRepo, setSelectedRepo, branches, loadBranches } = useRepo();
+  const { selectedRepo, setSelectedRepo, branches, loadingBranches, loadBranches } = useRepo();
   const { updateConfig, updateMediaConfig, config: layoutCollectionsConfig } = useCollections();
   const location = useLocation();
   const navigate = useNavigate();
@@ -469,14 +474,15 @@ export default function MainLayout() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
 
   const toggleTheme = useCallback(() => {
-    setDark((prev) => {
-      const next = !prev;
-      document.documentElement.classList.toggle('dark', next);
-      // 持久化用户显式选择；未操作过时保持跟随系统的初始判定
-      localStorage.setItem('bloath_theme', next ? 'dark' : 'light');
-      return next;
-    });
-  }, []);
+    // m-10：副作用（classList / localStorage）此前写在 setState updater 内——
+    // updater 必须是纯函数，React 在并发渲染下可能多次调用它，副作用会被重复执行。
+    // 改为「先算新值 → setState → 副作用在外部执行一次」。
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle('dark', next);
+    // 持久化用户显式选择；未操作过时保持跟随系统的初始判定
+    localStorage.setItem('bloath_theme', next ? 'dark' : 'light');
+  }, [dark]);
 
   const detectedFrameworksRef = useRef(false);
   const syncedRepoKeyRef = useRef('');
@@ -502,8 +508,11 @@ export default function MainLayout() {
     const { owner, repo, branch } = selectedRepo;
     pullRepoConfig(owner, repo, branch)
       .then((remote) => {
-        // 拉取期间仓库已切换：丢弃过期结果，避免覆盖当前仓库配置
-        if (!selectedRepo || selectedRepo.owner !== owner || selectedRepo.repo !== repo) return;
+        // 拉取期间仓库已切换：丢弃过期结果，避免覆盖当前仓库配置。
+        // m-09：校验必须含 branch——同仓库不同分支的配置可能不同（如预发布分支），
+        // 只比 owner/repo 会让旧分支的迟到响应覆盖新分支配置。
+        if (!selectedRepo || selectedRepo.owner !== owner || selectedRepo.repo !== repo
+            || selectedRepo.branch !== branch) return;
         if (!remote) return;
         // 剥离历史版本可能已写入仓库文件的 S3 凭据，防止污染本地存储（P1-004）
         const clean = sanitizeSyncedConfig(remote);
@@ -609,6 +618,7 @@ export default function MainLayout() {
           repos={repos}
           selectedRepo={selectedRepo}
           branches={branches}
+          loadingBranches={loadingBranches}
           user={user}
           showRepoDropdown={showRepoDropdown}
           showBranchDropdown={showBranchDropdown}
@@ -640,6 +650,7 @@ export default function MainLayout() {
           repos={repos}
           selectedRepo={selectedRepo}
           branches={branches}
+          loadingBranches={loadingBranches}
           user={user}
           showRepoDropdown={showRepoDropdown}
           showBranchDropdown={showBranchDropdown}

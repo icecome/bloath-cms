@@ -107,6 +107,14 @@ function decodeXml(s: string): string {
   return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 }
 
+/**
+ * 解析 ListObjectsV2 XML。
+ *
+ * 假设（m-04）：S3 兼容服务（MinIO/R2/OSS/AWS）的 ListObjectsV2 响应不产生
+ * CDATA 段——key 内的特殊字符以 XML 实体编码（&lt; &gt; &amp; ...）而非 CDATA
+ * 包裹，由 decodeXml 还原。`[^<]+` 在该协议下成立；若接入产出 CDATA 的非标
+ * 服务，需改用 DOMParser。
+ */
 function parseListXml(xml: string): S3ListEntry[] {
   const entries: S3ListEntry[] = [];
   const re = /<Contents>([\s\S]*?)<\/Contents>/g;

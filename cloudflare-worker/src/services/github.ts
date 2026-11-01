@@ -47,12 +47,36 @@ async function throwGithubError(response: Response, context: string): Promise<ne
   try {
     const body = await response.json() as { message?: string; documentation_url?: string };
     if (body.message) message = `${context}: ${body.message}`;
-    // GitHub 速率限制：响应中包含 URL 说明文档地址
-    if (response.status === 403 && body.documentation_url) statusCode = 503;
+    // Q-03：GitHub 二级限流（rate limit / abuse detection）的 403 是否带
+    // documentation_url 不稳定——abuse 检测常不带该字段。更可靠的判据是
+    // 响应头：rate limited 时 x-ratelimit-remaining=0 或带 retry-after，
+    // abuse 检测带 retry-after。二者命中任一即按 503 上抛，让前端走
+    // 「GitHub API 暂不可用」分支而非误判为认证问题。
+    if (response.status === 403) {
+      const rateRemaining = response.headers.get('x-ratelimit-remaining');
+      const retryAfter = response.headers.get('retry-after');
+      if (body.documentation_url || rateRemaining === '0' || retryAfter !== null) {
+        statusCode = 503;
+      }
+    }
   } catch {
     // 响应体非 JSON，仅使用状态码
   }
   throw new GithubApiError(message, statusCode);
+}
+
+/**
+ * GitHub API 子请求的超时上限（m-01）：全部 GitHub 端点共用。
+ * 旧实现 15 处 fetch 均无 AbortSignal，任一端点挂起会占住 Worker 请求
+ * 直至运行时整体时长上限；串行分页循环（getUserRepos/getRepoBranches）
+ * 会放大等待。15s 覆盖正常 P99（GitHub API 常规响应 <2s，树接口大仓
+ * 最多 7MB 也远低于此），超时按网络错误上抛。
+ */
+const GH_FETCH_TIMEOUT_MS = 15_000;
+
+/** 带超时的 fetch：所有 GitHub 子请求的统一入口 */
+async function ghFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(GH_FETCH_TIMEOUT_MS) });
 }
 
 // UTF-8 字符串转 base64（替代已废弃的 unescape/encodeURIComponent 组合）
@@ -67,7 +91,7 @@ function utf8ToBase64(str: string): string {
 
 // 交换 code 获取 access_token
 export async function exchangeCode(code: string, clientSecret: string, clientId: string, redirectUri: string): Promise<string> {
-  const response = await fetch('https://github.com/login/oauth/access_token', {
+  const response = await ghFetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -83,12 +107,15 @@ export async function exchangeCode(code: string, clientSecret: string, clientId:
 
   const data = await response.json() as { message?: string; error?: string; access_token?: string };
   if (!response.ok) {
-    console.error('[exchangeCode] GitHub error:', response.status, data);
+    // m-02：只记录状态与错误字段，不序列化整个响应体——异常分支若返回含
+    // token 的结构，整包进 Workers Tail 日志即为凭据泄露面。
+    console.error('[exchangeCode] GitHub error:', response.status, data.error ?? data.message ?? '');
     throw new Error(data.message || data.error || 'Failed to exchange code for token');
   }
 
   if (!data.access_token) {
-    console.error('[exchangeCode] No access_token returned:', JSON.stringify(data));
+    // 同样不打印 data 本体：此处若打 JSON.stringify(data) 会把整包响应写进日志
+    console.error('[exchangeCode] No access_token returned (status %d)', response.status);
     throw new Error('GitHub returned empty access_token');
   }
 
@@ -100,7 +127,7 @@ export async function getUserInfo(token: string): Promise<User> {
   if (!token) {
     throw new Error('Empty access token');
   }
-  const response = await fetch('https://api.github.com/user', {
+  const response = await ghFetch('https://api.github.com/user', {
     headers: ghHeaders(token)
   });
 
@@ -135,7 +162,7 @@ export async function getUserRepos(token: string): Promise<Repo[]> {
   let url: string | null = 'https://api.github.com/user/repos?per_page=100';
 
   for (let page = 0; page < MAX_PAGES && url; page++) {
-    const response = await fetch(url, {
+    const response = await ghFetch(url, {
       headers: ghHeaders(token)
     });
 
@@ -169,7 +196,7 @@ export async function readFile(
   branch: string = 'main'
 ): Promise<{ content: string; sha: string }> {
   const encodedPath = path.split('/').map(encodeURIComponent).join('/');
-  const response = await fetch(
+  const response = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`,
     {
       headers: ghHeaders(token)
@@ -232,7 +259,7 @@ export async function writeFile(
     payload.author = author;
   }
 
-  const response = await fetch(
+  const response = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
     {
       method: 'PUT',
@@ -279,7 +306,7 @@ export async function deleteFile(
     payload.author = author;
   }
 
-  const response = await fetch(
+  const response = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
     {
       method: 'DELETE',
@@ -306,7 +333,7 @@ export async function listDir(
     ? `https://api.github.com/repos/${owner}/${repo}/contents/${normalizedPath}?ref=${encodeURIComponent(branch)}`
     : `https://api.github.com/repos/${owner}/${repo}/contents?ref=${encodeURIComponent(branch)}`;
 
-  const response = await fetch(apiUrl, {
+  const response = await ghFetch(apiUrl, {
     headers: ghHeaders(token)
   });
 
@@ -335,13 +362,18 @@ export async function getRepoBranches(
   let url: string | null = `https://api.github.com/repos/${owner}/${repo}/branches?per_page=100`;
 
   for (let page = 0; page < MAX_PAGES && url; page++) {
-    const response = await fetch(url, {
+    const response = await ghFetch(url, {
       headers: ghHeaders(token)
     });
 
     if (!response.ok) {
-      console.error(`[getRepoBranches] Failed to fetch branches: ${response.status}`);
-      return ['main'];
+      // m-03：此前失败时静默降级为 ['main']，调用方拿到「看似正常」的单分支列表，
+      // 下游（RepoContext.loadBranches）会把它写进 state，用户切分支时看不到真实分支。
+      // 按错误类型上抛：404 仍按「分支不可达」降级（仓库刚删/改名），其余状态抛错
+      // 交 errorHandler/调用方处理，不再吞掉错误信号。
+      console.error(`[getRepoBranches] 拉取失败：${response.status}`);
+      if (response.status === 404) return [];
+      await throwGithubError(response, 'Failed to fetch branches');
     }
 
     const data = await response.json() as Array<{ name: string }>;
@@ -374,7 +406,7 @@ export async function createBranch(
   }
 
   // 获取源分支最新 commit SHA
-  const refResponse = await fetch(
+  const refResponse = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(sourceBranch)}`,
     { headers: ghHeaders(token) }
   );
@@ -385,7 +417,7 @@ export async function createBranch(
   const sha = refData.object.sha;
 
   // 创建新分支引用
-  const createResponse = await fetch(
+  const createResponse = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/refs`,
     {
       method: 'POST',
@@ -417,7 +449,7 @@ interface GitHubRequestInit {
 
 // GitHub API 请求封装：JSON 收发 + 统一错误处理
 async function githubApi<T>(url: string, token: string, init: GitHubRequestInit = {}): Promise<T> {
-  const response = await fetch(url, {
+  const response = await ghFetch(url, {
     method: init.method || 'GET',
     headers: ghHeaders(token, init.body !== undefined, true),
     ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {})
@@ -665,7 +697,7 @@ export async function dispatchWorkflow(
   workflowId: number,
   ref: string
 ): Promise<void> {
-  const response = await fetch(
+  const response = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`,
     {
       method: 'POST',
@@ -700,7 +732,7 @@ export async function getTree(
   let cachedHeadSha: string | undefined;
   try {
     if (cacheKv) {
-      const headResp = await fetch(
+      const headResp = await ghFetch(
         `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(branch)}?per_page=1`,
         { headers: ghHeaders(token) }
       );
@@ -723,7 +755,7 @@ export async function getTree(
     console.warn('[github] 树缓存读取失败（降级直连）：', err);
   }
 
-  const response = await fetch(
+  const response = await ghFetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
     {
       headers: ghHeaders(token)
@@ -784,7 +816,7 @@ export async function getTree(
       let page = 1;
 
       while (pending.size > 0 && page <= MAX_PAGES && detailCalls < MAX_DETAIL_CALLS) {
-        const listResp = await fetch(
+        const listResp = await ghFetch(
           `https://api.github.com/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=100&page=${page}`,
           { headers }
         );
@@ -798,7 +830,7 @@ export async function getTree(
         const batch = commits.slice(0, sliceCount);
         const details = await Promise.all(
           batch.map((commit) =>
-            fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${commit.sha}`, { headers })
+            ghFetch(`https://api.github.com/repos/${owner}/${repo}/commits/${commit.sha}`, { headers })
               .then((r) => (r.ok ? r.json() : null))
               .catch(() => null)
           )
