@@ -391,32 +391,20 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
             setTranscodeNotice(null);
             return ok;
           } catch (err) {
-            // 降级成对输出：主图 + 转码失败的原样视频（对齐「失败不阻断主图」哲学）
-            console.warn('[useMediaUpload] Motion Photo wasm 转码失败，降级为成对上传：', err);
-            // 主图截断到 videoOffset（丢弃尾部旧视频），保持与普通图片路径一致的产物形态
-            const stillBlob = new Blob([fullBytes.subarray(0, videoOffset) as BlobPart], { type: 'image/jpeg' });
-            const stillPath = motionDir(`${baseName}.jpg`);
-            await s3PutObject(s3View, stillPath, stillBlob);
-            const videoBlob = new Blob([videoBytes as BlobPart], { type: 'video/mp4' });
-            await s3PutObject(s3View, motionDir(`${baseName}.mp4`), videoBlob);
-            if (currentFiles) {
-              for (const [p, blob] of [
-                [stillPath, stillBlob],
-                [motionDir(`${baseName}.mp4`), videoBlob],
-              ] as const) {
-                currentFiles = [{
-                  name: p.split('/').pop() || p,
-                  path: p,
-                  sha: '',
-                  size: blob.size,
-                  lastModified: Date.now(),
-                  url: urlFor(p),
-                }, ...currentFiles];
-              }
-            }
-            notes.push(`${baseName}.jpg：浏览器转码失败，已按成对方式上传原始视频（部分浏览器可播）`);
+            // 降级路径：转码失败但主图不丢（对齐「失败不阻断主图」哲学）。
+            // 【修正 m-降级 2026-11-02】旧实现直接把截断主图存成 .jpg + 独立 .mp4，
+            // 产出「图与视频分离」且 .jpg 的 XMP 还指向已被截断的旧视频——坏文件。
+            // 现改为用合成函数把 videoBytes 原样内嵌回主图：输出仍是 motion/ 单文件
+            // 规范（.jpg 内含视频），只是视频保留 HEVC 原样、未经 H.264 转码。
+            // 不可播的浏览器看到的是静态主图（预览仍正常），可播的浏览器播放 HEVC。
+            console.warn('[useMediaUpload] Motion Photo wasm 转码失败，降级为原样内嵌合成：', err);
+            const fallbackMerged = mergeMotionPhotoBytes(fullBytes, videoOffset, videoBytes);
+            const ok = await uploadMerged(
+              fallbackMerged,
+              '浏览器转码失败，已按原样内嵌合成（部分浏览器可播 HEVC）'
+            );
             setTranscodeNotice(null);
-            return true;
+            return ok;
           }
         }
 

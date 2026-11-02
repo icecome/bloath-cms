@@ -65,6 +65,12 @@ jobs:
 
       - name: Transcode and merge pending sources
         run: |
+          # 注意：本步骤【有意】不使用 set -e（与 Self-test / Commit 步骤不同）。
+          # 循环里 ffmpeg / merge_motion_photo.py 都在 if 条件上下文中运行：
+          #   if ffmpeg ...; then ... else FAILED++ ; continue ...
+          # set -e 会让非零退出码的「失败单件」直接终止整个脚本，导致同批次其余
+          # 待转码文件被跳过、下次 cron 重复扫描同一失败文件——破坏「单文件失败
+          # 不中断整批」的重试语义。此处 fail-closed 由 if 分支显式承担。
           set -uo pipefail
           # 全仓扫描待转码源；产物已存在 → 跳过（幂等）
           PENDING=0
