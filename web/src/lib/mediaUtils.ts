@@ -23,6 +23,15 @@ export interface MediaFile {
   size?: number;
   url: string;
   lastModified: number;
+  /**
+   * 动态照片正在服务端合成（true 时 path 指向 .src.jpg 预览）。
+   * UI 据此显示「转码中」徽标；正常文件为 undefined。
+   */
+  transcoding?: boolean;
+  /** 成品落盘路径（仅 transcoding 条目有值） */
+  outputPath?: string;
+  /** 合成疑似失败（超过阈值未出成品），UI 据此显示警示徽标 */
+  stale?: boolean;
 }
 
 /** 媒体类型：列表/选择器按此过滤（缩略图不参与） */

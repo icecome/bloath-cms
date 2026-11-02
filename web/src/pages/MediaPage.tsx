@@ -28,6 +28,11 @@ import {
   type MediaFile
 } from '../lib/mediaUtils';
 import { isServerTranscodeSource } from '../lib/motionPhotoServerTranscode';
+import {
+  filterMotionIntermediates,
+  buildTranscodingEntries,
+} from '../lib/motionPhotoPairing';
+import { isMotionManifestName } from '../lib/motionPhotoManifest';
 import { cdnImageErrorHandler } from '../lib/cdnFallback';
 import { MediaUploadDialog } from '../components/media/MediaUploadDialog';
 import { MediaPreviewDialog } from '../components/media/MediaPreviewDialog';
@@ -105,6 +110,22 @@ const MediaCard = memo(function MediaCard({
       <div className="px-2 py-1.5 border-t border-border">
         <p className="text-xs text-foreground truncate font-mono" title={file.name}>
           {file.name}
+          {file.transcoding && (
+            <span
+              className={`ml-1.5 inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-sans align-middle ${
+                file.stale
+                  ? 'bg-destructive/15 text-destructive'
+                  : 'bg-warning/15 text-warning'
+              }`}
+              title={
+                file.stale
+                  ? '动态照片合成疑似失败（超过 2 小时未产出成品）：可删除该条目后重新上传，或检查图床仓库 Actions 日志'
+                  : '动态照片正在图床仓库合成（约 1-2 分钟），完成后自动变为成品'
+              }
+            >
+              {file.stale ? '合成失败' : '合成中'}
+            </span>
+          )}
         </p>
         <p className="text-xs text-muted-foreground">{formatSize(file.size)} · {formatDate(file.lastModified)}</p>
       </div>
@@ -304,7 +325,8 @@ export default function MediaPage() {
         // S3 兼容图床：经代理 ListObjects，外链走 publicBaseUrl
         const entries = await s3ListObjects(s3View ?? { publicBaseUrl: '' }, s3Prefix);
         mediaFiles = entries
-          .filter((e) => IMAGE_EXT_RE.test(e.key) || VIDEO_EXT_RE.test(e.key))
+          // 保留动态照片中间态（.src.jpg 参与转码中条目合成、清单需被识别后剔除）
+          .filter((e) => IMAGE_EXT_RE.test(e.key) || VIDEO_EXT_RE.test(e.key) || isMotionManifestName(e.key))
           .map((e) => ({
             name: e.key.split('/').pop() || e.key,
             path: e.key,
@@ -325,7 +347,7 @@ export default function MediaPage() {
           if (source.pathPrefix && !f.path.startsWith(source.pathPrefix + '/')) {
             return false;
           }
-          return IMAGE_EXT_RE.test(f.name) || VIDEO_EXT_RE.test(f.name);
+          return IMAGE_EXT_RE.test(f.name) || VIDEO_EXT_RE.test(f.name) || isMotionManifestName(f.name);
         })
           .map((f) => ({
             name: f.name,
@@ -346,10 +368,17 @@ export default function MediaPage() {
         isS3Source ? s3PublicUrl(s3View ?? { publicBaseUrl: '' }, path) : getCdnUrl(path)
       );
 
-      // 展示层剔除 thumb-* 与 *.src.mp4：前者是上传流程自动生成的缩略图，
-      // 后者是等待图床 Actions 转码的动态视频源文件（转码产物 .mp4 会出现）。
+      // 展示层：剔除 thumb-*、动态照片中间态（*.src.jpg / *.src.mp4 / *.motion.json），
+      // 再为「转码中」的动态照片合成虚拟条目（预览指向 .src.jpg）。
       // 此前只按扩展名过滤导致每传一张图就多出一个缩略图卡片
-      const display = mediaFiles.filter((f) => !isDerivedAsset(f.name) && !isServerTranscodeSource(f.name));
+      const isDerived = (name: string) => isDerivedAsset(name);
+      const urlFor = (path: string) =>
+        isS3Source ? s3PublicUrl(s3View ?? { publicBaseUrl: '' }, path) || '' : getCdnUrl(path);
+      const plain = filterMotionIntermediates(mediaFiles, isDerived, (x) => x)
+        .filter((f) => !isServerTranscodeSource(f.name));
+      const transcoding = buildTranscodingEntries(mediaFiles, isDerived, urlFor)
+        .filter((e) => !isServerTranscodeSource(e.name));
+      const display = [...plain, ...transcoding];
       const sorted = sortByLastModified(display);
 
       if (silent) {

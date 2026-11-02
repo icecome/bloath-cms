@@ -151,19 +151,22 @@ export async function planUpload(
   // 关键事实：Motion Photo 的主图扩展名就是 .jpg/.heic/.avif，与普通图片完全一样，
   // 只有读 XMP（Camera:MotionPhoto / GContainer:Directory）才能识别。
   //
-  // 策略：
-  //   · 主图部分按用户选择的模式处理（压缩 → WebP；原图 → 保留原格式）
-  //   · 内嵌视频部分：H.264 → 直接切片上传；HEVC/AV1 → 转 H.264
-  //   · HEIC/AVIF 主图浏览器无法解码 → 强制原图（Canvas 压缩会得到黑图）
-  //
-  // 注意：这里只做决策，不做剥离与转码（那是执行层的事）。
+  // 策略（单文件合成方案，见 docs/02-tech-designs/motion-photo-single-file-design-v2.md）：
+  //   · 主图强制原图：合成需要保留 JPEG 容器与 XMP 区段作为拼接基底，
+  //     Canvas 压缩产出 WebP 会销毁二者，合成即失败——这不是体验取舍而是技术约束，
+  //     UI 通过 modeReason 明确告知用户「动态照片保留原图以保证动态效果」
+  //   · 内嵌视频部分：H.264 → 浏览器纯 Blob 合成单文件（motionPhotoMerge）；
+  //     HEVC/AV1 + GitHub → 双源 + 清单交图床 workflow 合成；S3 → wasm 尽力而为
   const motionPhotoInfo = await detectMotionPhoto(file, kind, format);
   const isMotionPhoto = motionPhotoInfo !== null;
 
-  if (isMotionPhoto && (format === 'heic' || format === 'avif')) {
-    // HEIC/AVIF 主图：浏览器 <img> 不支持，Canvas drawImage 会得到空白
+  if (isMotionPhoto) {
+    // 动态照片主图：浏览器无法解码的 HEIC/AVIF 固然要原图；
+    // JPEG/WebP 也强制原图（合成基底约束，见上）
     mode = 'original';
-    modeReason = '动态照片主图为 HEIC/AVIF，浏览器无法转码，已按原图上传（动态部分转 H.264）';
+    modeReason = isMotionPhoto && (format === 'heic' || format === 'avif')
+      ? '动态照片主图为 HEIC/AVIF，浏览器无法转码，已按原图上传（动态部分转 H.264）'
+      : '动态照片保留原图以保证动态效果（主图与视频需字节级合成）';
   }
 
   // 体积门槛按「剥离视频后的主图」算——动态照片的 file.size 含内嵌视频，

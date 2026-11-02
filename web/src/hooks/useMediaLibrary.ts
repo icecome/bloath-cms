@@ -22,7 +22,14 @@ import { resolveMediaBackend, mediaCdnUrl } from '../lib/resolveMediaSource';
 import { s3ListObjects, s3PublicUrl } from '../lib/s3MediaClient';
 import { getMediaS3Config } from '../lib/mediaS3Api';
 import { sortByLastModified } from '../lib/sortFiles';
-import { isServerTranscodeSource } from '../lib/motionPhotoServerTranscode';
+import {
+  isServerTranscodeSource,
+} from '../lib/motionPhotoServerTranscode';
+import {
+  filterMotionIntermediates,
+  buildTranscodingEntries,
+} from '../lib/motionPhotoPairing';
+import { isMotionManifestName } from '../lib/motionPhotoManifest';
 import {
   IMAGE_EXT_RE,
   THUMBNAIL_PREFIX,
@@ -37,6 +44,15 @@ export type MediaKindFilter = MediaKind | 'all';
 export interface MediaLibraryItem extends MediaFile {
   /** 文件类型（由扩展名判定，用于渲染分支与插入语法） */
   kind: MediaKind;
+  /**
+   * 动态照片正在服务端合成（true 时 path 指向 .src.jpg 预览，
+   * outputPath 为成品路径）。UI 显示「转码中」徽标。
+   */
+  transcoding?: boolean;
+  /** 成品落盘路径（仅 transcoding 条目有值） */
+  outputPath?: string;
+  /** 合成疑似失败（src.jpg 存在超过 STALE_TRANSCODE_MS 未出成品），UI 显示警示徽标 */
+  stale?: boolean;
 }
 
 export interface UseMediaLibraryResult {
@@ -63,6 +79,15 @@ function kindOf(name: string): MediaKind | null {
   }
   if (IMAGE_EXT_RE.test(name)) return 'image';
   return null;
+}
+
+/**
+ * 动态照片中间态：需要为「转码中条目合成」保留在 `all` 里、但不作为独立条目展示。
+ * `*.src.mp4` 仍归入 isServerTranscodeSource 过滤（kindOf 已处理），
+ * 这里只覆盖 kindOf 认不出的清单文件。
+ */
+function isMotionIntermediate(name: string): boolean {
+  return isMotionManifestName(name);
 }
 
 /**
@@ -139,7 +164,9 @@ export function useMediaLibrary(
         if (isS3Source) {
           const entries = await s3ListObjects(s3View, s3Prefix);
           all = entries
-            .filter((e) => kindOf(e.key) !== null)
+            // 动态照片中间态需要保留（.src.jpg 要参与转码中条目合成），
+            // 但 .src.mp4 与清单文件永不作为独立条目
+            .filter((e) => kindOf(e.key) !== null || isMotionIntermediate(e.key))
             .map((e) => ({
               name: e.key.split('/').pop() || e.key,
               path: e.key,
@@ -159,7 +186,7 @@ export function useMediaLibrary(
           all = treeItems
             .filter((f) => {
               if (source.pathPrefix && !f.path.startsWith(source.pathPrefix + '/')) return false;
-              return kindOf(f.name) !== null;
+              return kindOf(f.name) !== null || isMotionIntermediate(f.name);
             })
             .map((f) => ({
               name: f.name,
@@ -181,15 +208,29 @@ export function useMediaLibrary(
           isS3Source ? s3PublicUrl(s3View, path) : mediaCdnUrl(source, mediaConfig, path)
         );
 
-        // 展示项：剔除派生产物（thumb-*）与类型不匹配的文件，再按更新时间倒序
+        // 展示项：剔除派生产物（thumb-*）与动态照片中间态（*.src.*、*.motion.json），
+        // 再为「转码中」的动态照片合成虚拟条目，最后按更新时间倒序
+        const isDerived = (name: string) => name.startsWith(THUMBNAIL_PREFIX);
+        const urlFor = (path: string) =>
+          isS3Source ? s3PublicUrl(s3View, path) || '' : mediaCdnUrl(source, mediaConfig, path);
+
+        const plain = filterMotionIntermediates(all, isDerived, (x) => x);
+
         const display: MediaLibraryItem[] = [];
-        for (const file of all) {
-          if (file.name.startsWith(THUMBNAIL_PREFIX)) continue;
+        for (const file of plain) {
           const fileKind = kindOf(file.name);
           if (!fileKind) continue;
           if (kind !== 'all' && fileKind !== kind) continue;
           display.push({ ...file, kind: fileKind });
         }
+
+        // 转码中的动态照片：合成虚拟条目（预览指向 .src.jpg，标记 transcoding）
+        if (kind === 'all' || kind === 'image') {
+          for (const entry of buildTranscodingEntries(all, isDerived, urlFor)) {
+            display.push({ ...entry, kind: 'image' });
+          }
+        }
+
         const sorted = sortByLastModified(display);
 
         if (requestId !== requestIdRef.current) return null;

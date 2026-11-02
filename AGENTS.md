@@ -254,6 +254,7 @@ const loadEditorPage = () => import('./pages/EditorPage'); // 模块级常量，
 | 缺 `.ts` 后缀的值导入让模块在 node ESM 下无法加载，从而写不出单测 | `sortFiles.ts` 原先 `from './extractFrontMatter'`（值导入）→ `ERR_MODULE_NOT_FOUND`，排序逻辑 4 个月无测试覆盖。纯逻辑应抽到零依赖模块并显式带 `.ts` 后缀导入（范例 `lib/dateParse.ts`） |
 | YAML/TOML 的时间字段未必是字符串 | `date: 20260707` 被 js-yaml 解析成数字 `20260707`，旧实现原样当毫秒用 → 排序键落到 1970。解析器必须区分 8 位 YYYYMMDD / 10 位秒 / 13 位毫秒（`lib/dateParse.ts`） |
 | HEVC 动态视频的转码位置是架构约束，不是实现细节 | HEVC 源由图床仓库的 GitHub Actions 转码（workflow 见 `deliverables/motion-photo-transcode.workflow.yml`，部署到图床仓库）。CMS 侧上传 HEVC 为 `*.src.mp4` 且提交信息**必须**带 `[server-transcode]` 标记——换成 `[skip ci]` 会静默杀死触发链路；workflow 产出提交必须带 `[skip ci]` 防空转死循环。S3 通道无 Actions，仍走浏览器 wasm（`motionPhotoTranscode.ts`）。命名契约见 `web/src/lib/motionPhotoServerTranscode.ts`（2026-11-01） |
+| 动态照片是**单文件合成**产物，不是成对文件 | 上传一张动态照片最终产出**一个** `motion/<base>.jpg`（主图 + H.264 视频内嵌 + 修补后 XMP）。落盘固定 `motion/` 子目录（`lib/motionPhotoMerge.ts` 的 `MOTION_PHOTO_DIR`）；HEVC 服务端路径经 `.src.jpg + .src.mp4 + .motion.json` 三件由 workflow 合成。浏览器合成算法在 `lib/motionPhotoMerge.ts`，与 workflow 的 `deliverables/merge_motion_photo.py` 是同一算法的两套实现，**改任一侧必须同步另一侧**（TS 端是算法基准，测试见 `motionPhotoMerge.test.ts`）。动态照片主图**强制原图**（WebP 压缩会销毁 XMP/JPEG 容器，无法合成）。设计方案见 [docs/02-tech-designs/motion-photo-single-file-design-v2.md](docs/02-tech-designs/motion-photo-single-file-design-v2.md)（2026-11-02） |
 
 ## 10. 文档体系与维护
 

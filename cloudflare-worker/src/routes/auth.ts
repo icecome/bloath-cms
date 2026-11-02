@@ -184,8 +184,11 @@ authApp.post('/api/auth/device', async (c: Context<HonoEnv>) => {
     const ua = c.req.header('User-Agent') || '';
     await upsertDeviceRecord(c.env.DEVICES_KV, authResult.deviceFingerprint, Date.now(), trusted, ua || undefined);
   }
+  // P2-29 配套：重新签发必须透传原 firstIssuedAt，否则切换信任开关会重置
+  // 绝对寿命锚点，被窃取的 cookie 可借反复切换信任绕过 7 天上限。
   const newToken = await generateSessionToken(
-    authResult.githubToken, authResult.githubLogin, c.env, authResult.deviceFingerprint, trusted
+    authResult.githubToken, authResult.githubLogin, c.env, authResult.deviceFingerprint, trusted,
+    authResult.firstIssuedAt
   );
   if (typeof newToken !== 'string') return c.json(error(ErrorCode.INTERNAL_ERROR, '会话签发失败'), 500);
   const url = new URL(c.req.url);

@@ -1,28 +1,28 @@
-# 动态照片（Motion Photo）内嵌视频自动转码 — 部署到「图床仓库」
+# 动态照片（Motion Photo）内嵌视频自动转码 + 单文件合成 — 部署到「图床仓库」
 #
 # ── 部署方法 ─────────────────────────────────────────────────────────────
-# 把本文件复制到图床仓库（如 icecome/img）的 .github/workflows/motion-photo-transcode.yml
-# 并 push 即可。无需任何 Secrets：workflow 使用仓库自带的 GITHUB_TOKEN，
-# 但需要在图床仓库 Settings → Actions → General → Workflow permissions
-# 设为「Read and write permissions」（一次性设置，否则产出 commit 会被 403 拒绝）。
+# 1. 把本文件复制到图床仓库（如 icecome/img）的 .github/workflows/motion-photo-transcode.yml
+# 2. 把 merge_motion_photo.py 复制到图床仓库根目录（与本 workflow 同仓）
+# 3. push 即可。无需 Secrets：workflow 用仓库自带 GITHUB_TOKEN，但需在图床仓库
+#    Settings → Actions → General → Workflow permissions 设为「Read and write」。
 #
 # ── 与 CMS 的契约（改任一侧必须同步另一侧）──────────────────────────────
-#   · CMS 上传侧把 HEVC/AV1 动态视频原样上传为 `<名字>.src.mp4`
-#     （提交信息含 [server-transcode] 标记，见 web/src/lib/motionPhotoServerTranscode.ts）
-#   · 本 workflow 把 `*.src.mp4` 转码为 H.264 + AAC → 同名 `.mp4`（剥 GPS 元数据），
-#     生成视频封面 `thumb-<名字>.webp`（与 CMS 缩略图约定一致：400px webp），
-#     然后删除 `.src.mp4` 源文件，单个 commit 完成
-#   · 产出提交信息带 [skip ci]：删除 .src.mp4 的提交会命中 paths 过滤，
-#     该标记让 GitHub 跳过由此触发的空转 run
+#   · CMS 上传侧把 HEVC/AV1 动态照片拆为三件，落在 motion/ 子目录：
+#       <名字>.src.jpg     原始完整文件（含旧 HEVC 视频尾巴）
+#       <名字>.src.mp4     剥离的内嵌视频（HEVC/AV1 原始字节）
+#       <名字>.motion.json 合成指令清单（videoOffset/videoLength/output 等）
+#   · 本 workflow 把 *.src.mp4 转码为 H.264 → 按清单 videoOffset 从 .src.jpg
+#     截取主图、修补 XMP Length、拼回 H.264，产出 <名字>.jpg（单文件动态照片）
+#   · 产出后删除 .src.jpg 与 .src.mp4（清单保留作元数据归档），单 commit 完成
+#   · 合成算法与 CMS 端 web/src/lib/motionPhotoMerge.ts 一致（该文件是算法基准）
 #
 # ── 设计要点 ────────────────────────────────────────────────────────────
-#   · 全仓扫描而非 diff 匹配：天然覆盖重试（上次失败残留）、并发竞态、
-#     手动直传等所有来源；「产物已存在则跳过」保证幂等，扫描成本可忽略
+#   · 全仓扫描而非 diff 匹配：天然覆盖重试（上次失败残留）、并发竞态、手动直传
 #   · 单文件失败不中断整批：失败文件保留原地等下一轮重试，成功文件照常提交
 #   · cron 每 30 分钟兜底：上传瞬间 Actions 排队/抖动导致的漏转，最迟半小时补上
-#   · 文件名不含空格（CMS 的 sanitizeMediaFileName 保证）；直传仓库的文件请遵守
-#   · 转码参数与 CMS 浏览器转码规格对齐：短边 clamp 720、crf 23、veryfast、
+#   · 转码/合成参数与 CMS 浏览器规格对齐：短边 clamp 720、crf 23、veryfast、
 #     faststart、-map_metadata -1（剥 GPS）、-t 15
+#   · 文件名不含空格（CMS 的 sanitizeMediaFileName 保证）；直传仓库的文件请遵守
 
 name: Motion photo transcode
 
@@ -45,22 +45,38 @@ concurrency:
 jobs:
   transcode:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
 
-      - name: Transcode pending sources
+      - name: Self-test merge script
+        run: |
+          set -euo pipefail
+          # 双端一致性自检：脚本与 TS 端（算法基准）行为必须一致。
+          # 测试文件缺失时跳过（图床仓库可能只部署了脚本），不阻塞转码。
+          if [ -f merge_motion_photo.test.py ]; then
+            python3 merge_motion_photo.test.py
+          else
+            echo "::notice::merge_motion_photo.test.py 未部署，跳过自检"
+          fi
+
+      - name: Transcode and merge pending sources
         run: |
           set -uo pipefail
           # 全仓扫描待转码源；产物已存在 → 跳过（幂等）
           PENDING=0
           FAILED=0
           for f in $(find . -type f -name '*.src.mp4' -not -path './.git/*' | sed 's|^\./||'); do
-            out="${f%.src.mp4}.mp4"
-            if [ -f "${out}" ]; then
+            base="${f%.src.mp4}"
+            out="${base}.jpg"
+            legacy_out="${base}.mp4"
+            src_still="${base}.src.jpg"
+            manifest="${base}.motion.json"
+            tmp_mp4="${base}.tmp.mp4"
+            if [ -f "${out}" ] || [ -f "${legacy_out}" ]; then
               echo "skip (output exists): ${f}"
               continue
             fi
@@ -75,18 +91,47 @@ jobs:
                  -vf "scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)',format=yuv420p" \
                  -c:a aac -b:a 128k \
                  -movflags +faststart -map_metadata -1 -t 15 \
-                 "${out}"; then
-              # 封面：与 CMS thumb- 约定一致（400px webp）；视频 <0.5s 时抽帧
-              # 可能失败——封面属增强能力，仅告警不回滚
-              ffmpeg -y -hide_banner -loglevel error \
-                -ss 0.5 -i "${out}" -frames:v 1 \
-                -vf "scale='min(400,iw)':-2" \
-                "$(dirname "${f}")/thumb-$(basename "${f}" .src.mp4).webp" || \
-                echo "::warning::poster failed for ${f} (不影响视频)"
-              rm -f "${f}"
+                 "${tmp_mp4}"; then
+              if [ -f "${src_still}" ]; then
+                # 新契约：单文件合成——按清单 videoOffset 截取主图 + 修补 XMP + 拼回 H.264
+                # 脚本 fail-closed：定位不到 XMP / 视频项 / offset 非法 → 退出非零，
+                # 保留 .src.* 待下一轮重试（不产出坏文件）
+                if python3 merge_motion_photo.py \
+                     --still "${src_still}" --video "${tmp_mp4}" \
+                     --manifest "${manifest}" --offset 0 --out "${out}"; then
+                  # 合成成功：清理源文件与临时产物（清单保留）
+                  rm -f "${f}" "${src_still}"
+                  # 成品缩略图（CMS thumb- 约定：400px webp）。合成后主图已是 JPEG，
+                  # 从成品抽首帧即可拿到主图缩略图——避免列表回退原图加载。
+                  # 封面属增强能力，失败仅告警不回滚。
+                  ffmpeg -y -hide_banner -loglevel error \
+                    -i "${out}" -frames:v 1 \
+                    -vf "scale='min(400,iw)':-2" \
+                    "$(dirname "${out}")/thumb-$(basename "${out}" .jpg).webp" || \
+                    echo "::warning::thumb failed for ${out} (不影响成品)"
+                else
+                  echo "::error::merge failed: ${f} (保留源文件待重试)"
+                  FAILED=$((FAILED+1))
+                fi
+              else
+                # 旧契约回退：只有 .src.mp4、没有 .src.jpg 的遗留文件（来自 2026-11-01 前的
+                # 上传），按旧方案产出独立 .mp4 并删除源文件。
+                # 【必须保留此分支】否则遗留文件每轮 cron 都进 merge 分支失败、永不产出、
+                # 永久空转——升级本 workflow 的既有仓库会立刻陷入该循环。
+                echo "::notice::legacy source (no .src.jpg), fallback to standalone .mp4: ${f}"
+                mv "${tmp_mp4}" "${legacy_out}"
+                rm -f "${f}"
+                # 旧方案的成品封面（与 CMS thumb- 约定一致：400px webp）；失败仅告警
+                ffmpeg -y -hide_banner -loglevel error \
+                  -ss 0.5 -i "${legacy_out}" -frames:v 1 \
+                  -vf "scale='min(400,iw)':-2" \
+                  "$(dirname "${f}")/thumb-$(basename "${f}" .src.mp4).webp" || \
+                  echo "::warning::poster failed for ${f} (不影响视频)"
+              fi
+              rm -f "${tmp_mp4}"
             else
               echo "::error::transcode failed: ${f} (保留源文件待重试)"
-              rm -f "${out}"   # 清理半成品
+              rm -f "${tmp_mp4}"
               FAILED=$((FAILED+1))
             fi
             echo "::endgroup::"

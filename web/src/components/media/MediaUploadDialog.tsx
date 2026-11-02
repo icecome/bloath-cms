@@ -124,25 +124,33 @@ export function MediaUploadDialog({
    *     执行层会在 notes 里告知用户实际保留了原图。
    */
   const [previewExts, setPreviewExts] = useState<Map<File, string>>(new Map());
+  /** 队列中检测出的动态照片数量：用于提示「保留原图 + 走合成」 */
+  const [motionCount, setMotionCount] = useState(0);
 
   useEffect(() => {
     if (queue.length === 0) {
       setPreviewExts(new Map());
+      setMotionCount(0);
       return;
     }
     // 队列或模式变化后重新推演；cancelled 防止旧批次结果覆盖新批次（§6.2 模式 A）
     let cancelled = false;
     void (async () => {
       const next = new Map<File, string>();
+      let motion = 0;
       for (const file of queue) {
         try {
           const plan = await planUpload(file, mode, { isS3: false });
           next.set(file, plan.ext);
+          if (plan.motionPhoto) motion += 1;
         } catch {
           // 被拒绝的文件不会进入上传流程，预览保持源扩展名
         }
       }
-      if (!cancelled) setPreviewExts(next);
+      if (!cancelled) {
+        setPreviewExts(next);
+        setMotionCount(motion);
+      }
     })();
     return () => { cancelled = true; };
   }, [queue, mode]);
@@ -303,6 +311,19 @@ export function MediaUploadDialog({
               </li>
             ))}
           </ul>
+        )}
+
+        {/* 动态照片提示：自动检测命中时说明「强制原图 + 服务端合成」的原因，
+            避免用户以为「选了压缩却上传原图」是 bug（设计方案 §4 行为变更） */}
+        {motionCount > 0 && (
+          <p className="text-xs text-muted-foreground flex items-start gap-1.5" role="status">
+            <AlertCircle className="w-3.5 h-3.5 mt-px flex-shrink-0" />
+            <span>
+              检测到 {motionCount} 个动态照片：将保留原图以保证动态效果，
+              视频部分自动合成回主图（HEVC 视频需图床转码，约 1-2 分钟后可用）。
+              产物落在媒体目录的 <span className="font-mono">motion/</span> 子目录。
+            </span>
+          </p>
         )}
 
         {/* 本次上传配置 */}
