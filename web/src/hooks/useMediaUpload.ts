@@ -30,6 +30,7 @@ import {
   embeddedVideoStrategy,
 } from '../lib/motionPhotoServerTranscode';
 import { mergeMotionPhotoBytes, motionPhotoPath } from '../lib/motionPhotoMerge';
+import { compressMotionStill } from '../lib/motionPhotoCompress';
 import {
   buildMotionManifest,
   motionManifestName,
@@ -221,15 +222,43 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
           // 内存代价：把整文件读入 JS 堆（而非旧实现的 Blob.slice 视图）——合成
           // 必须操作完整字节，且动态照片受 planUpload 原图上限 IMAGE_ORIGINAL_MAX_BYTES
           // (14 MB) 约束，峰值内存可控，属有意取舍。
-          const fullBytes = new Uint8Array(await file.arrayBuffer());
+          let fullBytes = new Uint8Array(await file.arrayBuffer());
 
           // 视频字节：[videoOffset, videoOffset+videoLength)
           const videoBytes = new Uint8Array(
             await file.slice(videoOffset, videoOffset + videoLength).arrayBuffer()
           );
 
+          // 压缩模式：压缩主图（保留 XMP APP1 + 视频字节）再合成，解决 10MB 上传超时。
+          // compressMotionStill 输出「压缩后的 JPEG + 回注的原 XMP」，随后合成函数把
+          // 视频拼回尾部——产物仍是合法单文件 Motion Photo。压缩无收益 / 非 JPEG /
+          // XMP 缺失时抛错，回退原图（fullBytes 保持原样，与「压缩无收益回退原图」语义一致）。
+          let compressedStillBytes: Uint8Array | null = null;
+          if (plan.mode === 'compress' && plan.format === 'jpeg') {
+            try {
+              const still = fullBytes.subarray(0, videoOffset);
+              const compressedStill = await compressMotionStill(still, quality);
+              // 用压缩后的主图替换原主图区间，视频字节原样保留在尾部
+              const recombined = new Uint8Array(compressedStill.length + videoBytes.length);
+              recombined.set(compressedStill, 0);
+              recombined.set(videoBytes, compressedStill.length);
+              fullBytes = recombined;
+              compressedStillBytes = compressedStill;
+            } catch (err) {
+              // 压缩失败/无收益/非 JPEG：静默回退原图（与普通图片「压缩无收益」对齐）
+              console.warn('[useMediaUpload] 动态照片主图压缩回退原图：', err);
+            }
+          }
+
           const codec = detectEmbeddedVideoCodec(videoBytes);
           const strategy = embeddedVideoStrategy(codec, { isS3: isS3Source });
+
+          // 合成用的视频起点：压缩后主图长度（未压缩时 === 原 videoOffset）。
+          // 这是压缩路径最容易出错的地方——fullBytes 已是「压缩主图 + 视频」的拼装体，
+          // 视频起点不再是原始 videoOffset。
+          const mergeOffset = compressedStillBytes
+            ? compressedStillBytes.length
+            : videoOffset;
 
           // 单文件合成结果的落盘名（三分支共用）
           const outFileName = `${baseName}.jpg`;
@@ -246,11 +275,17 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
             if (isS3Source) {
               await s3PutObject(s3View, outPath, mergedBlob);
             } else {
-              await uploadImage({
+              // GitHub 通道走二进制端点（PUT /api/repos/media），不走 uploadImage 的 base64 JSON：
+              // ① 10MB 合成成品 base64 后 13.3MB，受 uploadImage 固定 10s 超时必然超时
+              //   （uploadImage 用 API_TIMEOUT_MS=10000；二进制端点按体积线性放大，
+              //    10MB ≈ 50s）——实测超时问题的根因（2026-11-02）
+              // ② 免 33% base64 膨胀与 JSON.stringify 双份内存拷贝
+              // ③ Worker 侧 media 端点峰值内存更低（不进 JSON 解析器）
+              await uploadMediaBinary({
                 owner: source.owner,
                 repo: source.repo,
                 path: outPath,
-                base64Content: await blobToBase64(mergedBlob),
+                blob: mergedBlob,
                 message: `[skip ci] 上传动态照片：${outFileName}`,
                 branch: source.branch,
                 userName,
@@ -298,7 +333,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
           if (strategy === 'native') {
             // H.264 内嵌：浏览器纯 Blob 合成（截断尾部视频 → 原样拼回 → 修补 XMP）
             // 零 ffmpeg、零下载、零重编码；合成失败 fail-closed 抛错，交外层报错重试
-            const merged = mergeMotionPhotoBytes(fullBytes, videoOffset, videoBytes);
+            const merged = mergeMotionPhotoBytes(fullBytes, mergeOffset, videoBytes);
             return await uploadMerged(merged, `动态照片已合成单文件（H.264 内嵌，${formatSize(videoBytes.length)}）`);
           }
 
@@ -333,7 +368,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
             });
 
             const manifest = buildMotionManifest(baseName, {
-              videoOffset,
+              videoOffset: mergeOffset,
               videoLength,
             });
             const manifestBlob = new Blob(
@@ -384,7 +419,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
             });
             const merged = mergeMotionPhotoBytes(
               fullBytes,
-              videoOffset,
+              mergeOffset,
               new Uint8Array(await result.blob.arrayBuffer())
             );
             const ok = await uploadMerged(merged, `动态照片已合成单文件（wasm 转码 H.264，${formatSize(result.blob.size)}）`);
@@ -398,7 +433,7 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
             // 规范（.jpg 内含视频），只是视频保留 HEVC 原样、未经 H.264 转码。
             // 不可播的浏览器看到的是静态主图（预览仍正常），可播的浏览器播放 HEVC。
             console.warn('[useMediaUpload] Motion Photo wasm 转码失败，降级为原样内嵌合成：', err);
-            const fallbackMerged = mergeMotionPhotoBytes(fullBytes, videoOffset, videoBytes);
+            const fallbackMerged = mergeMotionPhotoBytes(fullBytes, mergeOffset, videoBytes);
             const ok = await uploadMerged(
               fallbackMerged,
               '浏览器转码失败，已按原样内嵌合成（部分浏览器可播 HEVC）'

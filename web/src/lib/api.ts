@@ -177,10 +177,18 @@ export async function getTree(params: RepoInfo & { mode?: 'filename' }): Promise
 
 /**
  * 上传图片（base64 编码）
+ *
+ * 超时按 base64Content 字符数（≈传输体积）线性放大，与 uploadMediaBinary 同语义：
+ * 固定 API_TIMEOUT_MS=10s 在 10MB 大图上必然超时（实测 2026-11-02：合成成品
+ * 10MB → base64 13.3MB → 网络上行 + GitHub commit 需 30s+）。
+ * 公式与 uploadMediaBinary 一致：30s 基准 + 每 MB 2s，上限 600s。
  */
 export async function uploadImage(
   params: RepoInfo & { path: string; base64Content: string; message?: string; branch?: string; userName?: string; sha?: string }
 ): Promise<WriteResult> {
+  // base64 字符数 ≈ 实际传输体积（每字符 1 字节）；直接按它线性放大，
+  // 与 uploadMediaBinary 按 blob.size 放大等价
+  const bodyBytes = params.base64Content.length;
   return apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
     method: 'PUT',
     headers: {
@@ -196,6 +204,7 @@ export async function uploadImage(
       userName: params.userName,
       sha: params.sha
     }),
+    timeoutMs: Math.min(30_000 + (bodyBytes / (1024 * 1024)) * 2_000, 600_000),
   });
 }
 
