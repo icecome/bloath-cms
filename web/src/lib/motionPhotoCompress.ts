@@ -21,6 +21,7 @@
 // 与 >64KB 的扩展 XMP 全部 MISS，压缩分支被静默绕过，实际仍传 10~19MB 原图。
 
 import { scaledImageSize } from './mediaUtils.ts';
+import { MotionPhotoMergeError } from './motionPhotoMerge.ts';
 
 /** JPEG SOI marker */
 const JPEG_SOI = [0xff, 0xd8] as const;
@@ -116,19 +117,20 @@ export function extractXmpApp1Segment(jpegBytes: Uint8Array): Uint8Array | null 
  * @param jpegBytes 压缩后的 JPEG（Canvas toBlob('image/jpeg') 输出）
  * @param xmpSegment extractXmpApp1Segment 返回的段字节
  * @returns 注入后的新 JPEG 字节
- * @throws 输入不是 JPEG（无 SOI）或段自身结构非法时抛错——fail-closed
+ * @throws MotionPhotoMergeError 输入不是 JPEG（无 SOI）或段自身结构非法时抛出，
+ *         与 patchXmpStillLength / patchXmpVideoLength 异常类型统一（fail-closed）
  */
 export function injectXmpApp1Segment(jpegBytes: Uint8Array, xmpSegment: Uint8Array): Uint8Array {
   if (jpegBytes[0] !== JPEG_SOI[0] || jpegBytes[1] !== JPEG_SOI[1]) {
-    throw new Error('注入目标不是 JPEG（缺少 SOI），放弃压缩保留');
+    throw new MotionPhotoMergeError('注入目标不是 JPEG（缺少 SOI），放弃压缩保留');
   }
   // 段自身校验：FFE1 + 长度字段与字节数吻合，否则注入会破坏整个文件
   if (xmpSegment.length < 4 || xmpSegment[0] !== 0xff || xmpSegment[1] !== JPEG_APP1) {
-    throw new Error('待注入的不是合法 APP1 段，放弃压缩保留');
+    throw new MotionPhotoMergeError('待注入的不是合法 APP1 段，放弃压缩保留');
   }
   const declared = ((xmpSegment[2] ?? 0) << 8) | (xmpSegment[3] ?? 0);
   if (declared + 2 !== xmpSegment.length) {
-    throw new Error('APP1 段长度字段与字节数不符，放弃压缩保留');
+    throw new MotionPhotoMergeError('APP1 段长度字段与字节数不符，放弃压缩保留');
   }
   const out = new Uint8Array(jpegBytes.length + xmpSegment.length);
   out.set(jpegBytes.subarray(0, 2), 0);          // SOI
@@ -223,7 +225,11 @@ function encodeLatin1(text: string): Uint8Array {
  * @param xmp XMP 包文本（不含 APP1 段头，latin1 解码）
  * @param stillLength 压缩后主图的最终字节数
  * @returns 修补后的 XMP 文本
- * @throws 找不到图像项（fail-closed，调用方回退原图）
+ * @throws MotionPhotoMergeError 找不到图像项（fail-closed，调用方回退原图）
+ *
+ * 异常类型与 patchXmpVideoLength 统一：两处都是「XMP Container 目录修补失败」，
+ * 上层可按 `instanceof MotionPhotoMergeError` 一次性区分「可预期的不合规输入」
+ * 与真正的程序缺陷（TypeError / RangeError 等），前者静默回退原图，后者应上报。
  */
 export function patchXmpStillLength(xmp: string, stillLength: number): string {
   const itemTagRe = /<([A-Za-z_][\w.-]*:)?Item\b([^>]*?)\/?>/g;
@@ -257,7 +263,7 @@ export function patchXmpStillLength(xmp: string, stillLength: number): string {
     });
   }
 
-  if (!patched) throw new Error('XMP 中未找到图像项，无法修补主图长度');
+  if (!patched) throw new MotionPhotoMergeError('XMP 中未找到图像项，无法修补主图长度');
   return out;
 }
 

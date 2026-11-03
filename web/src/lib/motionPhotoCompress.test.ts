@@ -9,6 +9,7 @@ import {
   injectXmpApp1Segment,
   patchXmpStillLength,
 } from './motionPhotoCompress.ts';
+import { MotionPhotoMergeError } from './motionPhotoMerge.ts';
 
 const enc = new TextEncoder();
 const XMP_NS = 'http://ns.adobe.com/xap/1.0/\0';
@@ -143,9 +144,26 @@ describe('injectXmpApp1Segment', () => {
     assert.deepEqual(Array.from(re), Array.from(seg));
   });
 
-  it('非 JPEG 目标抛错', () => {
+  it('非 JPEG 目标抛 MotionPhotoMergeError', () => {
     const seg = new Uint8Array([0xff, 0xe1, 0, 2]);
-    assert.throws(() => injectXmpApp1Segment(new Uint8Array([1, 2]), seg));
+    assert.throws(
+      () => injectXmpApp1Segment(new Uint8Array([1, 2]), seg),
+      MotionPhotoMergeError
+    );
+  });
+
+  it('待注入段不是 APP1 时抛 MotionPhotoMergeError', () => {
+    const target = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    // 0xffe2 = APP2，非 APP1
+    const seg = new Uint8Array([0xff, 0xe2, 0, 2]);
+    assert.throws(() => injectXmpApp1Segment(target, seg), MotionPhotoMergeError);
+  });
+
+  it('待注入段长度字段与字节数不符时抛 MotionPhotoMergeError', () => {
+    const target = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    // 声明长度 5，实际段长 6（声明值 + 2 !== 字节数）
+    const seg = new Uint8Array([0xff, 0xe1, 0, 5, 0x00, 0x00]);
+    assert.throws(() => injectXmpApp1Segment(target, seg), MotionPhotoMergeError);
   });
 });
 
@@ -161,9 +179,9 @@ describe('patchXmpStillLength', () => {
     assert.ok(out.includes('video/mp4" Length="1500000"'), 'video 项长度不得改动');
   });
 
-  it('找不到 image/ 项时抛错（fail-closed）', () => {
+  it('找不到 image/ 项时抛 MotionPhotoMergeError（fail-closed，与 merge 层异常类型统一）', () => {
     const xmp = '<x:xmpmeta><Item Mime="video/mp4" Length="1500000"/></x:xmpmeta>';
-    assert.throws(() => patchXmpStillLength(xmp, 1200000));
+    assert.throws(() => patchXmpStillLength(xmp, 1200000), MotionPhotoMergeError);
   });
 
   it('元素形式兜底：修补 image/ 项的 Length 子元素', () => {
