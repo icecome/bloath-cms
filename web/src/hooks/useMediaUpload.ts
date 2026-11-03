@@ -245,8 +245,12 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
               fullBytes = recombined;
               compressedStillBytes = compressedStill;
             } catch (err) {
-              // 压缩失败/无收益/非 JPEG：静默回退原图（与普通图片「压缩无收益」对齐）
+              // 压缩回退必须可见：静默降级会让用户以为已压缩，实际传原图直到超时
+              // （2026-11-02 超时时长排查因此走了弯路）
               console.warn('[useMediaUpload] 动态照片主图压缩回退原图：', err);
+              notes.push(
+                `${baseName}.jpg：主图压缩不可用（${err instanceof Error ? err.message : '原因未知'}），已按原图上传`
+              );
             }
           }
 

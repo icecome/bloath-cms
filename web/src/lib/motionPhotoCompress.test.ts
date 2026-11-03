@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   extractXmpApp1Segment,
   injectXmpApp1Segment,
+  patchXmpStillLength,
 } from './motionPhotoCompress.ts';
 
 const enc = new TextEncoder();
@@ -75,6 +76,43 @@ describe('extractXmpApp1Segment', () => {
   });
 });
 
+// —— 2026-11-02 超时诊断新增：厂商布局覆盖 ——
+
+/** 构造「指定前缀 + 载荷」的 APP1 段，再包上 SOI/EOI 成 JPEG */
+function buildJpegWithApp1Payload(prefix: string, payload: string): Uint8Array {
+  const content = enc.encode(prefix + payload);
+  const segLen = 2 + content.length; // 长度字段计入自身
+  const seg = new Uint8Array(2 + segLen);
+  seg[0] = 0xff; seg[1] = 0xe1;
+  seg[2] = (segLen >> 8) & 0xff; seg[3] = segLen & 0xff;
+  seg.set(content, 4);
+  return new Uint8Array([0xff, 0xd8, ...seg, 0xff, 0xd9]);
+}
+
+describe('extractXmpApp1Segment 厂商布局（2026-11-02）', () => {
+  it('提取 XMP 嵌在 Exif APP1 内的段（小米/OPPO 布局）', () => {
+    const jpeg = buildJpegWithApp1Payload('Exif\0\0', 'MM\0*<x:xmpmeta>x</x:xmpmeta>');
+    const seg = extractXmpApp1Segment(jpeg);
+    assert.ok(seg, 'Exif 内嵌 XMP 必须命中');
+    assert.equal(seg[1], 0xe1);
+  });
+
+  it('提取扩展 XMP（xmp/extension 命名空间）段', () => {
+    const jpeg = buildJpegWithApp1Payload(
+      'http://ns.adobe.com/xmp/extension/\0',
+      'GUID<x:xmpmeta>y</x:xmpmeta>'
+    );
+    const seg = extractXmpApp1Segment(jpeg);
+    assert.ok(seg, '扩展 XMP 必须命中');
+    assert.equal(seg[1], 0xe1);
+  });
+
+  it('纯 Exif 段（不含 XMP 包）不被误取', () => {
+    const jpeg = buildJpegWithApp1Payload('Exif\0\0', 'MM\0*no xmp here');
+    assert.equal(extractXmpApp1Segment(jpeg), null, '纯 Exif 不得当 XMP');
+  });
+});
+
 describe('injectXmpApp1Segment', () => {
   it('XMP 段紧随 SOI 注入，其余字节保持', () => {
     const src = buildJpegWithXmp('<x:xmpmeta>x</x:xmpmeta>');
@@ -108,5 +146,49 @@ describe('injectXmpApp1Segment', () => {
   it('非 JPEG 目标抛错', () => {
     const seg = new Uint8Array([0xff, 0xe1, 0, 2]);
     assert.throws(() => injectXmpApp1Segment(new Uint8Array([1, 2]), seg));
+  });
+});
+
+describe('patchXmpStillLength', () => {
+  it('修补 image/ 项的 Item:Length，不动 video/ 项', () => {
+    const xmp =
+      '<x:xmpmeta>' +
+      '<Item Mime="image/jpeg" Length="9000000"/>' +
+      '<Item Mime="video/mp4" Length="1500000"/>' +
+      '</x:xmpmeta>';
+    const out = patchXmpStillLength(xmp, 1200000);
+    assert.ok(out.includes('Length="1200000"'), 'image 项长度应改为新值');
+    assert.ok(out.includes('video/mp4" Length="1500000"'), 'video 项长度不得改动');
+  });
+
+  it('找不到 image/ 项时抛错（fail-closed）', () => {
+    const xmp = '<x:xmpmeta><Item Mime="video/mp4" Length="1500000"/></x:xmpmeta>';
+    assert.throws(() => patchXmpStillLength(xmp, 1200000));
+  });
+
+  it('元素形式兜底：修补 image/ 项的 Length 子元素', () => {
+    const xmp =
+      '<x:xmpmeta>' +
+      '<Item><Mime>image/jpeg</Mime><Length>9000000</Length></Item>' +
+      '<Item><Mime>video/mp4</Mime><Length>1500000</Length></Item>' +
+      '</x:xmpmeta>';
+    const out = patchXmpStillLength(xmp, 1200000);
+    assert.ok(
+      out.includes('<Mime>image/jpeg</Mime><Length>1200000</Length>'),
+      'image 项元素形式 Length 应改为新值'
+    );
+    assert.ok(
+      out.includes('<Mime>video/mp4</Mime><Length>1500000</Length>'),
+      'video 项元素形式 Length 不得改动'
+    );
+  });
+
+  it('元素形式带命名空间前缀时同样命中', () => {
+    const xmp =
+      '<x:xmpmeta>' +
+      '<x:Item><x:Mime>image/jpeg</x:Mime><x:Length>9000000</x:Length></x:Item>' +
+      '</x:xmpmeta>';
+    const out = patchXmpStillLength(xmp, 1200000);
+    assert.ok(out.includes('<x:Length>1200000</x:Length>'), '带前缀的元素形式应命中');
   });
 });

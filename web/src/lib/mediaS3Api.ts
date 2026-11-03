@@ -111,8 +111,9 @@ export async function putMediaS3Object(key: string, blob: Blob | ArrayBuffer, co
     body: blob,
   }, {
     skipDataCheck: true,
-    // 大文件上传需要更宽松的超时（同 uploadMediaBinary 的线性放大语义）
-    timeoutMs: Math.min(30_000 + (size / (1024 * 1024)) * 2_000, 600_000),
+    // 大文件上传需要更宽松的超时（同 uploadMediaBinary 的线性放大语义）。
+    // 2026-11-02：2s/MB → 6s/MB，上限 600s → 900s，对齐 uploadMediaBinary。
+    timeoutMs: Math.min(30_000 + (size / (1024 * 1024)) * 6_000, 900_000),
   });
 }
 
