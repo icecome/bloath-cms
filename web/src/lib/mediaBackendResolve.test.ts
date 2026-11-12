@@ -1,8 +1,8 @@
-// 并行媒体仓库解析测试（resolveMediaSource）
+// 并行媒体仓库解析测试（resolveMediaBackend / resolveBackendSource / enabledBackends）
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  resolveMediaSource, resolveMediaBackend, resolveBackendSource, getBackend, enabledBackends,
+  resolveMediaBackend, resolveBackendSource, enabledBackends,
 } from './mediaBackendResolve.ts';
 import type { MediaConfig, SelectedRepo } from '../../../shared/types';
 
@@ -10,9 +10,6 @@ const repo: SelectedRepo = { owner: 'me', repo: 'blog', branch: 'main' };
 
 function cfg(partial: Partial<MediaConfig>): MediaConfig {
   return {
-    sourceType: 'standalone',
-    imageOwner: '', imageRepo: '', imageBranch: 'main',
-    mediaPath: 'assets', imageBranchName: 'assets',
     cdnProvider: 'jsdelivr', customCdnTemplate: '',
     quality: 80, renameTemplate: '{{filename}}',
     duplicateStrategy: 'skip', uploadMode: 'compress',
@@ -97,40 +94,8 @@ describe('resolveMediaBackend', () => {
   });
 });
 
-describe('resolveMediaSource', () => {
-  it('backends 非空时按默认后端解析', () => {
-    const c = cfg({
-      backends: [{ id: 'a', kind: 'standalone', label: 'A', enabled: true, owner: 'o1', repo: 'r1' }],
-      defaultBackendId: 'a',
-    });
-    assert.equal(resolveMediaSource(c, repo).owner, 'o1');
-  });
-
-  it('backends 为空（旧配置）时回退 sourceType + 扁平字段', () => {
-    const c = cfg({
-      sourceType: 'standalone', imageOwner: 'legacy', imageRepo: 'repo', imageBranch: 'main',
-      backends: [], defaultBackendId: '',
-    });
-    const s = resolveMediaSource(c, repo);
-    assert.equal(s.owner, 'legacy');
-    assert.equal(s.repo, 'repo');
-  });
-});
-
-describe('getBackend / enabledBackends', () => {
-  it('getBackend 按 id 取，未命中回退默认', () => {
-    const c = cfg({
-      backends: [
-        { id: 'a', kind: 'standalone', label: 'A', enabled: true },
-        { id: 'b', kind: 's3', label: 'B', enabled: false },
-      ],
-      defaultBackendId: 'b',
-    });
-    assert.equal(getBackend(c, 'a')?.id, 'a');
-    assert.equal(getBackend(c, 'zzz')?.id, 'b');
-  });
-
-  it('enabledBackends 只返回启用项', () => {
+describe('enabledBackends', () => {
+  it('只返回启用项', () => {
     const c = cfg({
       backends: [
         { id: 'a', kind: 'standalone', label: 'A', enabled: true },

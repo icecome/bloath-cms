@@ -5,7 +5,7 @@ import type { HonoEnv } from '../env';
 import { ErrorCode } from '../lib/error-codes';
 import { error } from '../lib/response';
 import { ApiError } from '../lib/api-error';
-import { GithubApiError } from '../services/github';
+import { GithubApiError } from '../lib/errors';
 
 export const errorHandler = (err: Error, c: Context<HonoEnv>): Response => {
   if (err instanceof ApiError) {

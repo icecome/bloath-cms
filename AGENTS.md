@@ -35,15 +35,15 @@ bloath/
 │       ├── components/         # 组件，按域分子目录：drafts/editor/layout/media/settings/ui
 │       ├── contexts/           # 5 个 Context：Auth/Buffer/Collections/Repo/Toast
 │       ├── hooks/              # useAuth/useDraftPreviews/useFileListPage/useMediaLibrary
-│       ├── lib/                # 纯逻辑 + 测试（18 个 *.test.ts 与模块同目录）
+│       ├── lib/                # 纯逻辑 + 测试（31 个 *.test.ts 与模块同目录）
 │       ├── pages/              # 页面组件
 │       └── styles/
 ├── cloudflare-worker/          # API 网关（Hono on Workers）
 │   ├── src/
 │   │   ├── routes/             # 端点：auth/buffer/mediaS3/repos
-│   │   ├── services/           # 业务（19 个模块）；CI 只执行本目录的 *.test.ts
+│   │   ├── services/           # 业务（18 个模块）+ 零依赖可测模块
 │   │   ├── middleware/         # cors/errorHandler/pathGuard/rateLimit/sessionAuth/writeLimit
-│   │   ├── lib/                # 基础设施：api-error/base64/concurrency/error-codes/response
+│   │   ├── lib/                # 基础设施：api-error/base64/concurrency/error-codes/response/errors/path-safety
 │   │   └── db/migrations/      # D1 迁移（0001–0009，不可修改）
 │   ├── scripts/fill-kv-namespace.mjs   # CI 部署时生成 wrangler.deploy.jsonc
 │   └── wrangler.jsonc          # 本地 dev 配置（deploy 变体是生成物）
@@ -56,7 +56,7 @@ bloath/
 |---|---|---|
 | `web/src/lib/` | 纯逻辑工具 + 同名 `.test.ts` | React 组件、API 调用层 |
 | `web/src/contexts/` | 全局状态 Provider | 业务组件 |
-| `cloudflare-worker/src/services/` | 业务逻辑 + `.test.ts`（CI 只认这里） | HTTP 层细节 |
+| `cloudflare-worker/src/services/` | 业务逻辑 + `.test.ts` | HTTP 层细节 |
 | `cloudflare-worker/src/routes/` | 参数解析 → 调 service → 返回响应 | 业务逻辑、数据库操作 |
 | `shared/` | 纯类型定义 | 运行时代码、依赖任一端的导入 |
 | `docs/` | Markdown 文档（见 §10） | 一切入 Git 的东西 |
@@ -70,16 +70,16 @@ npm run typecheck      # 前后端 tsc --noEmit
 npm run deploy         # 手动部署（构建前端 + wrangler deploy）；常规部署 push main 即可
 
 # web/ 内
-npm test               # Node 原生 test runner，跑 src/lib/*.test.ts（18 个文件）
+npm test               # Node 原生 test runner，跑 src/lib/*.test.ts（31 个文件）
 npm run lint           # eslint（仅 web/ 配置了 lint；worker 没有）
 
 # cloudflare-worker/ 内
-npm test               # 跑 src/**/*.test.ts（5 个文件，均在 services/ 下）
+npm test               # 跑 src/**/*.test.ts（9 个文件）
 npm run db:migrate:local     # D1 迁移（本地）
 npm run db:migrate:remote    # D1 迁移（生产）
 ```
 
-**本地与 CI 的差异**：CI（`.github/workflows/deploy.yml`）worker 测试只跑 `node --experimental-strip-types --test src/services/*.test.ts`——**新测试必须放 `src/services/` 下才会被 CI 执行**；本地 `npm test` 则是 `src/**/*.test.ts` 全量。**Node 版本也不同**：workflow 固定 `node-version: '22'`，本地常见 v24，事件循环排空时机这类差异只在 CI 暴露（见 §9）。web/worker 测试都带 `--test-reporter=spec`，非 TTY 环境下不再吐 TAP 巨量日志。
+**本地与 CI 的差异**：CI（`.github/workflows/deploy.yml`）跑 `node --experimental-strip-types --test "src/**/*.test.ts"`，覆盖 services / lib / middleware 三处（2026-11-12 起；此前只跑 `src/services/*.test.ts`，lib 与 middleware 下的测试从不执行）。新测试仍建议放 `src/services/`（历史上 CI 只需一条 glob 就能覆盖），但已不再强制。**Node 版本也不同**：workflow 固定 `node-version: '22'`，本地常见 v24，事件循环排空时机这类差异只在 CI 暴露（见 §9）。web/worker 测试都带 `--test-reporter=spec`，非 TTY 环境下不再吐 TAP 巨量日志。
 
 本地环境变量模板：`cloudflare-worker/.dev.vars.example`；部署与排错见 [docs/05-delivery/](docs/05-delivery/)。
 
@@ -92,8 +92,18 @@ worker: routes（端点）→ services（业务）→ lib（基础设施）+ mid
 
 1. 依赖自上而下单向；禁止反向 import、禁止 lib 调 components、禁止 services 引入 HTTP 层类型。
 2. **新增 API 端点 = 新建/扩展 `routes/` 处理函数 + 业务落 `services/` + 响应走 `lib/response.ts` 结构**；不新增模块私有的响应封装。
-3. **新增可单测的业务逻辑**：抽成零依赖模块放 `services/`（现有范本：`owner-allowlist.ts`、`git-blob-sha.ts`、`publish-paths.ts`，见各文件头注释），配同目录 `.test.ts`。
+3. **新增可单测的业务逻辑**：抽成零依赖模块（web 放 `lib/`，worker 放 `services/` 或 `lib/`，现有范本：`owner-allowlist.ts`、`git-blob-sha.ts`、`publish-paths.ts`、`gitTreeCache.ts`），配同目录 `.test.ts`。
 4. **新增前端数据获取/状态**：列表页统一复用 `useFileListPage` + `FileTable`（Dashboard 已迁移），不另写加载实现。
+
+**唯一允许的分层例外（2026-11-12 显式化，不要当遗漏去「修」）**：
+`middleware/sessionAuth.ts` 依赖 `services/session` 与 `services/owner-allowlist`。会话校验必须复用签发端的同一套逻辑（加密解密、设备指纹、白名单判定），把这段代码复制到 middleware 会制造第二份真相。除此之外 `middleware → services` 与 `services → middleware` 均为零依赖，改动前先跑：
+
+```powershell
+git grep -n "from '../services/" -- "cloudflare-worker/src/middleware/*.ts"   # 期望只 2 条，都在 sessionAuth
+git grep -n "from '../middleware/" -- "cloudflare-worker/src/services/*.ts"   # 期望 0 条（测试文件除外）
+```
+
+其余基础设施归属：跨层共用的**错误类型**放 `lib/errors.ts`（`GithubApiError`），**纯校验函数**放 `lib/path-safety.ts`（`isSafePathParam`）——`middleware/pathGuard.ts` 与 `services/*.ts` 各自 re-export/import，谁都不反向依赖。
 
 ## 5. 硬性规则
 
@@ -146,13 +156,13 @@ const initialize = useCallback(() => {
 ```
 
 **依据**：把回调放进 `useCallback`/`useEffect` 依赖数组会导致外部实例（如 Vditor 编辑器）反复销毁重建。赋值本身幂等，并发渲染下被丢弃的分支只是「写了一次即将被覆盖的值」，无副作用。
-**适用条件**（不满足时改用 `useEffect` 同步，参考 `EditorPage.tsx` 的 `handleSaveRef`）：
+**适用条件**（三条全满足才用本模式，否则改用 `useCallback` + 显式依赖）：
 
 - 读点必须位于**事件回调或异步回调**内；在渲染输出中直接读取该 ref 时不可使用
 - 必须配合**空依赖数组**的 `useCallback`/`useEffect`，否则模式失去意义
 - 不用于承载会被 React 状态驱动的渲染数据
 
-**现有使用点**：`web/src/hooks/useFileListPage.ts:29`、`web/src/components/editor/VditorEditor.tsx:36-41`
+**现有使用点**：`web/src/hooks/useFileListPage.ts:29`、`web/src/components/editor/VditorEditor.tsx:36-41`、`web/src/pages/EditorPage.tsx:601-602`（`handleSaveRef`，2026-11-12 从 `useEffect` 同步改为渲染期赋值：`handleSave` 有近 30 个外部依赖，逐个塞进 `useCallback` 依赖数组比本模式更容易漏，且会触发 exhaustive-deps 警告）。
 
 ### 6.2 异步加载时防止旧响应覆盖新数据
 
@@ -163,11 +173,12 @@ const initialize = useCallback(() => {
 let cancelled = false;
 fetchData().then((d) => { if (!cancelled) setData(d); });
 return () => { cancelled = true; };
-// 见 web/src/hooks/useFileListPage.ts:48-69、web/src/pages/DraftsPage.tsx:120-124
+// 见 web/src/hooks/useFileListPage.ts:48-69、web/src/pages/DraftsPage.tsx:108-115
 
 // 模式 B：比对身份键（响应返回后校验上下文未变）
 if (!selectedRepo || selectedRepo.owner !== owner || selectedRepo.repo !== repo) return;
-// 见 web/src/components/layout/MainLayout.tsx:506
+// 见 web/src/components/layout/MainLayout.tsx:86（配置拉取的迟到响应丢弃；
+// 含 branch 比对——同仓库不同分支配置可能不同）
 ```
 
 ### 6.3 同步动作锁
@@ -185,7 +196,7 @@ const acquireActionLock = useCallback((): boolean => {
 ```
 
 **依据**：不加锁时第二次 `commitBatch` 会因源文件已不存在而报错，用户看到「失败」提示，但操作实际已生效（此前实际发生过）。
-**现有使用点**：`web/src/pages/DraftsPage.tsx:93-104`、`web/src/pages/EditorPage.tsx:317`（保存锁）、`web/src/pages/DashboardPage.tsx:71`。
+**现有使用点**：`web/src/pages/DraftsPage.tsx:85-91`（发布/移动/删除共用锁）、`web/src/pages/EditorPage.tsx:317` 附近（保存锁 `saveLockRef`）、`web/src/pages/DashboardPage.tsx:71`。
 
 ### 6.4 Context value 稳定性
 
@@ -237,7 +248,7 @@ const loadEditorPage = () => import('./pages/EditorPage'); // 模块级常量，
 
 | 坑 | 处置 |
 |---|---|
-| CI 只跑 `src/services/*.test.ts`，本地 `npm test` 跑全量 | 新测试一律放 `src/services/`；`lib/`、`middleware/` 下的测试 CI 不执行 |
+| CI 只跑 `src/services/*.test.ts`，本地 `npm test` 跑全量 | 已修（2026-11-12）：CI 改跑 `src/**/*.test.ts`，lib 与 middleware 下的测试同样执行。新增测试放哪一层都行，但零依赖纯逻辑优先放 `lib/`（web）或 `services/`（worker） |
 | `wrangler.deploy.jsonc` 找不到 | 它是 CI 生成物（不入 Git）；本地 dev/部署用 `wrangler.jsonc`，别手动创建 deploy 变体 |
 | 旧版曾把 S3 凭据写进 `.bloath/config.json` 推送到仓库 | 推送前必须移除 `media.s3` 整对象（R2）；仓库历史污染状态见 KI-06，待用户判断公开性后处置 |
 | Vditor 从 jsDelivr CDN 加载，镜像不可用时编辑器挂 | 已知长期风险（KI-03），raw 是回退；排查编辑器白屏先查 CDN 可达性 |

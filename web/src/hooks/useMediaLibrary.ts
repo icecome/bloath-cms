@@ -117,7 +117,12 @@ export function useMediaLibrary(
     [mediaConfig.backends, activeBackendId]
   );
   const isS3Source = activeBackend?.kind === 's3';
-  const s3View = { publicBaseUrl: activeBackend?.s3PublicBaseUrl || '', backendId: activeBackendId };
+  // s3View 是 load() 的依赖之一，必须 memo：对象字面量每帧新建会让依赖恒变，
+  // 导致 load 的 useCallback 形同虚设（每次渲染都是新引用，下游 effect 反复重跑）。
+  const s3View = useMemo(
+    () => ({ publicBaseUrl: activeBackend?.s3PublicBaseUrl || '', backendId: activeBackendId }),
+    [activeBackend?.s3PublicBaseUrl, activeBackendId]
+  );
   // S3 前缀由 Worker 侧配置持有；列举时经代理使用服务端前缀，此处仅作缓存键
   const [s3Prefix, setS3Prefix] = useState('');
 
@@ -246,7 +251,10 @@ export function useMediaLibrary(
         if (requestId === requestIdRef.current && !silent) setLoading(false);
       }
     },
-    [source, isS3Source, s3View, s3Prefix, user, mediaConfig, kind, activeBackendId]
+    // activeBackendId 不单列：它已通过 s3View.backendId 参与依赖（s3View 是每帧新建
+    // 的对象字面量，但 backendId 变化必然改变 s3View，故覆盖等价）。
+    // 保留 s3View 而非拆成 backendId/prefix 两个依赖：s3PublicUrl 直接消费整个对象。
+    [source, isS3Source, s3View, s3Prefix, user, mediaConfig, kind]
   );
 
   // 作废在途请求（卸载/依赖变更/关闭对话框）：seq 自增后，旧请求落地时会因 id 不匹配被丢弃。

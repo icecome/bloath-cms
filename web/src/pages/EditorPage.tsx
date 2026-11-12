@@ -177,7 +177,7 @@ export default function EditorPage() {
         setError(err.message || '文章加载失败，请返回列表后重试');
       })
       .finally(() => setLoading(false));
-  }, [isNew, slug, user, basePath, owner, repo, branch, hasLoadedOnce, bufferEnabled, bufferConfigLoading]);
+  }, [isNew, slug, user, basePath, owner, repo, branch, hasLoadedOnce, bufferEnabled, bufferConfigLoading, paramFilePath]);
 
   const handleVditorReady = useCallback((instance: Vditor) => {
     vditorInstanceRef.current = instance;
@@ -591,10 +591,15 @@ export default function EditorPage() {
     }
   };
 
+  // 最新值 ref（AGENTS.md §6.1）：Ctrl+S 的 keydown 监听挂一次、依赖数组为空，
+  // 必须通过 ref 读到最新的 handleSave。此前用 `useEffect(() => { ref.current = handleSave })`
+  // 同步，该 effect 依赖 handleSave → handleSave 未 memo 化 → 每帧重建监听，
+  // 且触发 react-hooks/exhaustive-deps 警告。
+  // handleSave 有近 30 个外部依赖，逐个塞进 useCallback 依赖数组比这里更容易漏；
+  // 按 §6.1 的适用条件（读点位于事件回调内 + 配合空依赖 effect）直接在渲染期赋值，
+  // 赋值幂等，并发渲染下被丢弃的分支只是写了一次即将被覆盖的值。
   const handleSaveRef = useRef(handleSave);
-  useEffect(() => {
-    handleSaveRef.current = handleSave;
-  }, [handleSave]);
+  handleSaveRef.current = handleSave;
 
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -686,13 +691,18 @@ export default function EditorPage() {
           <button
             onClick={handleSave}
             disabled={saving || bufferConfigLoading}
+            title={bufferConfigLoading ? '缓冲配置加载中，暂时无法保存' : undefined}
             className="flex items-center gap-1.5 px-2.5 md:px-3.5 py-2 text-sm bg-foreground text-background rounded-sm hover:bg-foreground/90 disabled:opacity-50 transition-colors"
           >
             <Save className="w-4 h-4" />
-            <span className="hidden md:inline">
-              {saving ? '保存中……' : bufferConfigLoading ? '缓冲配置加载中……' : bufferEnabled ? '保存到缓冲' : '保存'}
-            </span>
+            {/* 按钮文案只表达动作，状态用相邻的 aria-live 文本承载：
+                把「保存中…」「缓冲配置加载中…」塞进按钮会让宽度随状态跳动。
+                hidden md:inline 保留原移动端只显图标的约定。 */}
+            <span className="hidden md:inline">{bufferEnabled ? '保存到缓冲' : '保存'}</span>
           </button>
+          <span className="hidden md:inline text-xs text-muted-foreground" aria-live="polite">
+            {saving ? '保存中……' : bufferConfigLoading ? '缓冲配置加载中……' : ''}
+          </span>
           {!isNew && (
             <>
               <button

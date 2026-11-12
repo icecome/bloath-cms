@@ -69,7 +69,11 @@ jobs:
       - name: Test worker
         run: |
           cd cloudflare-worker
-          node --experimental-strip-types --no-warnings --test-reporter=spec --test src/services/*.test.ts
+          # 2026-11-12 起同时执行 services / lib / middleware 三处测试。
+          # 旧实现只跑 src/services/*.test.ts，导致 lib/ 与 middleware/ 下的测试
+          # 即使写好也从不执行（AGENTS.md §9 记录的盲区）。
+          # 新增测试仍建议放 services/（CI 最早期就在这里覆盖），但不再强制。
+          node --experimental-strip-types --no-warnings --test-reporter=spec --test "src/**/*.test.ts"
 
       - name: Build frontend
         env:

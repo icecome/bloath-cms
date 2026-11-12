@@ -32,23 +32,11 @@ import { useDraftPreviews } from '../hooks/useDraftPreviews';
 import { readBufferFile, writeBufferFile, discardBufferFile, setBufferPublishTarget } from '../lib/bufferApi';
 import { buildEditUrl } from '../lib/navigation';
 import { mergeDraftList } from '../lib/draftMerge';
+import { buildTargetEntries, findTargetConflicts, describeTargetConflict } from '../lib/draftTargets';
 import { fetchDirTree, type DirNode } from '../lib/dirTree';
 import { RenameDraftDialog } from '../components/drafts/RenameDraftDialog';
 import { PublishDraftDialog } from '../components/drafts/PublishDraftDialog';
 import { PreviewDraftDialog } from '../components/drafts/PreviewDraftDialog';
-
-/** 由草稿项与目标表构造待持久化条目；空目标项剔除（无目标的条目不进入发布/标记流程） */
-function buildTargetEntries(
-  items: ReadonlyArray<EnhancedFileItem>,
-  targets: Record<string, string>
-): Array<{ item: EnhancedFileItem; previewTarget: string }> {
-  return items
-    .map((item) => {
-      const target = (targets[item.path] || '').trim();
-      return target ? { item, previewTarget: target } : null;
-    })
-    .filter((x): x is { item: EnhancedFileItem; previewTarget: string } => x !== null);
-}
 
 export default function DraftsPage() {
   const { user } = useAuth();
@@ -319,6 +307,15 @@ export default function DraftsPage() {
       setPreviewSinglePath(null);
       return;
     }
+    // 目标冲突：两个源指向同一目标会互相覆盖（后提交的赢），必须点确认前拦住
+    const conflicts = findTargetConflicts(entries);
+    const conflictMessage = describeTargetConflict(conflicts);
+    if (conflictMessage) {
+      addToast({ message: conflictMessage, type: 'error' });
+      setShowPreviewDialog(false);
+      setPreviewSinglePath(null);
+      return;
+    }
     if (!acquireActionLock()) return;
     setActionLoading(true);
     try {
@@ -358,6 +355,12 @@ export default function DraftsPage() {
       const targetEntries = buildTargetEntries(selectedItems, targets);
       if (targetEntries.length === 0) {
         addToast({ message: '未指定目标目录，未发布', type: 'warning' });
+        return;
+      }
+      // 目标冲突：同一目标被多篇指向时，move/commit 会互相覆盖且第二次报错
+      const conflictMessage = describeTargetConflict(findTargetConflicts(targetEntries));
+      if (conflictMessage) {
+        addToast({ message: conflictMessage, type: 'error' });
         return;
       }
       await persistTargets(targetEntries);
@@ -455,7 +458,7 @@ export default function DraftsPage() {
       setActionLoading(false);
       releaseActionLock();
     }
-  }, [selectedRepo, user, selectedFiles, mergedFiles, acquireActionLock, releaseActionLock, persistTargets, addToast, bufferEnabled, publish, setFiles, pruneOrphansFor, refreshChanges, draftPath]);
+  }, [selectedRepo, user, selectedFiles, mergedFiles, acquireActionLock, releaseActionLock, persistTargets, addToast, bufferEnabled, publish, setFiles, pruneOrphansFor, refreshChanges, draftPath, setSelectedFiles]);
 
   /**
    * 高级流入口（P1-002）：从发布对话框进入，仅持久化目标不发布，
@@ -466,6 +469,11 @@ export default function DraftsPage() {
     const entries = buildTargetEntries(selectedItems, targets);
     if (entries.length === 0) {
       addToast({ message: '未指定目标目录，预发布未生效', type: 'warning' });
+      return;
+    }
+    const conflictMessage = describeTargetConflict(findTargetConflicts(entries));
+    if (conflictMessage) {
+      addToast({ message: conflictMessage, type: 'error' });
       return;
     }
     if (!acquireActionLock()) return;

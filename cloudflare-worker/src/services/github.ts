@@ -5,17 +5,15 @@ import type { FileInfo, Repo, User, CommitOp } from '../../../shared/types';
 import { FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } from '../../../shared/types';
 import type { Env } from '../env';
 import { mapLimit } from '../lib/concurrency';
+import { GithubApiError } from '../lib/errors';
 import { isTreeCacheUsable, treeCacheKey } from './gitTreeCache.ts';
 
 export type { CommitOp };
 
-// GitHub API 错误类，携带 HTTP 状态码
-export class GithubApiError extends Error {
-  constructor(message: string, public statusCode: number) {
-    super(message);
-    this.name = 'GithubApiError';
-  }
-}
+// GitHub API 错误类定义已迁至 lib/errors.ts（横切层 errorHandler 需要按类型分派，
+// 不能让 middleware 反向依赖具体业务模块）。此处 re-export 保持既有导入点兼容：
+// routes/buffer.ts、services/publish.service.ts 等仍从本模块取。
+export { GithubApiError };
 
 /** 批量 blob 上传的并发上限，与 front-matter 批量读取一致 */
 const BLOB_UPLOAD_CONCURRENCY = 8;

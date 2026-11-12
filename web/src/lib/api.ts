@@ -5,19 +5,6 @@ import { treeTimeoutMs, uploadTimeoutMs } from './requestTimeouts.ts';
 
 export type { CommitOp };
 
-export interface ContentItem {
-  name: string;
-  path: string;
-  sha: string;
-  type: 'file' | 'dir';
-  size?: number;
-  frontmatter?: {
-    title?: string;
-    date?: string;
-    tags?: string[];
-  };
-}
-
 const API_TIMEOUT_MS = 10000;
 
 export function formatTimestamp(): string {
@@ -63,17 +50,6 @@ interface TreeItem {
 
 export async function getRepos(): Promise<Repo[]> {
   return apiFetch<Repo[]>(`${API_BASE}/api/repos`);
-}
-
-export async function getFiles(params: RepoInfo & { path?: string }): Promise<ContentItem[]> {
-  const searchParams = new URLSearchParams({
-    owner: params.owner,
-    repo: params.repo,
-    path: params.path || '',
-    branch: params.branch || 'main'
-  });
-
-  return apiFetch<ContentItem[]>(`${API_BASE}/api/repos/files?${searchParams}`);
 }
 
 export async function readFile(params: RepoInfo & { path: string }, timeoutMs?: number): Promise<FileReadResult> {

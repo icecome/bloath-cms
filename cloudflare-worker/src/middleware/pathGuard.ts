@@ -1,7 +1,13 @@
 // 路径参数与安全 JSON 解析（独立于会话/CORS）
-// \u4e00-\u9fff 为 CJK 统一表意文字基本区（用转义写法避免字面量在不同编辑器/编码下显示异常）
-const PATH_SAFE_PATTERN = /^[a-zA-Z0-9\u4e00-\u9fff._\-]+$/;
-const PATH_SAFE_PATTERN_WITH_SLASH = /^[a-zA-Z0-9\u4e00-\u9fff._/\-]+$/;
+//
+// isSafePathParam 的实现在 lib/path-safety.ts（零依赖，可被 services 直接引用）。
+// 此处 re-export 保持既有导入点兼容：routes/* 仍从本模块取，未迁移的调用点不必改动。
+//
+// 值导入必须带 .ts 后缀：本文件被 node --experimental-strip-types 测试链路加载
+// （services/mediaLimits.contract.test.ts 直接 import 本模块读常量），
+// 缺后缀会在 node ESM 下抛 ERR_MODULE_NOT_FOUND（AGENTS.md §9 已知坑）。
+export { isSafePathParam } from '../lib/path-safety.ts';
+import { isSafePathParam } from '../lib/path-safety.ts';
 
 /**
  * 单文件内容上限：**base64 字符串长度**（不是二进制体积）。
@@ -16,13 +22,6 @@ export const MAX_JSON_BODY_SIZE = 40 * 1024 * 1024;
 
 /** 媒体二进制端点（PUT /api/repos/media）的原始字节上限 */
 export const MAX_MEDIA_BINARY_SIZE = 25 * 1024 * 1024;
-
-export function isSafePathParam(value: string | null | undefined, allowSlash = false): value is string {
-  if (!value) return false;
-  if (value.includes('..')) return false;
-  if (value.includes('\0')) return false;
-  return allowSlash ? PATH_SAFE_PATTERN_WITH_SLASH.test(value) : PATH_SAFE_PATTERN.test(value);
-}
 
 /**
  * 解析并净化 JSON 请求体。
