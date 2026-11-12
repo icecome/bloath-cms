@@ -5,6 +5,7 @@ import type { FileInfo, Repo, User, CommitOp } from '../../../shared/types';
 import { FRONTMATTER_YAML_REGEX, FRONTMATTER_TOML_REGEX } from '../../../shared/types';
 import type { Env } from '../env';
 import { mapLimit } from '../lib/concurrency';
+import { isTreeCacheUsable, treeCacheKey } from './gitTreeCache.ts';
 
 export type { CommitOp };
 
@@ -728,6 +729,8 @@ export async function getTree(
   // 树缓存（audit P2-36）：键 = 分支最新 commit sha（1 子请求探测），命中即
   // 返回缓存，省掉递归树拉取与媒体模式的最多 32 次 commit 详情。
   // KV 未绑定/任何缓存故障 → 优雅降级直连；写失败静默。
+  // 命中判定与键构造在 services/gitTreeCache.ts（零依赖纯函数 + CI 测试）：
+  // filename 模式会拒绝「全零时间戳」的旧脏数据，防止媒体库排序静默退化。
   let cacheKey = '';
   let cachedHeadSha: string | undefined;
   try {
@@ -737,14 +740,22 @@ export async function getTree(
         { headers: ghHeaders(token) }
       );
       if (headResp.ok) {
-        const head = await headResp.json() as Array<{ sha?: string }>;
-        const headSha = head[0]?.sha;
+        // 「Get a commit」端点返回单个 commit 对象（实测 2026-11-12：
+        // /repos/{o}/{r}/commits/{branch} → {sha, commit, files...}），
+        // 不是数组——按 head[0]?.sha 解析永远得 undefined，缓存探测成死代码。
+        const head = await headResp.json() as { sha?: string };
+        const headSha = head.sha;
         if (headSha) {
-          cacheKey = `tree:${owner}/${repo}:${branch}:${mode || 'plain'}`;
+          cacheKey = treeCacheKey(owner, repo, branch, mode);
           const cachedRaw = await cacheKv.get(`${cacheKey}:${headSha}`);
           if (cachedRaw) {
-            const cached = JSON.parse(cachedRaw) as FileInfo[];
-            if (Array.isArray(cached) && cached.length > 0) return cached;
+            let cached: unknown;
+            try {
+              cached = JSON.parse(cachedRaw);
+            } catch {
+              cached = null; // 脏值按 miss 处理，走全量重取并覆盖写回
+            }
+            if (isTreeCacheUsable(cached, mode === 'filename')) return cached;
           }
           // 未命中：继续全量拉取，成功后按 headSha 写缓存
           cachedHeadSha = headSha;
@@ -786,18 +797,11 @@ export async function getTree(
       };
     });
 
-  // 写缓存（成功全量拉取后）：headSha 键控，TTL 10 分钟兜底（head 不变即命中）
-  try {
-    if (cacheKv && cacheKey && cachedHeadSha && fileItems.length > 0) {
-      await cacheKv.put(
-        `${cacheKey}:${cachedHeadSha}`,
-        JSON.stringify(fileItems),
-        { expirationTtl: 600 }
-      ).catch(() => undefined);
-    }
-  } catch { /* 缓存写失败不影响主流程 */ }
-
   if (fileItems.length === 0) return fileItems;
+
+  // filename 填充是否成功（失败时不写缓存：写了也是一份注定被
+  // isTreeCacheUsable 拒收的全零脏数据，白白多一次 KV 写）
+  let stampFillFailed = false;
 
   const headers = ghHeaders(token);
 
@@ -857,9 +861,32 @@ export async function getTree(
         if (time) file.lastModified = time;
       }
     } catch (err) {
+      stampFillFailed = true;
       console.warn(`[getTree] 填充 lastModified 失败：${err instanceof Error ? err.message : 'unknown'}`);
     }
   }
+
+  // 写缓存（headSha 键控，TTL 10 分钟兜底）。
+  // 【顺序与守卫都是正确性的一部分，2026-11-03】
+  // 1. 必须在 filename 填充之后：旧实现在填充前写，缓存里存的全是
+  //    lastModified:0，命中即媒体库「最近更新」排序静默退化为路径序。
+  // 2. 用读侧同一个判据（isTreeCacheUsable）决定写不写：「绝不写入自己
+  //    会拒收的数据」。扇出失败有两条路——抛异常（stampFillFailed）与
+  //    listResp 非 200 时静默 break（全零但无异常）；后者同样落在此守卫内，
+  //    避免白写一份下一轮必然 miss 的脏条目。plain 模式判据恒 true，行为不变。
+  try {
+    if (
+      cacheKv && cacheKey && cachedHeadSha &&
+      fileItems.length > 0 && !stampFillFailed &&
+      isTreeCacheUsable(fileItems, mode === 'filename')
+    ) {
+      await cacheKv.put(
+        `${cacheKey}:${cachedHeadSha}`,
+        JSON.stringify(fileItems),
+        { expirationTtl: 600 }
+      ).catch(() => undefined);
+    }
+  } catch { /* 缓存写失败不影响主流程 */ }
 
   return fileItems;
 }

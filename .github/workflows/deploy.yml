@@ -89,6 +89,7 @@ jobs:
         working-directory: cloudflare-worker
         env:
           KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
+          CACHE_KV_NAMESPACE_ID: ${{ secrets.CACHE_KV_NAMESPACE_ID }}
           D1_DATABASE_ID: ${{ secrets.BLOATH_D1_DATABASE_ID }}
         run: node scripts/fill-kv-namespace.mjs
 

@@ -53,6 +53,12 @@ if (cacheKvNamespaceId) {
   template = template.replaceAll('${CACHE_KV_NAMESPACE_ID}', cacheKvNamespaceId);
 } else {
   console.warn('[fill-kv-namespace] 未提供 CACHE_KV_NAMESPACE_ID：移除树缓存 KV 绑定（getTree 将直连 GitHub，无缓存）');
+  // 显式进 Actions 摘要：2026-11-03 媒体库超时事故的教训是这条移除每次都发生、
+  // 每次都静默（step success，无人看日志），导致「生产从来没树缓存」潜伏数周。
+  // 漏配必须可见；根治仍按 AGENTS.md §7（CACHE_KV 可选，未配置功能不受影响）。
+  if (process.env.GITHUB_ACTIONS) {
+    console.warn('::warning::CACHE_KV 未绑定：媒体库树缓存停用，每次进媒体库全量扇出 GitHub（getTree 有超时风险）。请在仓库 Secrets 配置 CACHE_KV_NAMESPACE_ID。');
+  }
   template = template.replaceAll(/,\s*\{\s*"binding":\s*"CACHE_KV",\s*"id":\s*"\$\{CACHE_KV_NAMESPACE_ID\}"\s*\}/g, '');
 }
 

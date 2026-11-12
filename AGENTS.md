@@ -219,7 +219,7 @@ const loadEditorPage = () => import('./pages/EditorPage'); // 模块级常量，
 - **可测性**：需要单测的业务逻辑抽成**零依赖模块**（§4 铁律 3），用 `node --experimental-strip-types --test` 直接测试。
 - 限流与防护：KV 固定窗口按账号限流（`middleware/rateLimit.ts`）；写操作另有 `writeLimit`；路径防护在 `pathGuard`。
 - 限流命中的响应默认是 JSON 错误信封（API 路由）。`/media-file/*` 这类「响应体被浏览器当资源解码」的直链路由必须给 `rateLimit` 传 `onLimit` 返回纯文本 429，否则图片/视频加载失败时拿到的是 `application/json`（2026-10-30 修复）。`Retry-After` 两种格式下都由中间件写入；`onLimit` 内必须用 `c.text()`/`c.json()` 产出响应，裸 `new Response()` 会丢掉该头。
-- 树缓存：`CACHE_KV` 可选，按 head-sha 作为键；未配置时跳过缓存，不影响功能。
+- 树缓存：`CACHE_KV` 可选，按 head-sha 作为键；未配置时跳过缓存，不影响功能。键构造与命中判定统一走 `services/gitTreeCache.ts`（`treeCacheKey`/`isTreeCacheUsable`，零依赖 + CI 测试），**不要在 `github.ts` 内另写内联判定**——filename 模式必须拒收「全零 lastModified」的脏值。写缓存必须放在 filename 的 `lastModified` 填充之后（2026-11-03 修复：旧实现填充前写，一旦 CACHE_KV 生效，媒体库「最近更新」排序会静默退化为路径序）。CI 的「注入 KV / D1 配置」步骤必须带 `CACHE_KV_NAMESPACE_ID` secret，缺失时 `fill-kv-namespace.mjs` 会移除绑定并向 Actions 摘要输出 `::warning::`（历史教训：该移除长期静默发生、step 全绿，导致生产从来没有树缓存）。背景见 [docs/04-issues/2026-11-03-media-library-tree-timeout.md](docs/04-issues/2026-11-03-media-library-tree-timeout.md)。
 
 ## 8. 禁止事项
 
@@ -254,7 +254,9 @@ const loadEditorPage = () => import('./pages/EditorPage'); // 模块级常量，
 | 缺 `.ts` 后缀的值导入让模块在 node ESM 下无法加载，从而写不出单测 | `sortFiles.ts` 原先 `from './extractFrontMatter'`（值导入）→ `ERR_MODULE_NOT_FOUND`，排序逻辑 4 个月无测试覆盖。纯逻辑应抽到零依赖模块并显式带 `.ts` 后缀导入（范例 `lib/dateParse.ts`） |
 | YAML/TOML 的时间字段未必是字符串 | `date: 20260707` 被 js-yaml 解析成数字 `20260707`，旧实现原样当毫秒用 → 排序键落到 1970。解析器必须区分 8 位 YYYYMMDD / 10 位秒 / 13 位毫秒（`lib/dateParse.ts`） |
 | HEVC 动态视频的转码位置是架构约束，不是实现细节 | HEVC 源由图床仓库的 GitHub Actions 转码（workflow 见 `deliverables/motion-photo-transcode.workflow.yml`，部署到图床仓库）。CMS 侧上传 HEVC 为 `*.src.mp4` 且提交信息**必须**带 `[server-transcode]` 标记——换成 `[skip ci]` 会静默杀死触发链路；workflow 产出提交必须带 `[skip ci]` 防空转死循环。S3 通道无 Actions，仍走浏览器 wasm（`motionPhotoTranscode.ts`）。命名契约见 `web/src/lib/motionPhotoServerTranscode.ts`（2026-11-01） |
-| 动态照片是**单文件合成**产物，不是成对文件 | 上传一张动态照片最终产出**一个** `motion/<base>.jpg`（主图 + H.264 视频内嵌 + 修补后 XMP）。落盘固定 `motion/` 子目录（`lib/motionPhotoMerge.ts` 的 `MOTION_PHOTO_DIR`）；HEVC 服务端路径经 `.src.jpg + .src.mp4 + .motion.json` 三件由 workflow 合成。浏览器合成算法在 `lib/motionPhotoMerge.ts`，与 workflow 的 `deliverables/merge_motion_photo.py` 是同一算法的两套实现，**改任一侧必须同步另一侧**（TS 端是算法基准，测试见 `motionPhotoMerge.test.ts`）。动态照片主图**强制原图**（WebP 压缩会销毁 XMP/JPEG 容器，无法合成）。设计方案见 [docs/02-tech-designs/motion-photo-single-file-design-v2.md](docs/02-tech-designs/motion-photo-single-file-design-v2.md)（2026-11-02） |
+| 动态照片是**单文件合成**产物，不是成对文件 | 上传一张动态照片最终产出**一个** `motion/<base>.jpg`（主图 + H.264 视频内嵌 + 修补后 XMP）。落盘固定 `motion/` 子目录（`lib/motionPhotoMerge.ts` 的 `MOTION_PHOTO_DIR`）；HEVC 服务端路径经 `.src.jpg + .src.mp4 + .motion.json` 三件由 workflow 合成。浏览器合成算法在 `lib/motionPhotoMerge.ts`，与 workflow 的 `deliverables/merge_motion_photo.py` 是同一算法的两套实现，**改任一侧必须同步另一侧**（TS 端是算法基准，测试见 `motionPhotoMerge.test.ts`）。主图处理：JPEG 可压缩（`lib/motionPhotoCompress.ts`：Canvas 出 JPEG + XMP APP1 回注 + 图像项 Length 修补，覆盖 Exif 内嵌/扩展 XMP 布局）；HEIC/AVIF 强制原图（浏览器无法解码）。WebP 压缩会销毁 XMP/JPEG 容器，**不得**用于动态照片主图。设计方案见 [docs/02-tech-designs/motion-photo-single-file-design-v2.md](docs/02-tech-designs/motion-photo-single-file-design-v2.md)（2026-11-02） |
+| Worker 扇出型端点的前端预算必须高于「子请求超时上限之和」 | `getTree(filename)` 在 Worker 响应前要串行 32+ 个 GitHub 子请求（单个上限 `GH_FETCH_TIMEOUT_MS=15s`），前端默认 10s 会「Worker 还在正常工作、前端先 Abort」，用户只看到裸「请求超时」。规则：给 Worker 新增扇出型端点时，前端 timeout 必须 ≥ 子请求上限 × 轮数 + 余量（现由 `web/src/lib/requestTimeouts.ts` 单点维护，含 7 例测试）；媒体库超时的取证路径见 [docs/04-issues/2026-11-03-media-library-tree-timeout.md](docs/04-issues/2026-11-03-media-library-tree-timeout.md) |
+| 「可选绑定缺失 → 静默移除」的部署脚本会长期掩盖配置漏洞 | `fill-kv-namespace.mjs` 缺 `CACHE_KV_NAMESPACE_ID` 时移除绑定继续部署，step 全绿、无人看日志，导致生产树缓存从未生效（2026-11-03 才暴露）。处置沿用禁止静默失败原则：降级可以，但必须在 Actions 摘要输出 `::warning::`；新增可选绑定时同样处理；部署后用 `npx wrangler deployments list` 核对绑定存在与否 |
 
 ## 10. 文档体系与维护
 

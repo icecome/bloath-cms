@@ -7,6 +7,9 @@
 // `media_s3_config:<id>` 加载对应桶配置。页面层在操作多桶后端时传入目标 id。
 
 import { requestJson } from './http.ts';
+// 值导入必须带 .ts 后缀：本模块被 node --experimental-strip-types 的 web 测试
+// 链路加载（mediaS3Api 的调用方有同名测试依赖），与 requestTimeouts.ts 同约定
+import { uploadTimeoutMs } from './requestTimeouts.ts';
 
 // 不能导入 constants.ts：它读取 import.meta.env（Vite 专属）且内部导入无扩展名，
 // 会阻断 node --experimental-strip-types 测试链路（见 undoConstants.ts 头注释）。
@@ -111,9 +114,9 @@ export async function putMediaS3Object(key: string, blob: Blob | ArrayBuffer, co
     body: blob,
   }, {
     skipDataCheck: true,
-    // 大文件上传需要更宽松的超时（同 uploadMediaBinary 的线性放大语义）。
-    // 2026-11-02：2s/MB → 6s/MB，上限 600s → 900s，对齐 uploadMediaBinary。
-    timeoutMs: Math.min(30_000 + (size / (1024 * 1024)) * 6_000, 900_000),
+    // 大文件上传超时与 uploadMediaBinary 同一公式（requestTimeouts.uploadTimeoutMs
+    // 是单一来源；三处曾各写各的，2026-11-03 收敛）
+    timeoutMs: uploadTimeoutMs(size),
   });
 }
 

@@ -1,6 +1,7 @@
 import type { Repo, RepoInfo, CommitOp } from '../../../shared/types';
 import { API_BASE } from './constants';
 import { requestJson, type HttpRequestOptions } from './http.ts';
+import { treeTimeoutMs, uploadTimeoutMs } from './requestTimeouts.ts';
 
 export type { CommitOp };
 
@@ -172,18 +173,21 @@ export async function getTree(params: RepoInfo & { mode?: 'filename' }): Promise
   });
   if (params.mode) searchParams.set('mode', params.mode);
 
-  return apiFetch<TreeItem[]>(`${API_BASE}/api/repos/tree?${searchParams}`);
+  // filename 模式走独立预算（35s，理由见 requestTimeouts.treeTimeoutMs 头注释）；
+  // plain 模式不扇出 commits，维持默认 10s
+  return apiFetch<TreeItem[]>(
+    `${API_BASE}/api/repos/tree?${searchParams}`,
+    { timeoutMs: treeTimeoutMs(params.mode) }
+  );
 }
 
 /**
  * 上传图片（base64 编码）
  *
- * 超时按 base64Content 字符数（≈传输体积）线性放大，与 uploadMediaBinary 同语义：
+ * 超时按 base64Content 字符数（≈传输体积）线性放大，与 uploadMediaBinary
+ * 同语义（公式单一来源：requestTimeouts.uploadTimeoutMs）。
  * 固定 API_TIMEOUT_MS=10s 在 10MB 大图上必然超时（实测 2026-11-02：合成成品
  * 10MB → base64 13.3MB → 网络上行 + GitHub commit 需 30s+）。
- * 公式与 uploadMediaBinary 一致：30s 基准 + 每 MB 6s，上限 900s。
- * 2026-11-02：从 2s/MB（隐含 4Mbps 上行）调到 6s/MB（≈1.33Mbps），覆盖手机
- * 4G 弱信号；15MB 的预算从 60s → 120s。
  */
 export async function uploadImage(
   params: RepoInfo & { path: string; base64Content: string; message?: string; branch?: string; userName?: string; sha?: string }
@@ -206,7 +210,7 @@ export async function uploadImage(
       userName: params.userName,
       sha: params.sha
     }),
-    timeoutMs: Math.min(30_000 + (bodyBytes / (1024 * 1024)) * 6_000, 900_000),
+    timeoutMs: uploadTimeoutMs(bodyBytes),
   });
 }
 
@@ -240,10 +244,9 @@ export async function uploadMediaBinary(params: {
     method: 'PUT',
     headers: { 'Content-Type': 'application/octet-stream' },
     body: params.blob,
-    // 超时随体积线性放大：固定 120s 在慢上行（手机热点）传大视频时必然中途夭折（P2-16）。
-    // 2026-11-02：从 2s/MB（隐含 4Mbps 上行）调到 6s/MB（≈1.33Mbps），覆盖 4G 弱信号；
-    // 15MB 的预算从 60s → 120s。基准 30s 余量，上限 15 分钟。
-    timeoutMs: Math.min(30_000 + (params.blob.size / (1024 * 1024)) * 6_000, 900_000),
+    // 超时随体积线性放大（公式单一来源：requestTimeouts.uploadTimeoutMs；
+    // P2-16：固定值在慢上行传大视频时必然中途夭折）
+    timeoutMs: uploadTimeoutMs(params.blob.size),
   });
 }
 
