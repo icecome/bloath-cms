@@ -129,12 +129,21 @@ export interface MediaBackend {
 }
 
 export interface MediaConfig {
-  sourceType: MediaSourceType;
-  imageOwner: string;
-  imageRepo: string;
-  imageBranch: string;
-  mediaPath: string;
-  imageBranchName: string;
+  /**
+   * @deprecated 迁移源字段（并行媒体仓库上线前的单源模型）。
+   * 运行时权威是 `backends` + `defaultBackendId`；本字段仅在读取旧配置时用于
+   * 构造首个 backend（见 configSchema.backendFromLegacy），写回时由
+   * pruneLegacyMediaFields 剥除。新代码禁止读取。
+   */
+  sourceType?: MediaSourceType;
+  /** @deprecated 迁移源字段，仅 standalone 类后端初始化用；见 sourceType */
+  imageOwner?: string;
+  /** @deprecated 迁移源字段，仅 standalone 类后端初始化用；见 sourceType */
+  imageRepo?: string;
+  /** @deprecated 迁移源字段，仅 standalone 类后端初始化用；见 sourceType */
+  imageBranch?: string;
+  /** @deprecated 迁移源字段，仅 repo-dir 类后端初始化用；见 sourceType */
+  mediaPath?: string;
   cdnProvider: CdnProvider;
   customCdnTemplate: string;
   quality: number;
@@ -142,11 +151,10 @@ export interface MediaConfig {
   duplicateStrategy: DuplicateStrategy;
   /** 图片上传默认方式（设置页配置，上传区默认选中该项）；视频恒为原样上传 */
   uploadMode: UploadMode;
-  /** S3 兼容图床配置（sourceType='s3' 时必填） */
+  /** S3 兼容图床外链配置（凭据在 Worker 侧按 backendId 分键加密存储） */
   s3?: S3MediaConfig;
   /**
-   * 并行后端媒体仓库列表（新）。存量配置无此字段：读取时由旧 sourceType+扁平字段
-   * 迁移为单个 backend 并写入；旧字段保留为「迁移源」，不再作为运行时权威。
+   * 并行后端媒体仓库列表（运行时权威）。旧配置读取时由迁移源字段构造单个 backend。
    */
   backends: MediaBackend[];
   /** 默认后端 id：上传未指定目标时回退到此；媒体库页初始活跃仓库也指向它 */

@@ -29,6 +29,12 @@ import { transcodeMotionPhotoVideo, type TranscodeProgress } from '../lib/motion
 import {
   embeddedVideoStrategy,
 } from '../lib/motionPhotoServerTranscode';
+import { mergeMotionPhotoBytes, motionPhotoPath } from '../lib/motionPhotoMerge';
+import { compressMotionStill } from '../lib/motionPhotoCompress';
+import {
+  buildMotionManifest,
+  motionManifestName,
+} from '../lib/motionPhotoManifest';
 import { mapLimit } from '../lib/concurrency';
 import { mediaCdnUrl } from '../lib/resolveMediaSource';
 import { resolveBackendSource } from '../lib/mediaBackendResolve';
@@ -197,199 +203,248 @@ export function useMediaUpload(params: MediaUploadParams): MediaUploadResult {
         }
 
         // ---- Motion Photo（安卓动态照片）特殊路径 ----
+        // 单文件合成方案（docs/02-tech-designs/motion-photo-single-file-design-v2.md）：
+        // 所有产物统一落 motion/ 子目录。三分支：
+        //   native  → 浏览器纯 Blob 合成单文件 <base>.jpg（零 ffmpeg，即刻完成）
+        //   server  → 写 <base>.src.jpg + <base>.src.mp4 + <base>.motion.json，
+        //             图床 Actions 转码合成出 <base>.jpg 后删除源文件
+        //   browser → S3 通道 wasm 转码，成功则合成单文件；失败降级成对输出
         if (plan.motionPhoto && plan.motionPhotoInfo) {
           const info = plan.motionPhotoInfo;
           const videoOffset = info.videoOffset ?? 0;
           const videoLength = info.videoLength ?? 0;
 
-          // 1. 主图：Blob.slice 是视图，不复制字节（避免整文件进 JS 堆）
-          const stillBlob = file.slice(0, videoOffset);
-          let stillPayload: Blob = stillBlob;
-          let stillExt = plan.ext;
-          if (plan.mode === 'compress') {
-            const compressed = await compressImage(
-              new File([stillBlob], `${baseName}.jpg`, { type: 'image/jpeg' }),
-              quality
-            );
-            // 压缩无收益时回退原图——此时扩展名必须跟着改
-            if (compressed.size < stillBlob.size) {
-              stillPayload = compressed;
-            } else {
-              stillExt = plan.format === 'heic' ? 'heic' : extForFormat(plan.format);
-              notes.push(`${baseName}.${stillExt}：压缩无收益，已保留原图`);
-            }
-          }
+          // 落盘目录：媒体前缀 + motion/ 子目录（契约固定，见 motionPhotoMerge.MOTION_PHOTO_DIR）
+          const motionDir = (p: string) => motionPhotoPath(dirPart, p);
 
-          const stillFileName = `${baseName}.${stillExt}`;
-          const stillPath = dirPart ? `${dirPart}/${stillFileName}` : stillFileName;
-          const stillExisting = currentFiles?.find((f) => f.path === stillPath);
+          // 完整原始字节：server 路径需要写原始 .src.jpg（含旧视频尾巴），
+          // 供图床 workflow 按 offset 截取主图合成（合成失败时完整源数据仍在仓库）。
+          // 内存代价：把整文件读入 JS 堆（而非旧实现的 Blob.slice 视图）——合成
+          // 必须操作完整字节，且动态照片受 planUpload 原图上限 IMAGE_ORIGINAL_MAX_BYTES
+          // (14 MB) 约束，峰值内存可控，属有意取舍。
+          let fullBytes = new Uint8Array(await file.arrayBuffer());
 
-          // 2. 视频：剥离 → 按策略分流（决策见 motionPhotoServerTranscode.ts 头注释）
+          // 视频字节：[videoOffset, videoOffset+videoLength)
           const videoBytes = new Uint8Array(
             await file.slice(videoOffset, videoOffset + videoLength).arrayBuffer()
           );
-          let videoBlob: Blob | null;
-          let videoPathOverride: string | null = null; // 非 null 时视频落盘名由它决定
-          let videoFileName = '';
-          let videoPath = '';
-          let videoNote: string;
+
+          // 压缩模式：压缩主图（保留 XMP APP1 + 视频字节）再合成，解决 10MB 上传超时。
+          // compressMotionStill 输出「压缩后的 JPEG + 回注的原 XMP」，随后合成函数把
+          // 视频拼回尾部——产物仍是合法单文件 Motion Photo。压缩无收益 / 非 JPEG /
+          // XMP 缺失时抛错，回退原图（fullBytes 保持原样，与「压缩无收益回退原图」语义一致）。
+          let compressedStillBytes: Uint8Array | null = null;
+          if (plan.mode === 'compress' && plan.format === 'jpeg') {
+            try {
+              const still = fullBytes.subarray(0, videoOffset);
+              const compressedStill = await compressMotionStill(still, quality);
+              // 用压缩后的主图替换原主图区间，视频字节原样保留在尾部
+              const recombined = new Uint8Array(compressedStill.length + videoBytes.length);
+              recombined.set(compressedStill, 0);
+              recombined.set(videoBytes, compressedStill.length);
+              fullBytes = recombined;
+              compressedStillBytes = compressedStill;
+            } catch (err) {
+              // 压缩回退必须可见：静默降级会让用户以为已压缩，实际传原图直到超时
+              // （2026-11-02 超时时长排查因此走了弯路）
+              console.warn('[useMediaUpload] 动态照片主图压缩回退原图：', err);
+              notes.push(
+                `${baseName}.jpg：主图压缩不可用（${err instanceof Error ? err.message : '原因未知'}），已按原图上传`
+              );
+            }
+          }
+
           const codec = detectEmbeddedVideoCodec(videoBytes);
           const strategy = embeddedVideoStrategy(codec, { isS3: isS3Source });
 
-          if (strategy === 'native') {
-            // H.264 内嵌：浏览器原生可播，零转码直接切片
-            videoBlob = new Blob([videoBytes as BlobPart], { type: 'video/mp4' });
-            videoNote = `动态视频已是 H.264，直接上传（${formatSize(videoBlob.size)}）`;
-          } else if (strategy === 'server') {
-            // GitHub 通道 + HEVC/AV1：原样上传为 *.src.mp4，由图床仓库的
-            // GitHub Actions 用原生 ffmpeg 转码（零下载、保证成功）。
-            // 提交信息【必须】保留 server-transcode 标记——这是 workflow
-            // 的触发信号，换成 [skip ci] 会静默杀死整条转码链路。
-            videoBlob = new Blob([videoBytes as BlobPart], { type: 'video/mp4' });
-            videoPathOverride = `${baseName}.src.mp4`;
-            videoNote = `动态视频为 ${codec ?? '未知编码'}，已提交图床转码队列（*.src.mp4，约 1-2 分钟后可用）`;
-          } else {
-            // S3 通道 + HEVC/AV1：无 Actions 可借，浏览器 wasm 转码（尽力而为）
-            try {
-              const result = await transcodeMotionPhotoVideo(videoBytes, {
-                onProgress: (p: TranscodeProgress) => {
-                  if (p.stage === 'loading') {
-                    setTranscodeNotice('正在加载转码组件（首次约 31 MB，后续复用）……');
-                  }
-                },
-              });
-              videoBlob = result.blob;
-              videoNote = `动态视频已转 H.264（${formatSize(videoBlob.size)}）`;
-            } catch (err) {
-              // 转码失败不阻断主图上传：原样上传 HEVC 源（现代浏览器多可播），
-              // 不可播的访客端仍能看到静态主图——动态部分不再因失败而丢弃
-              console.warn('[useMediaUpload] Motion Photo 视频转码失败：', err);
-              videoBlob = new Blob([videoBytes as BlobPart], { type: 'video/mp4' });
-              videoNote = `浏览器转码失败，已上传原始视频（部分浏览器可播）`;
-            }
+          // 合成用的视频起点：压缩后主图长度（未压缩时 === 原 videoOffset）。
+          // 这是压缩路径最容易出错的地方——fullBytes 已是「压缩主图 + 视频」的拼装体，
+          // 视频起点不再是原始 videoOffset。
+          const mergeOffset = compressedStillBytes
+            ? compressedStillBytes.length
+            : videoOffset;
+
+          // 单文件合成结果的落盘名（三分支共用）
+          const outFileName = `${baseName}.jpg`;
+          const outPath = motionDir(outFileName);
+          const outExisting = currentFiles?.find((f) => f.path === outPath);
+          if (outExisting && mediaConfig.duplicateStrategy === 'skip') {
+            notes.push(`${outFileName}：已存在同名动态照片，按「跳过」策略未覆盖`);
+            return false;
           }
 
-          // 3. 上传主图（与普通图片同路径）
-          if (isS3Source) {
-            await s3PutObject(s3View, stillPath, stillPayload);
-          } else {
-            await uploadImage({
-              owner: source.owner,
-              repo: source.repo,
-              path: stillPath,
-              base64Content: await blobToBase64(stillPayload),
-              message: `[skip ci] 上传：${stillFileName}`,
-              branch: source.branch,
-              userName,
-              sha: stillExisting?.sha,
-            });
-          }
-
-          // 3.1 主图缩略图：动态照片的主图同样需要列表缩略图
-          try {
-            const thumb = await createThumbnail(
-              new File([stillPayload], stillFileName, { type: stillPayload.type || 'image/jpeg' })
-            );
-            if (thumb) {
-              const thumbPath = thumbnailPathFor(stillPath);
-              if (isS3Source) {
-                await s3PutObject(s3View, thumbPath, thumb);
-              } else {
-                await uploadImage({
-                  owner: source.owner,
-                  repo: source.repo,
-                  path: thumbPath,
-                  base64Content: await blobToBase64(thumb),
-                  message: `[skip ci] 缩略图：${thumbPath.split('/').pop()}`,
-                  branch: source.branch,
-                  userName,
-                });
-              }
-            }
-          } catch {
-            console.warn('[useMediaUpload] 动态照片主图缩略图上传失败（不影响主文件）');
-          }
-
-          // 4. 上传视频（与主图同目录；server 策略落盘为 *.src.mp4，其余 .mp4）
-          if (videoBlob) {
-            videoFileName = videoPathOverride ?? `${baseName}.mp4`;
-            videoPath = dirPart ? `${dirPart}/${videoFileName}` : videoFileName;
-            const videoExisting = currentFiles?.find((f) => f.path === videoPath);
-            if (videoExisting && mediaConfig.duplicateStrategy === 'skip') {
-              notes.push(`${videoFileName}：已存在同名视频，按「跳过」策略未覆盖`);
+          /** 上传合成后的单文件成品（含缩略图），并更新本地列表缓存 */
+          const uploadMerged = async (merged: Uint8Array, note: string): Promise<boolean> => {
+            const mergedBlob = new Blob([merged as BlobPart], { type: 'image/jpeg' });
+            if (isS3Source) {
+              await s3PutObject(s3View, outPath, mergedBlob);
             } else {
-              if (isS3Source) {
-                await s3PutObject(s3View, videoPath, videoBlob);
-              } else {
-                await uploadMediaBinary({
-                  owner: source.owner,
-                  repo: source.repo,
-                  path: videoPath,
-                  blob: videoBlob,
-                  // server 策略：提交信息是 workflow 的触发信号（见上方注释）；
-                  // 其余路径（native/browser 产物、S3）保持 [skip ci] 惯例
-                  message: strategy === 'server'
-                    ? `[server-transcode] 上传动态视频：${videoFileName}`
-                    : `[skip ci] 上传动态视频：${videoFileName}`,
-                  branch: source.branch,
-                  userName,
-                  sha: videoExisting?.sha,
-                });
-              }
-              notes.push(`${videoFileName}：${videoNote}`);
+              // GitHub 通道走二进制端点（PUT /api/repos/media），不走 uploadImage 的 base64 JSON：
+              // ① 10MB 合成成品 base64 后 13.3MB，受 uploadImage 固定 10s 超时必然超时
+              //   （uploadImage 用 API_TIMEOUT_MS=10000；二进制端点按体积线性放大，
+              //    10MB ≈ 50s）——实测超时问题的根因（2026-11-02）
+              // ② 免 33% base64 膨胀与 JSON.stringify 双份内存拷贝
+              // ③ Worker 侧 media 端点峰值内存更低（不进 JSON 解析器）
+              await uploadMediaBinary({
+                owner: source.owner,
+                repo: source.repo,
+                path: outPath,
+                blob: mergedBlob,
+                message: `[skip ci] 上传动态照片：${outFileName}`,
+                branch: source.branch,
+                userName,
+                sha: outExisting?.sha,
+              });
             }
-
-            // 视频封面：取视频首帧（server 策略的 .src.mp4 在浏览器里多不可播，
-            // createVideoPoster 探测失败会返回 null——封面留给转码完成后
-            // 的下一次列表刷新，或直接回退静态主图，不阻断上传）
+            // 缩略图：与普通图片同约定（thumb- 前缀），失败不阻断
             try {
-              const poster = await createVideoPoster(
-                new File([videoBlob], videoFileName, { type: 'video/mp4' })
+              const thumb = await createThumbnail(
+                new File([mergedBlob], outFileName, { type: 'image/jpeg' })
               );
-              if (poster) {
-                const posterPath = thumbnailPathFor(videoPath);
+              if (thumb) {
+                const thumbPath = thumbnailPathFor(outPath);
                 if (isS3Source) {
-                  await s3PutObject(s3View, posterPath, poster);
+                  await s3PutObject(s3View, thumbPath, thumb);
                 } else {
                   await uploadImage({
                     owner: source.owner,
                     repo: source.repo,
-                    path: posterPath,
-                    base64Content: await blobToBase64(poster),
-                    message: `[skip ci] 封面：${posterPath.split('/').pop()}`,
+                    path: thumbPath,
+                    base64Content: await blobToBase64(thumb),
+                    message: `[skip ci] 缩略图：${thumbPath.split('/').pop()}`,
                     branch: source.branch,
                     userName,
                   });
                 }
               }
             } catch {
-              console.warn('[useMediaUpload] 动态视频封面上传失败（不影响主文件）');
+              console.warn('[useMediaUpload] 动态照片缩略图上传失败（不影响主文件）');
             }
-          }
-
-          // 5. 更新本地列表缓存
-          if (currentFiles) {
-            currentFiles = [{
-              name: stillFileName,
-              path: stillPath,
-              sha: stillExisting?.sha || '',
-              size: stillPayload.size,
-              lastModified: Date.now(),
-              url: urlFor(stillPath),
-            }, ...currentFiles];
-            if (videoBlob) {
+            if (currentFiles) {
               currentFiles = [{
-                name: videoFileName,
-                path: videoPath,
-                sha: '',
-                size: videoBlob.size,
+                name: outFileName,
+                path: outPath,
+                sha: outExisting?.sha || '',
+                size: mergedBlob.size,
                 lastModified: Date.now(),
-                url: urlFor(videoPath),
+                url: urlFor(outPath),
               }, ...currentFiles];
             }
+            notes.push(`${outFileName}：${note}`);
+            return true;
+          };
+
+          if (strategy === 'native') {
+            // H.264 内嵌：浏览器纯 Blob 合成（截断尾部视频 → 原样拼回 → 修补 XMP）
+            // 零 ffmpeg、零下载、零重编码；合成失败 fail-closed 抛错，交外层报错重试
+            const merged = mergeMotionPhotoBytes(fullBytes, mergeOffset, videoBytes);
+            return await uploadMerged(merged, `动态照片已合成单文件（H.264 内嵌，${formatSize(videoBytes.length)}）`);
           }
-          setTranscodeNotice(null);
-          return true;
+
+          if (strategy === 'server') {
+            // GitHub 通道 + HEVC/AV1：原样上传双源 + 清单，由图床 Actions 合成。
+            // 提交信息【必须】保留 server-transcode 标记——这是 workflow 的触发信号。
+            // 顺序：src.jpg → src.mp4 → manifest（任一失败整组报错，workflow 幂等扫描可重试补齐）
+            const srcStillPath = motionDir(`${baseName}.src.jpg`);
+            const srcVideoPath = motionDir(`${baseName}.src.mp4`);
+            const srcStillBlob = new Blob([fullBytes as BlobPart], { type: 'image/jpeg' });
+            const srcVideoBlob = new Blob([videoBytes as BlobPart], { type: 'video/mp4' });
+
+            await uploadMediaBinary({
+              owner: source.owner,
+              repo: source.repo,
+              path: srcStillPath,
+              blob: srcStillBlob,
+              message: `[server-transcode] 动态照片源图：${baseName}.src.jpg`,
+              branch: source.branch,
+              userName,
+              sha: currentFiles?.find((f) => f.path === srcStillPath)?.sha,
+            });
+            await uploadMediaBinary({
+              owner: source.owner,
+              repo: source.repo,
+              path: srcVideoPath,
+              blob: srcVideoBlob,
+              message: `[server-transcode] 动态照片源视频：${baseName}.src.mp4`,
+              branch: source.branch,
+              userName,
+              sha: currentFiles?.find((f) => f.path === srcVideoPath)?.sha,
+            });
+
+            const manifest = buildMotionManifest(baseName, {
+              videoOffset: mergeOffset,
+              videoLength,
+            });
+            const manifestBlob = new Blob(
+              [JSON.stringify(manifest, null, 2)],
+              { type: 'application/json' }
+            );
+            // 清单走二进制端点（与 .src 件同通道，语义一致；base64 图片端点语义不匹配）
+            await uploadMediaBinary({
+              owner: source.owner,
+              repo: source.repo,
+              path: motionDir(motionManifestName(baseName)),
+              blob: manifestBlob,
+              message: `[server-transcode] 动态照片合成指令：${baseName}.motion.json`,
+              branch: source.branch,
+              userName,
+            });
+
+            // 本地缓存注入三个中间态（真实列表刷新后由过滤规则剔除）
+            if (currentFiles) {
+              for (const [p, blob] of [
+                [srcStillPath, srcStillBlob],
+                [srcVideoPath, srcVideoBlob],
+              ] as const) {
+                currentFiles = [{
+                  name: p.split('/').pop() || p,
+                  path: p,
+                  sha: '',
+                  size: blob.size,
+                  lastModified: Date.now(),
+                  url: urlFor(p),
+                }, ...currentFiles];
+              }
+            }
+            notes.push(
+              `${outFileName}：动态视频为 ${codec ?? '未知编码'}，已提交图床合成队列（约 1-2 分钟后可用）`
+            );
+            return true;
+          }
+
+          // S3 通道 + HEVC/AV1：浏览器 wasm 转码（尽力而为），成功即合成单文件
+          try {
+            const result = await transcodeMotionPhotoVideo(videoBytes, {
+              onProgress: (p: TranscodeProgress) => {
+                if (p.stage === 'loading') {
+                  setTranscodeNotice('正在加载转码组件（首次约 31 MB，后续复用）……');
+                }
+              },
+            });
+            const merged = mergeMotionPhotoBytes(
+              fullBytes,
+              mergeOffset,
+              new Uint8Array(await result.blob.arrayBuffer())
+            );
+            const ok = await uploadMerged(merged, `动态照片已合成单文件（wasm 转码 H.264，${formatSize(result.blob.size)}）`);
+            setTranscodeNotice(null);
+            return ok;
+          } catch (err) {
+            // 降级路径：转码失败但主图不丢（对齐「失败不阻断主图」哲学）。
+            // 【修正 m-降级 2026-11-02】旧实现直接把截断主图存成 .jpg + 独立 .mp4，
+            // 产出「图与视频分离」且 .jpg 的 XMP 还指向已被截断的旧视频——坏文件。
+            // 现改为用合成函数把 videoBytes 原样内嵌回主图：输出仍是 motion/ 单文件
+            // 规范（.jpg 内含视频），只是视频保留 HEVC 原样、未经 H.264 转码。
+            // 不可播的浏览器看到的是静态主图（预览仍正常），可播的浏览器播放 HEVC。
+            console.warn('[useMediaUpload] Motion Photo wasm 转码失败，降级为原样内嵌合成：', err);
+            const fallbackMerged = mergeMotionPhotoBytes(fullBytes, mergeOffset, videoBytes);
+            const ok = await uploadMerged(
+              fallbackMerged,
+              '浏览器转码失败，已按原样内嵌合成（部分浏览器可播 HEVC）'
+            );
+            setTranscodeNotice(null);
+            return ok;
+          }
         }
 
         // 待上传字节：压缩模式做重编码，原图/视频直接用原始文件

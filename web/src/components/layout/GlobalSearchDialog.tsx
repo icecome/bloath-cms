@@ -162,7 +162,7 @@ export function GlobalSearchDialog({ open, onClose, repo, contentPaths, draftPat
 
       {terms && results.length === 0 && (
         <p className="text-sm text-muted-foreground py-4 text-center">
-          {indexSize === 0 ? '本地暂无索引，请先访问内容库/草稿箱建立索引' : '没有匹配的文章'}
+          {indexSize === 0 ? '本地暂无索引，请先访问内容库或草稿箱建立索引' : '没有匹配的文章'}
         </p>
       )}
       {!terms && (

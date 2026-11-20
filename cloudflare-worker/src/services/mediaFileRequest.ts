@@ -9,7 +9,7 @@
 // 「backendId=assets, key=2026/a.webp」与「backendId 缺省, key=assets/2026/a.webp」
 // 两种意图，解析存在歧义。query 方案与 /api/media/s3/* 的参数风格保持一致。
 import { normalizeBackendId } from './mediaBackendId.ts';
-import { isSafePathParam } from '../middleware/pathGuard.ts';
+import { isSafePathParam } from '../lib/path-safety.ts';
 
 /** 公开代理路径前缀 */
 export const ROUTE_PREFIX = '/media-file/';

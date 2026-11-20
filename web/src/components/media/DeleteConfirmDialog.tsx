@@ -43,7 +43,7 @@ export function DeleteConfirmDialog({ file, references, checking, onCheck, onCan
       {!checking && references && references.length > 0 && (
         <div className="mb-3 border border-amber-300 bg-amber-50 rounded-sm p-2.5" role="alert">
           <p className="text-xs font-medium text-amber-800 mb-1.5">
-            有 {references.length} 篇文章正在引用这张图片，删除后它们会出现无法显示的图片：
+            有 {references.length} 篇文章引用了这张图片，删除后这些文章的配图将无法显示：
           </p>
           <ul className="text-xs text-amber-800 space-y-0.5 max-h-32 overflow-y-auto">
             {references.slice(0, 10).map((ref) => (

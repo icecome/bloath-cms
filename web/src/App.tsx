@@ -10,14 +10,17 @@ import MainLayout from './components/layout/MainLayout';
 import DashboardPage from './pages/DashboardPage';
 import DraftsPage from './pages/DraftsPage';
 import TrashPage from './pages/TrashPage';
-import MediaPage from './pages/MediaPage';
-import SettingsPage from './pages/SettingsPage';
 import ToastContainer from './components/ui/ToastContainer';
 import LazyRoute from './components/ui/LazyRoute';
 import './styles/globals.css';
 
 // 模块级常量：LazyRoute 依赖其引用稳定，写成内联箭头函数会导致每次渲染重新拉取分块
+// 模块级常量：LazyRoute 依赖其引用稳定，写成内联箭头函数会导致每次渲染重新拉取分块
 const loadEditorPage = () => import('./pages/EditorPage');
+// MediaPage / SettingsPage 与编辑器同样只在进入时才有意义（媒体网格与设置表单的
+// 代码量都不小），走路由级懒加载可把主分块压到 500 kB 以下。
+const loadMediaPage = () => import('./pages/MediaPage');
+const loadSettingsPage = () => import('./pages/SettingsPage');
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -71,8 +74,12 @@ export default function App() {
                 <Route path="editor/*" element={
                   <LazyRoute load={loadEditorPage} fallback={<LoadingFallback />} />
                 } />
-                <Route path="media" element={<MediaPage />} />
-                <Route path="settings" element={<SettingsPage />} />
+                <Route path="media" element={
+                  <LazyRoute load={loadMediaPage} fallback={<LoadingFallback />} />
+                } />
+                <Route path="settings" element={
+                  <LazyRoute load={loadSettingsPage} fallback={<LoadingFallback />} />
+                } />
               </Route>
             </Routes>
           </CollectionsProvider>

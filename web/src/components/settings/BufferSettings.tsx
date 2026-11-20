@@ -104,12 +104,21 @@ export function BufferSettings() {
         凭据经 HTTPS 提交后加密保存在服务端数据库（D1 AES-GCM），不在浏览器明文存放。
       </p>
       {!config && (
-        <p className="text-[11px] text-warning">缓冲配置加载中……加载失败时请刷新页面重试。</p>
+        <div className="flex items-center gap-2">
+          <p className="text-[11px] text-warning">缓冲配置加载失败。</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="text-[11px] text-foreground underline hover:no-underline"
+          >
+            刷新页面
+          </button>
+        </div>
       )}
 
       {config?.enabled && config.rand && (
         <p className="text-[10px] text-muted-foreground font-mono">
-          当前缓冲路径：{config.prefix}/{config.rand}/...
+          当前缓冲键前缀：{config.prefix}/{config.rand}/
         </p>
       )}
 

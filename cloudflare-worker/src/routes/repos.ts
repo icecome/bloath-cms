@@ -93,6 +93,8 @@ reposApp.put('/api/repos/file', async (c: Context<HonoEnv>) => {
 //   400 → 参数无效 / 空文件
 //   413 → 超过 MAX_MEDIA_BINARY_SIZE
 reposApp.put('/api/repos/media', async (c: Context<HonoEnv>) => {
+  // 耗时埋点：Tail 日志按 "[media]" 过滤即可区分「收字节慢」还是「GitHub 提交慢」
+  const startedAt = Date.now();
   const q = (key: string) => c.req.query(key);
   const owner = q('owner');
   const repo = q('repo');
@@ -122,6 +124,10 @@ reposApp.put('/api/repos/media', async (c: Context<HonoEnv>) => {
   await writeFile(
     auth(c).githubToken, owner, repo, filePath, bytesToBase64(new Uint8Array(bytes)),
     message || 'upload media', sha, branch, buildCommitAuthor(userName), true
+  );
+  // 体积 + 耗时：定位「是收字节慢还是 GitHub 提交慢」
+  console.log(
+    `[media] ${filePath} ${bytes.byteLength}B in ${Date.now() - startedAt}ms`
   );
   return c.json(success({ path: filePath }));
 });

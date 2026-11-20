@@ -13,6 +13,15 @@ const COMPACT_DATE = /^(\d{4})(\d{2})(\d{2})(?:(\d{2})(\d{2})(\d{2}))?/;
 const SEPARATED_DATE = /^(\d{4})[-_](\d{1,2})[-_](\d{1,2})(?:[-_T ](\d{1,2})[-_:](\d{1,2})[-_:](\d{1,2}))?/;
 /** 2026年7月7日 / 2026/7/7 等宽松写法 */
 const LOOSE_DATE = /(\d{4})[-/年](\d{1,2})[-/月]?(\d{1,2})?[\s日]?/;
+/**
+ * 显式时区标记：时间部分之后跟 Z / +08:00 / +0800 / -05。
+ * 命中时**不能**走自建解析——自建解析按本地时区构造，会把 `2026-07-07T12:00:00Z`
+ * 读成本地 12:00（Asia/Shanghai 下偏移 8 小时），与「带时区的串交给 Date」的原意相反。
+ * 要求时区前必须出现时分，避免把 `2026-07` 这类只有年月的写法误判成 -07 偏移。
+ */
+const HAS_TIMEZONE = /[T\s]\d{1,2}:?\d{1,2}(?::?\d{1,2})?\s*(?:Z|[+-]\d{2}:?\d{2}|[+-]\d{2})$/i;
+/** 看起来像日期：至少含 4 位连续数字年份。用于拦住 '-1' 这类垃圾串进 new Date() */
+const LOOKS_LIKE_DATE = /\d{4}/;
 
 function buildLocalTimestamp(
   year: number,
@@ -75,6 +84,13 @@ export function parseDateToTimestamp(dateValue?: string | number | Date): number
     if (fromNumber > 0) return fromNumber;
   }
 
+  // 显式时区优先交给 Date：自建解析按本地时区构造，会把带 Z / +08:00 的串读偏。
+  // 必须在自建解析之前判定，否则 COMPACT_DATE / SEPARATED_DATE 会先把它吃掉。
+  if (HAS_TIMEZONE.test(raw)) {
+    const withZone = new Date(raw).getTime();
+    if (!Number.isNaN(withZone) && withZone > 0) return withZone;
+  }
+
   // 自建解析优先于 new Date()：后者对 '2026/07/07' 给本地零点、对 '2026-07-07' 给 UTC 零点，
   // 同一批文章会出现 8 小时口径漂移。先自建，保证同源格式口径一致。
   const compact = raw.match(COMPACT_DATE);
@@ -97,9 +113,13 @@ export function parseDateToTimestamp(dateValue?: string | number | Date): number
     );
   }
 
-  // 带时区偏移的 ISO / RFC 2822 交给 Date 处理
-  const iso = new Date(raw).getTime();
-  if (!Number.isNaN(iso) && iso > 0) return iso;
+  // 兜底交给 Date：但必须先拦「不像日期的串」。
+  // new Date('-1') 在 V8 下返回 2001-01-01、new Date('5') 返回 2001-05-01，
+  // 会把垃圾值伪装成有效时间戳，直接污染排序键。
+  if (LOOKS_LIKE_DATE.test(raw)) {
+    const iso = new Date(raw).getTime();
+    if (!Number.isNaN(iso) && iso > 0) return iso;
+  }
 
   const loose = raw.match(LOOSE_DATE);
   if (loose) {

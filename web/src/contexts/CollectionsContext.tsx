@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import type { MediaConfig } from '../../../shared/types';
-import { parseStoredMediaConfig, DEFAULT_BACKEND_ID, backendFromLegacy } from '../lib/configSchema';
+import {
+  parseStoredMediaConfig, pruneLegacyMediaFields, DEFAULT_BACKEND_ID, backendFromLegacy,
+} from '../lib/configSchema';
 import { DEFAULT_MEDIA_PATH, DEFAULT_BRANCH_NAME } from '../lib/constants';
 
 interface CollectionConfig {
@@ -16,12 +18,6 @@ const DEFAULT_COLLECTION_CONFIG: CollectionConfig = {
 };
 
 const DEFAULT_MEDIA_CONFIG: MediaConfig = {
-  sourceType: 'standalone',
-  imageOwner: '',
-  imageRepo: '',
-  imageBranch: 'main',
-  mediaPath: DEFAULT_MEDIA_PATH,
-  imageBranchName: DEFAULT_BRANCH_NAME,
   cdnProvider: 'jsdelivr',
   customCdnTemplate: '',
   quality: 80,
@@ -45,9 +41,14 @@ const DEFAULT_MEDIA_CONFIG: MediaConfig = {
 const COLLECTION_STORAGE_KEY = 'bloath_collections_config';
 const MEDIA_STORAGE_KEY = 'bloath_media_config';
 
+/**
+ * localStorage 白名单。注意：**迁移源字段不在此列**（sourceType / imageOwner /
+ * imageRepo / imageBranch / mediaPath / imageBranchName）——它们只在首次读取旧数据时
+ * 被 parseStoredMediaConfig / backendFromLegacy 消费一次，此后由 pruneLegacyMediaFields
+ * 剥除，写回不再保留。过去漏项导致「配置保存后刷新消失」，此处是同一处守门。
+ */
 const MEDIA_CONFIG_KEYS: ReadonlyArray<keyof MediaConfig> = [
-  'sourceType', 'imageOwner', 'imageRepo', 'imageBranch',
-  'mediaPath', 'imageBranchName', 'cdnProvider', 'customCdnTemplate',
+  'cdnProvider', 'customCdnTemplate',
   'quality', 'renameTemplate', 'duplicateStrategy', 'uploadMode',
   // s3 必须在此白名单内：loadMediaConfig 只保留白名单字段，
   // 漏项会导致 S3 凭据保存成功但刷新后被过滤掉（配置看起来「消失」）
@@ -82,29 +83,32 @@ function loadMediaConfig(): MediaConfig {
     const stored = localStorage.getItem(MEDIA_STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored) as Record<string, unknown>;
-      // 仅保留已知字段，过滤已废弃或残留字段
+      // 第一步：迁移源字段只在**本次读取**里用于构造 backend，不进入白名单。
+      // 必须在与默认值合并之前判定，否则默认值里的 backends 会覆盖迁移结果。
+      const hasBackends = Array.isArray(parsed.backends) && parsed.backends.length > 0;
+      let migratedBackend = null as ReturnType<typeof backendFromLegacy> | null;
+      if (!hasBackends && typeof parsed.sourceType === 'string') {
+        migratedBackend = backendFromLegacy({
+          sourceType: parsed.sourceType as NonNullable<MediaConfig['sourceType']>,
+          imageOwner: String(parsed.imageOwner ?? ''),
+          imageRepo: String(parsed.imageRepo ?? ''),
+          imageBranch: String(parsed.imageBranch ?? 'main'),
+          mediaPath: String(parsed.mediaPath ?? DEFAULT_MEDIA_PATH),
+          imageBranchName: String(parsed.imageBranchName ?? DEFAULT_BRANCH_NAME),
+          s3: parsed.s3 as MediaConfig['s3'],
+        });
+      }
+
+      // 第二步：只保留运行时权威字段（迁移源字段已被消费，不再落盘）
       const filtered: Record<string, unknown> = {};
       for (const key of MEDIA_CONFIG_KEYS) {
-        if (key in parsed) {
-          filtered[key] = parsed[key];
-        }
+        if (key in parsed) filtered[key] = parsed[key];
       }
-      // 旧配置迁移：存量 localStorage 无 backends 字段（并行媒体仓库上线前），
-      // 由 sourceType + 扁平字段构造单个 backend 写入 backends。
-      // 必须在与默认值合并**之前**判定，否则默认值里的 backends 会覆盖迁移结果。
-      const hasBackends = Array.isArray(filtered.backends) && filtered.backends.length > 0;
-      if (!hasBackends && typeof filtered.sourceType === 'string') {
-        filtered.backends = [backendFromLegacy({
-          sourceType: filtered.sourceType as MediaConfig['sourceType'],
-          imageOwner: String(filtered.imageOwner ?? ''),
-          imageRepo: String(filtered.imageRepo ?? ''),
-          imageBranch: String(filtered.imageBranch ?? 'main'),
-          mediaPath: String(filtered.mediaPath ?? DEFAULT_MEDIA_PATH),
-          imageBranchName: String(filtered.imageBranchName ?? DEFAULT_BRANCH_NAME),
-          s3: filtered.s3 as MediaConfig['s3'],
-        })];
+      if (migratedBackend) {
+        filtered.backends = [migratedBackend];
         filtered.defaultBackendId = DEFAULT_BACKEND_ID;
       }
+
       const candidate = { ...DEFAULT_MEDIA_CONFIG, ...filtered } as MediaConfig;
       // Zod 结构校验（P3-5）：类型漂移（如 quality 存成字符串）时拒绝并回退默认值，
       // 与 worker 侧 parseStoredConfig 同语义；校验失败留日志便于定位脏数据
@@ -131,7 +135,9 @@ function saveCollectionConfig(config: CollectionConfig): void {
 
 function saveMediaConfig(config: MediaConfig): void {
   try {
-    localStorage.setItem(MEDIA_STORAGE_KEY, JSON.stringify(config));
+    // 写回前剥掉迁移源字段：读取侧为兼容旧数据必须容忍它们，但落盘时不能保留，
+    // 否则「一个概念两份真相」永久驻留（2026-11-12 架构审查 P1）。
+    localStorage.setItem(MEDIA_STORAGE_KEY, JSON.stringify(pruneLegacyMediaFields(config)));
   } catch (err) {
     console.error('Failed to save media config', err);
   }

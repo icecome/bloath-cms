@@ -151,19 +151,29 @@ export async function planUpload(
   // 关键事实：Motion Photo 的主图扩展名就是 .jpg/.heic/.avif，与普通图片完全一样，
   // 只有读 XMP（Camera:MotionPhoto / GContainer:Directory）才能识别。
   //
-  // 策略：
-  //   · 主图部分按用户选择的模式处理（压缩 → WebP；原图 → 保留原格式）
-  //   · 内嵌视频部分：H.264 → 直接切片上传；HEVC/AV1 → 转 H.264
-  //   · HEIC/AVIF 主图浏览器无法解码 → 强制原图（Canvas 压缩会得到黑图）
-  //
-  // 注意：这里只做决策，不做剥离与转码（那是执行层的事）。
+  // 策略（单文件合成方案，见 docs/02-tech-designs/motion-photo-single-file-design-v2.md）：
+  //   · JPEG 主图可压缩（compressMotionStill）：Canvas 输出 JPEG（保留容器）→
+  //     从原图提取 XMP APP1 段回注 → 合成时拼回视频。产物仍是合法单文件
+  //     Motion Photo，10MB 主图可压至 1-2MB，直接解决上传超时（2026-11-02）。
+  //   · HEIC/AVIF 主图仍强制原图：浏览器 Canvas 无法解码，压缩无从下手；
+  //     且 Canvas 仅能输出 JPEG/PNG/WebP，非 JPEG 容器无 APP1 段可注入。
+  //   · 内嵌视频部分：H.264 → 浏览器纯 Blob 合成单文件（motionPhotoMerge）；
+  //     HEVC/AV1 + GitHub → 双源 + 清单交图床 workflow 合成；S3 → wasm 尽力而为
   const motionPhotoInfo = await detectMotionPhoto(file, kind, format);
   const isMotionPhoto = motionPhotoInfo !== null;
 
-  if (isMotionPhoto && (format === 'heic' || format === 'avif')) {
-    // HEIC/AVIF 主图：浏览器 <img> 不支持，Canvas drawImage 会得到空白
-    mode = 'original';
-    modeReason = '动态照片主图为 HEIC/AVIF，浏览器无法转码，已按原图上传（动态部分转 H.264）';
+  if (isMotionPhoto) {
+    if (format === 'heic' || format === 'avif') {
+      // HEIC/AVIF 主图：浏览器 <img> 不支持，Canvas drawImage 会得到空白
+      mode = 'original';
+      modeReason = '动态照片主图为 HEIC/AVIF，浏览器无法转码，已按原图上传（动态部分转 H.264）';
+    } else {
+      // JPEG 动态照片：按用户选择（压缩 / 原图），执行层走 compressMotionStill
+      // 保留 XMP 与视频字节，合成后仍是合法单文件
+      modeReason = isMotionPhoto && mode === 'compress'
+        ? '动态照片主图压缩保留动态效果（XMP 与视频字节保留）'
+        : '动态照片保留原图以保证动态效果（主图与视频需字节级合成）';
+    }
   }
 
   // 体积门槛按「剥离视频后的主图」算——动态照片的 file.size 含内嵌视频，

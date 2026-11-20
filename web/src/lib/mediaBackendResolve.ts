@@ -128,38 +128,6 @@ export function resolveMediaBackend(
   });
 }
 
-/**
- * 旧入口：按单源 sourceType 解析。保留为兼容层——新代码应使用
- * resolveMediaBackend(config, backendId, selectedRepo)。
- */
-export function resolveMediaSource(
-  config: MediaConfig,
-  selectedRepo: SelectedRepo | null
-): ResolvedMediaSource {
-  const backends = config.backends || [];
-  if (backends.length > 0) {
-    const target = backends.find((b) => b.id === config.defaultBackendId) || backends[0];
-    if (target) return resolveMediaBackend(config, target.id, selectedRepo);
-  }
-  // 并行列表为空（旧配置尚未迁移）：按 sourceType 走旧路径
-  return resolveBackendSource(config.sourceType, selectedRepo, {
-    owner: config.imageOwner,
-    repo: config.imageRepo,
-    branch: config.imageBranch,
-    pathPrefix: config.mediaPath,
-  });
-}
-
-/** 取某个 backend 对象；找不到返回 undefined（调用方可用于显示 label） */
-export function getBackend(config: MediaConfig, backendId: string): MediaBackend | undefined {
-  const backends = config.backends || [];
-  return (
-    backends.find((b) => b.id === backendId) ||
-    backends.find((b) => b.id === config.defaultBackendId) ||
-    backends[0]
-  );
-}
-
 /** 启用中的 backend 列表（上传下拉 / 页面切换器用） */
 export function enabledBackends(config: MediaConfig): MediaBackend[] {
   return (config.backends || []).filter((b) => b.enabled);

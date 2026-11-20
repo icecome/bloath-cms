@@ -74,6 +74,24 @@ export interface MotionPhotoHeader {
 // XMP 基础提取
 // ---------------------------------------------------------------------------
 
+const XMP_START_TAG = '<x:xmpmeta';
+const XMP_END_TAG = '</x:xmpmeta>';
+
+/**
+ * 在 latin1 解码后的文本中定位 XMP 包的字符区间（左闭右开）。
+ *
+ * 单独暴露区间而不是只返回字符串：合成层（motionPhotoMerge）需要把修补后的
+ * XMP **写回原字节**，必须知道它在字节流中的确切位置。latin1 解码是 1:1 的，
+ * 因此字符下标 === 字节下标，可直接用于 Uint8Array 的 slice/set。
+ */
+export function locateXmpPacket(text: string): { start: number; end: number } | null {
+  const start = text.indexOf(XMP_START_TAG);
+  if (start < 0) return null;
+  const end = text.indexOf(XMP_END_TAG, start);
+  if (end < 0) return null;
+  return { start, end: end + XMP_END_TAG.length };
+}
+
 /**
  * 从字节数组中提取 XMP 包（<x:xmpmeta ...> ... </x:xmpmeta>）。
  *
@@ -88,14 +106,10 @@ export function extractXmpPacket(bytes: Uint8Array): string | null {
   const decoder = new TextDecoder('latin1');
   const text = decoder.decode(bytes);
 
-  const startTag = '<x:xmpmeta';
-  const endTag = '</x:xmpmeta>';
-  const start = text.indexOf(startTag);
-  if (start < 0) return null;
-  const end = text.indexOf(endTag, start);
-  if (end < 0) return null;
+  const span = locateXmpPacket(text);
+  if (!span) return null;
 
-  return text.slice(start, end + endTag.length);
+  return text.slice(span.start, span.end);
 }
 
 /**

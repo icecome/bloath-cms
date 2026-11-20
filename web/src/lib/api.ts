@@ -1,21 +1,9 @@
 import type { Repo, RepoInfo, CommitOp } from '../../../shared/types';
 import { API_BASE } from './constants';
 import { requestJson, type HttpRequestOptions } from './http.ts';
+import { treeTimeoutMs, uploadTimeoutMs } from './requestTimeouts.ts';
 
 export type { CommitOp };
-
-export interface ContentItem {
-  name: string;
-  path: string;
-  sha: string;
-  type: 'file' | 'dir';
-  size?: number;
-  frontmatter?: {
-    title?: string;
-    date?: string;
-    tags?: string[];
-  };
-}
 
 const API_TIMEOUT_MS = 10000;
 
@@ -62,17 +50,6 @@ interface TreeItem {
 
 export async function getRepos(): Promise<Repo[]> {
   return apiFetch<Repo[]>(`${API_BASE}/api/repos`);
-}
-
-export async function getFiles(params: RepoInfo & { path?: string }): Promise<ContentItem[]> {
-  const searchParams = new URLSearchParams({
-    owner: params.owner,
-    repo: params.repo,
-    path: params.path || '',
-    branch: params.branch || 'main'
-  });
-
-  return apiFetch<ContentItem[]>(`${API_BASE}/api/repos/files?${searchParams}`);
 }
 
 export async function readFile(params: RepoInfo & { path: string }, timeoutMs?: number): Promise<FileReadResult> {
@@ -172,15 +149,28 @@ export async function getTree(params: RepoInfo & { mode?: 'filename' }): Promise
   });
   if (params.mode) searchParams.set('mode', params.mode);
 
-  return apiFetch<TreeItem[]>(`${API_BASE}/api/repos/tree?${searchParams}`);
+  // filename 模式走独立预算（35s，理由见 requestTimeouts.treeTimeoutMs 头注释）；
+  // plain 模式不扇出 commits，维持默认 10s
+  return apiFetch<TreeItem[]>(
+    `${API_BASE}/api/repos/tree?${searchParams}`,
+    { timeoutMs: treeTimeoutMs(params.mode) }
+  );
 }
 
 /**
  * 上传图片（base64 编码）
+ *
+ * 超时按 base64Content 字符数（≈传输体积）线性放大，与 uploadMediaBinary
+ * 同语义（公式单一来源：requestTimeouts.uploadTimeoutMs）。
+ * 固定 API_TIMEOUT_MS=10s 在 10MB 大图上必然超时（实测 2026-11-02：合成成品
+ * 10MB → base64 13.3MB → 网络上行 + GitHub commit 需 30s+）。
  */
 export async function uploadImage(
   params: RepoInfo & { path: string; base64Content: string; message?: string; branch?: string; userName?: string; sha?: string }
 ): Promise<WriteResult> {
+  // base64 字符数 ≈ 实际传输体积（每字符 1 字节）；直接按它线性放大，
+  // 与 uploadMediaBinary 按 blob.size 放大等价
+  const bodyBytes = params.base64Content.length;
   return apiFetch<WriteResult>(`${API_BASE}/api/repos/file`, {
     method: 'PUT',
     headers: {
@@ -196,6 +186,7 @@ export async function uploadImage(
       userName: params.userName,
       sha: params.sha
     }),
+    timeoutMs: uploadTimeoutMs(bodyBytes),
   });
 }
 
@@ -229,9 +220,9 @@ export async function uploadMediaBinary(params: {
     method: 'PUT',
     headers: { 'Content-Type': 'application/octet-stream' },
     body: params.blob,
-    // 超时随体积线性放大：固定 120s 在慢上行（手机热点）传大视频时必然中途夭折（P2-16）。
-    // 基准 1MB/2s + 30s 余量，100MB ≈ 230s；上限 10 分钟防死循环。
-    timeoutMs: Math.min(30_000 + (params.blob.size / (1024 * 1024)) * 2_000, 600_000),
+    // 超时随体积线性放大（公式单一来源：requestTimeouts.uploadTimeoutMs；
+    // P2-16：固定值在慢上行传大视频时必然中途夭折）
+    timeoutMs: uploadTimeoutMs(params.blob.size),
   });
 }
 
