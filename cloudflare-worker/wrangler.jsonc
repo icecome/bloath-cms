@@ -6,6 +6,12 @@
   "observability": {
     "enabled": true
   },
+  "placement": {
+    // Cloudflare 自动将 Worker 调度到离上游服务（GitHub API）延迟最低的节点。
+    // 对中国用户访问站点影响极小；对 Worker→GitHub 的请求链路可节省 ~800ms/次往返。
+    // 首次部署后最多需 15 分钟完成学习期。可通过 cf-placement 响应头确认生效状态。
+    "mode": "smart"
+  },
   "kv_namespaces": [
     {
       "binding": "DEVICES_KV",
